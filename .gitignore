@@ -1,0 +1,17 @@
+.venv/
+asset_packs/
+asset_packs_unused/
+models/
+test/
+movies/
+sfx/
+tools/
+asset_index.json
+__pycache__/
+.pytest_cache/
+.app.pid
+*.py[cod]
+*.blend
+*.blend1
+*.mp4
+*.wav

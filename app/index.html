@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CastForge</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1c1a; --muted: #6b6862; --line: #e3e0da;
+    --accent: #b3261e; --accent-ink: #ffffff; --ok: #1f7a3d; --warn: #9a5b00; --code: #faf9f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161513; --panel: #201f1c; --ink: #ecebe7; --muted: #a29e96; --line: #34322e;
+            --accent: #e0574d; --accent-ink: #160f0e; --ok: #5cc985; --warn: #e5a54a; --code: #1b1a18; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 18px; margin: 0 12px 0 0; letter-spacing: .2px; }
+  header h1 span { color: var(--accent); }
+  nav { display: flex; gap: 4px; }
+  nav button { background: none; border: 0; padding: 7px 12px; border-radius: 8px; color: var(--muted); font: inherit; cursor: pointer; }
+  nav button.on { background: var(--bg); color: var(--ink); font-weight: 600; }
+  .spacer { flex: 1; }
+  #gpu { font-size: 13px; color: var(--muted); }
+  #gpu.busy { color: var(--warn); }
+  main { max-width: 1280px; margin: 0 auto; padding: 20px; }
+  select, input, textarea { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; }
+  textarea { width: 100%; font: 13px/1.5 ui-monospace, Consolas, monospace; background: var(--code); }
+  button.b { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 7px 13px; border-radius: 8px; cursor: pointer; }
+  button.b:hover { border-color: var(--muted); }
+  button.p { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .char { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .char img, .char .ph { width: 100%; aspect-ratio: 3/5; object-fit: cover; display: block; background: var(--bg); }
+  .char .ph { display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+  .char div.n { padding: 8px 10px; font-weight: 600; font-size: 14px; }
+  .two { display: grid; grid-template-columns: 220px 1fr; gap: 16px; }
+  @media (max-width: 800px) { .two { grid-template-columns: 1fr; } }
+  .list button { display: block; width: 100%; text-align: left; margin-bottom: 4px; }
+  .list button.on { border-color: var(--accent); }
+  .scene-picker { margin-bottom: 16px; }
+  .scene-picker h2 { margin: 0; }
+  .scene-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+  .scene-list button { width: 100%; text-align: left; }
+  .scene-list button.on { border-color: var(--accent); }
+  .episode-workspace { display: grid; gap: 16px; }
+  pre.out { white-space: pre-wrap; background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 13px; margin: 10px 0 0; max-height: 220px; overflow: auto; }
+  .bar { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .5s; }
+  video { width: 100%; border-radius: 10px; background: #000; }
+  .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  .tabs2 { display: flex; gap: 6px; margin-bottom: 10px; }
+  .sets { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+  .sets figure { margin: 0; } .sets img { width: 100%; border-radius: 8px; display: block; } .sets figcaption { font-size: 12px; color: var(--muted); }
+  .help pre { white-space: pre-wrap; }
+  .hidden { display: none !important; }
+  .msg { margin-top: 8px; font-size: 13px; } .msg.err { color: var(--accent); } .msg.ok { color: var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cast<span>Forge</span></h1>
+  <select id="movie" title="Movie"></select>
+  <button class="b" id="openMovie">Open movie</button>
+  <button class="b" id="newMovie">New movie</button>
+  <nav>
+    <button data-tab="characters" class="on">Characters</button>
+    <button data-tab="episodes">Episodes</button>
+    <button data-tab="sets">Sets</button>
+    <button data-tab="help">Help</button>
+  </nav>
+  <div class="spacer"></div>
+  <span id="gpu">GPU free</span>
+</header>
+<main>
+  <!-- Characters -->
+  <section id="tab-characters">
+    <div class="grid" id="chars"></div>
+    <div class="card" style="margin-top:16px">
+      <h2>Add a character</h2>
+      <div class="tabs2"><button class="b p" data-mode="design">From a Gemini design (no photo)</button><button class="b" data-mode="photo">From a photo</button></div>
+      <div id="mode-design">
+        <div class="row" style="margin-bottom:8px"><input id="dName" placeholder="name, e.g. noelle_brooks"><button class="b" id="copyCharPrompt">Copy Gemini character prompt</button></div>
+        <textarea id="dJson" rows="9" placeholder="Paste Gemini's character design (JSON) here"></textarea>
+        <div class="row" style="margin-top:8px"><button class="b p" id="buildDesign">Build character</button></div>
+      </div>
+      <div id="mode-photo" class="hidden">
+        <div class="row">
+          <input id="pName" placeholder="name">
+          <select id="pGender"><option>female</option><option>male</option></select>
+          <input id="pAge" type="number" placeholder="age" style="width:90px">
+          <input id="pHeight" type="number" placeholder="height cm" style="width:120px">
+        </div>
+        <p class="muted">Full-body photo: one person, head to toe, facing the camera, arms a little away from the body. Face photo (recommended): a sharp front close-up. Only people who agreed.</p>
+        <div class="row"><label>Body photo <input type="file" id="pPhoto" accept="image/*"></label><label>Face photo <input type="file" id="pFace" accept="image/*"></label></div>
+        <div class="row" style="margin-top:8px"><button class="b p" id="buildPhoto">Build character</button></div>
+      </div>
+      <div class="msg" id="charMsg"></div>
+      <pre class="out hidden" id="jobs"></pre>
+    </div>
+  </section>
+
+  <!-- Episodes -->
+  <section id="tab-episodes" class="hidden">
+    <div class="card scene-picker">
+      <div class="row">
+        <h2>Scenes and episodes</h2>
+        <div class="spacer"></div>
+        <input id="newEp" placeholder="new episode name">
+        <button class="b" id="addEp">Add episode</button>
+      </div>
+        <p class="muted">Choose a scene to load its existing scene.json. Nested scenes are shown with their folder path.</p>
+      <div class="scene-list" id="eps"></div>
+    </div>
+    <div class="episode-workspace">
+        <div class="card">
+          <div class="row" style="margin-bottom:8px">
+            <strong id="epTitle">Choose an episode</strong><div class="spacer"></div>
+            <button class="b" id="copyScenePrompt">Copy Gemini scene prompt</button>
+          </div>
+          <details id="advancedScene" style="margin-top:10px">
+            <summary>Advanced: edit scene JSON</summary>
+            <textarea id="scene" rows="16" spellcheck="false" placeholder="scene.json"></textarea>
+          </details>
+          <div class="row" style="margin-top:8px">
+            <button class="b" id="save">Save changes</button>
+            <button class="b" id="check">Check</button>
+            <div class="spacer"></div>
+            <select id="quality" title="Quality">
+              <option value="blocking">Blocking (fast, 480x270)</option>
+              <option value="draft">Draft (640x360)</option>
+              <option value="standard">Standard (960x540)</option>
+              <option value="final">Final (full size)</option>
+            </select>
+            <button class="b p" id="render">Render</button>
+          </div>
+          <div class="msg" id="epMsg"></div>
+          <pre class="out hidden" id="checkOut"></pre>
+          <div style="margin-top:12px"><span class="muted" id="status"></span><div class="bar"><i id="barFill"></i></div></div>
+        </div>
+        <div class="card" style="margin-top:16px" id="videoCard">
+          <h2>Scene animation</h2>
+          <video id="video" controls class="hidden"></video>
+          <p class="muted" id="noVideo">Not rendered yet.</p>
+          <div class="shots" id="shots"></div>
+        </div>
+        <div class="card" style="margin-top:16px" id="dialogueCard">
+          <h2>Dialogue for this scene</h2>
+          <p class="muted">Watch the animation above, then edit this scene's lines. Kokoro voices are drafts; upload a WAV performance for final dialogue.</p>
+          <div class="row hidden" id="scenePartRow"><label>Scene <select id="scenePart"></select></label></div>
+          <div id="dialogueLines"></div>
+          <div class="row" style="margin-top:12px">
+            <select id="newSpeaker" aria-label="Speaker"></select>
+            <select id="newDialogueType" aria-label="Dialogue type"><option value="say">Speak aloud</option><option value="think">Inner thought</option></select>
+          </div>
+          <textarea id="newDialogueText" rows="2" placeholder="What should the character say?"></textarea>
+          <div class="row" style="margin-top:8px"><button class="b" id="addDialogue">Add dialogue line</button></div>
+        </div>
+    </div>
+  </section>
+
+  <!-- Sets -->
+  <section id="tab-sets" class="hidden">
+    <p class="muted">Set pictures live in <code>movies/&lt;movie&gt;/sets/&lt;set&gt;/</code>. Pictures must be empty (no people). Use the path under a picture as "background" in a scene.</p>
+    <div class="sets" id="sets"></div>
+  </section>
+
+  <!-- Help -->
+  <section id="tab-help" class="hidden help">
+    <div class="card"><h2>How to make an episode</h2><pre id="helpText"></pre></div>
+  </section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let data = [], prompts = {}, curEp = null, poll = null, sceneModel = null, activeSceneIndex = null, advancedDirty = false;
+
+async function api(url, opts = {}) {
+  const r = await fetch(url, opts);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+const post = (url, body) => api(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+const movie = () => $("#movie").value;
+function msg(el, text, ok) { el.textContent = text; el.className = "msg " + (ok ? "ok" : "err"); }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c])); }
+async function copy(text, btn) {
+  try { await navigator.clipboard.writeText(text); const t = btn.textContent; btn.textContent = "Copied"; setTimeout(() => btn.textContent = t, 1500); }
+  catch { alert(text); }
+}
+
+async function load(keep) {
+  data = await api("/api/movies");
+  const sel = $("#movie"), cur = keep || sel.value || (localStorage.getItem("cf.movie") || "");
+  sel.innerHTML = data.map(m => `<option value="${esc(m.name)}">${esc(m.name)}</option>`).join("");
+  if (data.some(m => m.name === cur)) sel.value = cur;
+  render();
+}
+function render() {
+  const m = data.find(x => x.name === movie()); if (!m) return;
+  try { localStorage.setItem("cf.movie", m.name); } catch {}
+  $("#chars").innerHTML = m.characters.map(c => `<div class="char">${c.preview ? `<img src="${c.preview}" alt="">` : `<div class="ph">no preview</div>`}<div class="n">${esc(c.name)}</div></div>`).join("") || `<p class="muted">No characters yet.</p>`;
+  $("#eps").innerHTML = m.episodes.map(e => `<button class="b${e === curEp ? " on" : ""}" data-ep="${esc(e)}">${esc(e)}</button>`).join("") || `<p class="muted">No episodes yet.</p>`;
+  $("#sets").innerHTML = m.sets.map(s => `<figure><img src="${s.picture}" alt=""><figcaption>${esc(s.name)}<br><code>${esc(s.path)}</code></figcaption></figure>`).join("") || `<p class="muted">No sets yet.</p>`;
+}
+function refreshSceneJson() {
+  if (sceneModel) {
+    $("#scene").value = JSON.stringify(sceneModel, null, 1);
+    advancedDirty = false;
+  }
+}
+function activeScene() {
+  return Array.isArray(sceneModel?.scenes) ? sceneModel.scenes[activeSceneIndex] : sceneModel;
+}
+function renderDialogue() {
+  if (!sceneModel) return;
+  const isEpisode = Array.isArray(sceneModel.scenes);
+  const part = activeScene();
+  $("#scenePartRow").classList.toggle("hidden", !isEpisode);
+  if (!part) {
+    $("#dialogueLines").innerHTML = `<p class="muted">This episode has no scenes yet.</p>`;
+    return;
+  }
+  if (isEpisode) {
+    $("#scenePart").innerHTML = sceneModel.scenes.map((item, index) =>
+      `<option value="${index}"${index === activeSceneIndex ? " selected" : ""}>${esc(item.id || `Scene ${index + 1}`)}</option>`
+    ).join("");
+  }
+  const cast = {...(sceneModel.cast || {}), ...(part.cast || {})};
+  const speakers = Object.keys(cast);
+  $("#newSpeaker").innerHTML = speakers.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+  $("#newSpeaker").disabled = speakers.length === 0;
+  const script = Array.isArray(part.script) ? part.script : [];
+  const lines = script.map((step, index) => ({step, index})).filter(({step}) => ["say", "think"].includes(step.do));
+  $("#dialogueLines").innerHTML = lines.map(({step, index}) => `
+    <div class="card" style="margin:10px 0" data-dialogue="${index}">
+      <div class="row">
+        <strong>Line ${index + 1}</strong>
+        <select data-field="who" aria-label="Speaker">${speakers.map(name => `<option value="${esc(name)}"${name === step.who ? " selected" : ""}>${esc(name)}</option>`).join("")}</select>
+        <select data-field="do" aria-label="Line type"><option value="say"${step.do === "say" ? " selected" : ""}>Speak aloud</option><option value="think"${step.do === "think" ? " selected" : ""}>Inner thought</option></select>
+        <div class="spacer"></div><button class="b" data-remove="${index}">Remove line</button>
+      </div>
+      <textarea data-field="text" rows="2" aria-label="Dialogue text" placeholder="Enter the exact words">${esc(step.text || "")}</textarea>
+      <div class="row">
+        <span class="muted">${step.audio ? `Voice file attached: ${esc(step.audio)}` : "Draft voice (Kokoro), unless you upload a performance."}</span>
+        <button class="b" type="button" data-pick-voice="${index}">Choose WAV performance</button>
+        <input type="file" data-voice="${index}" accept=".wav,audio/wav" hidden>
+      </div>
+      ${step.audio && step.audio.startsWith("voices/") ? `<audio controls preload="none" style="width:100%;margin-top:8px" src="/media/${[movie(), curEp, step.audio].join("/").split("/").map(encodeURIComponent).join("/")}"></audio>` : ""}
+    </div>`).join("") || `<p class="muted">No dialogue yet. Add a line below to start.</p>`;
+}
+async function saveScene() {
+  if (!sceneModel) throw new Error("Open a scene before saving.");
+  if (advancedDirty) {
+    try { sceneModel = JSON.parse($("#scene").value); }
+    catch (e) { throw new Error("Scene JSON is invalid: " + e.message); }
+    if (Array.isArray(sceneModel.scenes)) {
+      activeSceneIndex = Math.min(activeSceneIndex ?? 0, sceneModel.scenes.length - 1);
+    } else activeSceneIndex = null;
+  }
+  refreshSceneJson();
+  await post("/api/episode/save", {movie: movie(), episode: curEp, scene: $("#scene").value});
+  renderDialogue();
+}
+async function openEp(ep) {
+  clearInterval(poll);
+  curEp = ep; render();
+  $("#epTitle").textContent = ep; $("#checkOut").classList.add("hidden"); $("#epMsg").textContent = "";
+  try {
+    const e = await api(`/api/episode?movie=${encodeURIComponent(movie())}&episode=${encodeURIComponent(ep)}`);
+    sceneModel = JSON.parse(e.scene);
+    activeSceneIndex = Array.isArray(sceneModel.scenes) ? 0 : null;
+    refreshSceneJson(); renderDialogue(); showEp(e); startPoll();
+    try { localStorage.setItem("cf.episode." + movie(), ep); } catch {}
+  } catch (e) {
+    sceneModel = null;
+    activeSceneIndex = null;
+    $("#scene").value = "";
+    msg($("#epMsg"), "Could not load scene: " + e.message);
+  }
+}
+function clearEpisode() {
+  clearInterval(poll);
+  $("#epTitle").textContent = "Choose a scene";
+  $("#scene").value = "";
+  sceneModel = null;
+  activeSceneIndex = null;
+  $("#dialogueLines").innerHTML = "";
+  $("#status").textContent = "";
+  $("#barFill").style.width = "0";
+  $("#render").disabled = true;
+  const video = $("#video");
+  video.pause();
+  video.removeAttribute("src");
+  delete video.dataset.src;
+  video.classList.add("hidden");
+  $("#noVideo").classList.remove("hidden");
+  $("#shots").innerHTML = "";
+  $("#checkOut").classList.add("hidden");
+  $("#epMsg").textContent = "";
+}
+function activateTab(name) {
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === name));
+  document.querySelectorAll("main > section").forEach(s => s.classList.toggle("hidden", s.id !== "tab-" + name));
+}
+async function openMovieScene() {
+  const m = data.find(x => x.name === movie());
+  curEp = null;
+  clearEpisode();
+  render();
+  activateTab("episodes");
+  if (!m || !m.episodes.length) return;
+  let ep = null;
+  try { ep = localStorage.getItem("cf.episode." + m.name); } catch {}
+  await openEp(m.episodes.includes(ep) ? ep : m.episodes[0]);
+}
+function showEp(e) {
+  $("#status").textContent = e.status;
+  const m = /(\d+)\/(\d+) frames/.exec(e.status), sc = /scene (\d+)\/(\d+)/.exec(e.status);
+  let pct = e.status.startsWith("finished") ? 100 : 0;
+  if (m) { const f = (+m[1]) / Math.max(+m[2], 1); pct = sc ? ((+sc[1] - 1 + f) / (+sc[2])) * 100 : f * 100; }
+  $("#barFill").style.width = pct + "%";
+  $("#render").disabled = e.rendering;
+  const v = $("#video");
+  if (e.video) { if (v.dataset.src !== e.video) { v.src = e.video; v.dataset.src = e.video; } v.classList.remove("hidden"); $("#noVideo").classList.add("hidden"); }
+  else { v.classList.add("hidden"); $("#noVideo").classList.remove("hidden"); }
+  $("#shots").innerHTML = e.shots.map(s => `<div><div class="muted">${esc(s.name)}</div><video src="${s.video}" controls preload="metadata"></video></div>`).join("");
+}
+function startPoll() {
+  clearInterval(poll);
+  poll = setInterval(async () => {
+    if (!curEp) return;
+    try { showEp(await api(`/api/episode?movie=${encodeURIComponent(movie())}&episode=${encodeURIComponent(curEp)}`)); } catch {}
+  }, 3000);
+}
+setInterval(async () => {
+  try {
+    const g = await api("/api/gpu"); const el = $("#gpu");
+    el.textContent = g.busy ? "GPU busy: " + g.busy : "GPU free"; el.className = g.busy ? "busy" : "";
+    const jobs = await api("/api/jobs");
+    const box = $("#jobs");
+    if (jobs.length) { box.classList.remove("hidden"); box.textContent = jobs.map(j => `${j.name}: ${j.state}${j.last ? "  — " + j.last : ""}`).join("\n"); }
+    if (jobs.some(j => j.state === "done") && jobs.length !== (window._doneSeen || 0)) { window._doneSeen = jobs.length; load(movie()); }
+  } catch {}
+}, 3000);
+
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll("main > section").forEach(s => s.classList.toggle("hidden", s.id !== "tab-" + b.dataset.tab));
+});
+document.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => {
+  document.querySelectorAll("[data-mode]").forEach(x => x.classList.toggle("p", x === b));
+  $("#mode-design").classList.toggle("hidden", b.dataset.mode !== "design");
+  $("#mode-photo").classList.toggle("hidden", b.dataset.mode !== "photo");
+});
+$("#movie").onchange = openMovieScene;
+$("#openMovie").onclick = openMovieScene;
+$("#eps").onclick = e => { const b = e.target.closest("[data-ep]"); if (b) openEp(b.dataset.ep); };
+$("#advancedScene").ontoggle = () => { if ($("#advancedScene").open && !advancedDirty) refreshSceneJson(); };
+$("#scene").oninput = () => { advancedDirty = true; };
+$("#dialogueLines").onchange = async e => {
+  const field = e.target.dataset.field, card = e.target.closest("[data-dialogue]");
+  if (field && card && sceneModel) {
+    const step = activeScene().script[Number(card.dataset.dialogue)];
+    step[field] = e.target.value;
+    if (field === "text") delete step.audio;
+    refreshSceneJson(); renderDialogue();
+  }
+  const upload = e.target.closest("[data-voice]");
+  if (upload && upload.files[0]) {
+    const file = upload.files[0];
+    const index = Number(upload.dataset.voice);
+    try {
+      await saveScene();
+      const form = new FormData();
+      form.append("movie", movie()); form.append("episode", curEp);
+      form.append("step", String(index)); form.append("text", activeScene().script[index].text || "");
+      if (Array.isArray(sceneModel.scenes)) form.append("scene_index", String(activeSceneIndex));
+      form.append("file", file);
+      const result = await api("/api/episode/voice", {method: "POST", body: form});
+      sceneModel = JSON.parse(result.scene); refreshSceneJson(); renderDialogue();
+      msg($("#epMsg"), "Voice performance uploaded and linked to this line.", true);
+    } catch (err) { msg($("#epMsg"), err.message); }
+  }
+};
+$("#dialogueLines").onclick = e => {
+  const pick = e.target.closest("[data-pick-voice]");
+  if (pick) {
+    $("#dialogueLines").querySelector(`[data-voice="${pick.dataset.pickVoice}"]`).click();
+    return;
+  }
+  const remove = e.target.closest("[data-remove]");
+  if (!remove || !sceneModel) return;
+  activeScene().script.splice(Number(remove.dataset.remove), 1);
+  refreshSceneJson(); renderDialogue();
+};
+$("#scenePart").onchange = e => {
+  activeSceneIndex = Number(e.target.value);
+  renderDialogue();
+};
+$("#dialogueLines").oninput = e => {
+  const field = e.target.dataset.field, card = e.target.closest("[data-dialogue]");
+  if (field === "text" && card && sceneModel) {
+    const step = activeScene().script[Number(card.dataset.dialogue)];
+    step.text = e.target.value;
+    delete step.audio;
+    refreshSceneJson();
+  }
+};
+$("#addDialogue").onclick = () => {
+  if (!sceneModel) return msg($("#epMsg"), "Open a scene first.");
+  const who = $("#newSpeaker").value, text = $("#newDialogueText").value.trim();
+  if (!who) return msg($("#epMsg"), "Add a character to the scene before adding dialogue.");
+  if (!text) return msg($("#epMsg"), "Enter the words for this line.");
+  const part = activeScene();
+  if (!Array.isArray(part.script)) part.script = [];
+  part.script.push({who, do: $("#newDialogueType").value, text});
+  $("#newDialogueText").value = "";
+  refreshSceneJson(); renderDialogue();
+};
+$("#newMovie").onclick = async () => {
+  const n = prompt("Movie name (letters, numbers, _):"); if (!n) return;
+  try { const r = await post("/api/movie/new", {name: n}); await load(r.movie); } catch (e) { alert(e.message); }
+};
+$("#addEp").onclick = async () => {
+  try { await post("/api/episode/new", {movie: movie(), episode: $("#newEp").value}); const n = $("#newEp").value.toLowerCase().replace(/[ -]/g, "_"); $("#newEp").value = ""; await load(movie()); openEp(n); }
+  catch (e) { alert(e.message); }
+};
+$("#save").onclick = async () => {
+  try { await saveScene(); msg($("#epMsg"), "Saved.", true); }
+  catch (e) { msg($("#epMsg"), e.message); }
+};
+$("#check").onclick = async () => {
+  try {
+    await saveScene();
+    const r = await post("/api/episode/check", {movie: movie(), episode: curEp});
+    const o = $("#checkOut"); o.textContent = r.output; o.classList.remove("hidden");
+    msg($("#epMsg"), r.ok ? "Looks good." : "Problems found (see below).", r.ok);
+  } catch (e) { msg($("#epMsg"), e.message); }
+};
+$("#render").onclick = async () => {
+  try {
+    await saveScene();
+    const r = await post("/api/episode/render", {movie: movie(), episode: curEp, quality: $("#quality").value});
+    msg($("#epMsg"), "Rendering in the background. You can close this page; it keeps going.", true);
+  } catch (e) { msg($("#epMsg"), e.message); }
+};
+$("#copyScenePrompt").onclick = e => copy(prompts.scene, e.target);
+$("#copyCharPrompt").onclick = e => copy(prompts.character, e.target);
+$("#buildDesign").onclick = async () => {
+  try { await post("/api/character/design", {movie: movie(), name: $("#dName").value, design: $("#dJson").value}); msg($("#charMsg"), "Building (about a minute)…", true); }
+  catch (e) { msg($("#charMsg"), e.message); }
+};
+$("#buildPhoto").onclick = async () => {
+  const f = new FormData();
+  f.append("movie", movie()); f.append("name", $("#pName").value); f.append("gender", $("#pGender").value);
+  f.append("age", $("#pAge").value); f.append("height_cm", $("#pHeight").value);
+  if (!$("#pPhoto").files[0]) return msg($("#charMsg"), "Choose a body photo.");
+  f.append("photo", $("#pPhoto").files[0]); if ($("#pFace").files[0]) f.append("face_photo", $("#pFace").files[0]);
+  try { await api("/api/character/photo", {method: "POST", body: f}); msg($("#charMsg"), "Building (about a minute)…", true); }
+  catch (e) { msg($("#charMsg"), e.message); }
+};
+
+(async () => {
+  prompts = await api("/api/prompts");
+  $("#helpText").textContent = prompts.help;
+  await load();
+  await openMovieScene();
+})();
+</script>
+</body>
+</html>
