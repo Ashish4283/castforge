@@ -1,0 +1,18 @@
+{
+ "name": "diner",
+ "template": "diner",
+ "family": "building",
+ "category": "buildings",
+ "footprint": [
+  12.0,
+  8.0
+ ],
+ "floors": 1,
+ "size": [
+  12.0,
+  8.0,
+  0
+ ],
+ "wall_color": "#e6e1d3",
+ "roof_color": "#b52f38"
+}

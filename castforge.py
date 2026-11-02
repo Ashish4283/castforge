@@ -1,25 +1,39 @@
-"""CastForge: photo -> 3D character -> animated, voiced episode. One command for every step.
+"""CastForge: photo -> 3D character -> animated, voiced, finished episode. One command for every step.
 
     python castforge.py app                      open the CastForge app in your browser (http://localhost:8765)
     python castforge.py help                     how it works, step by step
     python castforge.py gemini-prompt [scene|character]   show a Gemini prompt and copy it to the clipboard
     python castforge.py character PHOTO NAME --gender female --age 30 --height-cm 168 [--face-photo FACE]
     python castforge.py character --design NAME.design.json NAME      (invented character, no photo)
-    python castforge.py check SCENE_FOLDER       check SCENE_FOLDER/scene.json (e.g. from Gemini) before rendering
-    python castforge.py episode SCENE_FOLDER     render SCENE_FOLDER/scene.json to SCENE_FOLDER/episode.mp4
+    python castforge.py check FOLDER             check FOLDER/scene.json (e.g. from Gemini) before rendering
+    python castforge.py storyboard FOLDER        one still per shot -> FOLDER/storyboard.jpg (a minute per scene)
+    python castforge.py episode FOLDER           render FOLDER/scene.json and finish it to FOLDER/episode.mp4
                                                  (runs in the background; add --wait to wait for it;
-                                                  --quality blocking|draft|standard|final, default blocking)
-    python castforge.py status SCENE_FOLDER      render progress (frames done / total)
+                                                  --quality blocking|draft|standard|final|ultra, default blocking)
+    python castforge.py status FOLDER            render progress (frames done / total)
+    python castforge.py stop FOLDER              stop that render (finished frames are kept; episode resumes)
+    python castforge.py finish FOLDER            redo titles, transitions, grade, subtitles and sound mastering only
+    python castforge.py voice "TEXT" --voice am_santa [--speed 0.9] [--fx phone]   hear a line (CPU)
+    python castforge.py transcribe FILE.wav      the words in a recording (for lip-sync transcripts)
+    python castforge.py library-build [--refresh] build missing (or refresh unchanged) city-library starters
+    python castforge.py doctor                   check that every tool CastForge needs is installed
 """
 import argparse
+import glob
+import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-BLENDER = r"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
-VENV_PY = os.path.join(ROOT, ".venv", "Scripts", "python.exe")
+sys.path.insert(0, ROOT)
+from core import config  # noqa: E402
+from core.buildings import BUILDING_DESIGNS, default_asset_spec  # noqa: E402
+from core.schema import check_scene  # noqa: E402,F401  (castforge.check_scene is used by the app and tests)
+
+BLENDER, VENV_PY = config.BLENDER, config.VENV_PY
 PROMPT_DOCS = {"scene": os.path.join(ROOT, "docs", "GEMINI_SCENE_PROMPT.md"),
                "character": os.path.join(ROOT, "docs", "GEMINI_CHARACTER_PROMPT.md")}
 
@@ -38,23 +52,29 @@ CastForge - how to make an episode
       save Gemini's answer as maya.design.json, then
       python castforge.py character --design maya.design.json maya
 
-2. The scene (with Gemini)
+2. The scene (with Gemini, or in the app's scene editor)
    python castforge.py gemini-prompt scene
    The prompt is copied to your clipboard. Paste it into Gemini, write your idea on the last line,
    and save Gemini's answer as scene.json in a new folder. Put in the same folder:
      background.png   (make it in Gemini: eye-level photo of the empty place, 16:9, no people)
      ambience.wav     (optional background sound)
      <name>.blend     (the characters from step 1; their names must match the cast in scene.json)
-   Text dialogue uses Kokoro as a quick draft voice. For a final performance, put one WAV per line in
-   voices/ and set both "audio": "voices/<line>.wav" and "text": "<exact transcript>" on the say step.
-   The transcript guides lip-sync; review the voice and keep the same performer for each character.
+   Characters can act: "expression" on a line, emote / gesture / posture / look steps, walk "pace".
+   Text dialogue uses Kokoro voices; hear one first with: python castforge.py voice "Hello" --voice af_heart
+   For a final performance, put one WAV per line in voices/ and set both "audio" and "text" on the step.
 
-3. Check and render
-   python castforge.py check my_scene_folder        (finds mistakes in Gemini's scene.json)
-   python castforge.py episode my_scene_folder        (starts the render in the background)
-   python castforge.py status my_scene_folder         (progress; a long episode takes about 3 s per frame)
+3. Check, preview, render
+   python castforge.py check my_scene_folder         (finds mistakes in scene.json)
+   python castforge.py storyboard my_scene_folder    (one still per shot: check staging and camera first)
+   python castforge.py episode my_scene_folder       (renders in the background, then finishes the film)
+   python castforge.py status my_scene_folder        (progress; stop with: python castforge.py stop ...)
    Only one render at a time. If a render stops, run the episode command again: it continues.
-   You get my_scene_folder/episode.mp4 (and episode.blend to adjust by hand in Blender).
+
+4. Finish and publish
+   Titles, credits, transitions, colour grade, subtitles and loudness are applied after the render.
+   Change them in scene.json (or the app's Publish panel), then: python castforge.py finish my_scene_folder
+   You get episode.mp4, episode.srt/.vtt (subtitles), episode_chapters.txt and episode_poster.jpg.
+   Each scene's Blender file is in scenes/NN_<id>/shot.blend for hand edits.
 """
 
 
@@ -62,121 +82,6 @@ def gemini_prompt(kind="scene"):
     text = open(PROMPT_DOCS[kind], encoding="utf-8").read()
     m = re.search(r"```\n(.*?)```", text, re.S)
     return m.group(1).strip()
-
-
-VOICES = {"af_heart", "af_bella", "af_nicole", "am_michael", "am_adam", "am_eric", "bf_emma", "bf_isabella",
-          "bm_george", "bm_lewis", "hf_alpha", "hf_beta", "hm_omega", "hm_psi"}
-ACTIONS = {"walk", "face", "say", "think", "drive", "wait", "enter", "exit", "open", "sit", "stand", "sound"}
-PROP_TYPES = {"table", "chair", "stool", "bench", "sofa", "bed", "shelf", "counter", "door", "wall", "window", "lamp",
-              "cup", "plant", "box", "tv", "seat", "santa_hat", "picture_road"}
-
-
-def check_scene(folder):
-    """Plain-language problems in a scene folder; returns the number of errors."""
-    import json
-    import math
-    f = os.path.join(folder, "scene.json")
-    errors, warnings = [], []
-    try:
-        raw = open(f, encoding="utf-8").read()
-    except OSError:
-        print(f"ERROR: no scene.json in {folder}")
-        return 1
-    try:
-        sc = json.loads(raw)
-    except json.JSONDecodeError as e:
-        line = raw.splitlines()[e.lineno - 1] if e.lineno - 1 < len(raw.splitlines()) else ""
-        print(f"ERROR: scene.json is not valid JSON at line {e.lineno}: {e.msg}\n    {line.strip()}\n"
-              "    (often a missing value, e.g. \"resolution\": [1280, 720], or a missing comma or bracket)")
-        return 1
-    if "scenes" in sc:
-        # an episode: check every scene with the episode cast merged in
-        library = sc.get("cast", {})
-        defaults = {k: v for k, v in sc.items() if k not in ("cast", "scenes")}
-        total = 0
-        for i, part in enumerate(sc["scenes"], 1):
-            merged = dict(defaults)
-            merged.update({k: v for k, v in part.items() if k != "cast"})
-            merged["cast"] = {n: {**library.get(n, {}), **e} for n, e in part.get("cast", {}).items()}
-            print(f"--- scene {i} ({part.get('id', 'scene')})")
-            total += check_parsed(folder, merged)
-        return total
-    return check_parsed(folder, sc)
-
-
-def check_parsed(folder, sc):
-    import math
-    errors, warnings = [], []
-    for key in ("background", "cast", "script"):
-        if key not in sc:
-            errors.append(f'missing "{key}"')
-    if sc.get("background") and not os.path.exists(os.path.join(folder, sc["background"])):
-        errors.append(f"background image not found: {sc['background']}")
-    if sc.get("ambience") and "." in sc["ambience"] and not os.path.exists(os.path.join(folder, sc["ambience"])):
-        warnings.append(f"ambience file not found: {sc['ambience']} (remove the line or add the file)")
-    cast = sc.get("cast", {})
-    pos = {}
-    for name, c in cast.items():
-        if not os.path.exists(os.path.join(folder, c.get("character", ""))):
-            errors.append(f"{name}: character file not found: {c.get('character')} (build it with: castforge.py character ...)")
-        if c.get("voice") and c["voice"] not in VOICES:
-            errors.append(f"{name}: unknown voice {c['voice']}")
-        pos[name] = c.get("position", [0, 0])
-        if c.get("sit"):
-            seat = next((p for p in sc.get("props", []) if p.get("id") == c["sit"]), None)
-            if not seat:
-                errors.append(f"{name}: sits on {c['sit']!r}, but there is no prop with that id")
-            else:
-                pos[name] = seat.get("position", pos[name])
-    for p in sc.get("props", []):
-        if "make" in p and p["make"] not in PROP_TYPES:
-            warnings.append(f"prop {p.get('id', '?')}: unknown type {p['make']} (it will be built as a box)")
-    facing = {n: c.get("facing", "camera") for n, c in cast.items()}
-    for n, st in enumerate(sc.get("script", []), 1):
-        do, who = st.get("do"), st.get("who")
-        if do not in ACTIONS:
-            errors.append(f"step {n}: unknown action {do!r} (use walk, face, say, wait, enter, sit, stand, sound)")
-            continue
-        if do not in ("wait", "sound") and who not in cast:
-            errors.append(f"step {n}: {who!r} is not in the cast")
-            continue
-        prop_ids = {p.get("id"): p for p in sc.get("props", [])}
-        if do in ("walk", "enter", "exit"):
-            pos[who] = st.get("to", pos[who])
-            facing[who] = None
-            if do in ("enter", "exit") and prop_ids.get(st.get("door"), {}).get("make") != "door":
-                errors.append(f"step {n}: enter needs \"door\": the id of a door prop")
-        elif do == "open" and prop_ids.get(st.get("door"), {}).get("make") != "door":
-            errors.append(f"step {n}: open needs \"door\": the id of a door prop")
-        elif do == "sit":
-            seat = prop_ids.get(st.get("on"), {})
-            if seat.get("make") not in ("chair", "stool", "bench", "sofa", "seat"):
-                errors.append(f"step {n}: sit needs \"on\": the id of a chair, stool, bench or sofa prop")
-            else:
-                pos[who] = seat.get("position", pos[who])
-        elif do == "face":
-            facing[who] = st.get("target")
-        elif do in ("say", "think"):
-            if not st.get("text") and not st.get("audio"):
-                errors.append(f"step {n}: say needs \"text\" or \"audio\"")
-            if st.get("text") and not st.get("audio") and not cast[who].get("voice"):
-                errors.append(f"step {n}: {who} speaks text but has no voice in the cast")
-            if st.get("audio") and not os.path.exists(os.path.join(folder, st["audio"])):
-                errors.append(f"step {n}: audio file not found: {st['audio']}")
-            if facing.get(who) == "camera" and len(cast) > 1:
-                warnings.append(f"step {n}: {who} talks while facing the camera (add a face step first?)")
-            for other, p in pos.items():
-                if other != who:
-                    d = math.dist(pos[who], p)
-                    if d < 0.8:
-                        warnings.append(f"step {n}: {who} is only {d:.1f} m from {other} (1.0-1.4 m looks natural)")
-    for e in errors:
-        print("ERROR:", e)
-    for w in dict.fromkeys(warnings):
-        print("warning:", w)
-    if not errors:
-        print("scene.json looks good" + (" (see warnings)" if warnings else ""))
-    return len(errors)
 
 
 LOCK = os.path.join(ROOT, ".render.lock")
@@ -193,26 +98,37 @@ def pid_alive(pid):
         return False
 
 
-def render_lock_owner():
-    """Folder of the render that holds the lock, or None (a lock left by a dead render is cleared)."""
+def _lock():
+    """(pid, folder) of the render holding the lock, or None; a lock left by a dead or half-written render is
+    cleared."""
     if not os.path.exists(LOCK):
         return None
-    pid, folder = open(LOCK).read().split("\n")[:2]
-    if pid.strip().isdigit() and pid_alive(int(pid)):
-        return folder
-    os.remove(LOCK)
+    try:
+        pid, folder = open(LOCK, encoding="utf-8").read().split("\n")[:2]
+        if pid.strip().isdigit() and pid_alive(int(pid)):
+            return int(pid), folder
+    except (OSError, ValueError):
+        pass
+    try:
+        os.remove(LOCK)
+    except OSError:
+        pass
     return None
 
 
+def render_lock_owner():
+    """Folder of the render that holds the lock, or None."""
+    held = _lock()
+    return held[1] if held else None
+
+
 def render_status(folder):
-    """Progress of the episode render in folder: frames done / total, still running, finished or stopped."""
-    import glob
-    import re
+    """Progress of the job in folder: storyboard, frames done / total, finishing, finished or stopped."""
     log_path = os.path.join(folder, "render.log")
     if not os.path.exists(log_path):
         return None
     log = open(log_path, encoding="utf-8", errors="ignore").read()
-    alive = render_lock_owner() == folder
+    alive = os.path.normcase(render_lock_owner() or "") == os.path.normcase(folder)
     scenes = re.findall(r"CF: scene (\d+)/(\d+) (\S+)", log)
     where, frames_dir = "", os.path.join(folder, "episode_frames")
     if scenes:
@@ -227,13 +143,191 @@ def render_status(folder):
     done = len(glob.glob(os.path.join(frames_dir, "*.png")))
     if re.search(r"CF: video .*episode\.mp4", log):
         text = f"finished: {os.path.join(folder, 'episode.mp4')}"
+    elif re.search(r"CF: storyboard ready", log):
+        text = f"storyboard ready: {os.path.join(folder, 'storyboard.jpg')}"
+    elif "CF: stopped by the user" in log and not alive:
+        text = where + f"stopped at {done}/{total or '?'} frames; run the episode command again to continue"
     elif alive:
-        text = where + (f"rendering: {done}/{total or '?'} frames" if total else "preparing the scene (voices, set, cast)")
+        if "CF: finishing" in log:
+            text = "finishing: titles, transitions, subtitles and sound"
+        elif "CF: storyboard" in log:
+            text = where + "storyboard: building the scene and its shots"
+        else:
+            text = where + (f"rendering: {done}/{total} frames" if total else "preparing the scene (voices, set, cast)")
     else:
-        err = [l for l in log.splitlines() if "Error" in l or "FAILED" in l or "Traceback" in l]
+        err = [ln for ln in log.splitlines() if "Error" in ln or "FAILED" in ln or "Traceback" in ln]
         text = (where + f"stopped at {done}/{total or '?'} frames" + (f" ({err[-1].strip()})" if err else "")
                 + "; run the episode command again to continue from there")
-    return {"alive": alive, "text": text}
+    return {"alive": alive, "text": text, "done": done, "total": total}
+
+
+def start_job(folder, extra, wait=False):
+    """Start episode_job.py on folder in the background (GPU work: one at a time)."""
+    running = render_status(folder)
+    if running and running["alive"]:
+        print("already working on this folder:", running["text"])
+        print("(check again with: python castforge.py status", folder + ")")
+        return None
+    other = render_lock_owner()
+    if other:
+        sys.exit(f"another render is running ({other}); one at a time, the GPU has only 4 GB. "
+                 "Check it with: python castforge.py status <its folder>")
+    try:
+        with open(LOCK, "x", encoding="utf-8") as lock:
+            lock.write(f"{os.getpid()}\n{folder}\n")
+    except FileExistsError:
+        other = render_lock_owner()
+        if other:
+            sys.exit(f"another render is running ({other}); one at a time, the GPU has only 4 GB. "
+                     "Check it with: python castforge.py status <its folder>")
+        try:
+            with open(LOCK, "x", encoding="utf-8") as lock:
+                lock.write(f"{os.getpid()}\n{folder}\n")
+        except FileExistsError:
+            other = render_lock_owner()
+            sys.exit(f"another render is running ({other or 'starting'}); one render at a time")
+    flags = 0x00000008 | 0x00000200 if os.name == "nt" else 0      # DETACHED_PROCESS | NEW_PROCESS_GROUP
+    logf, p = None, None
+    lock_tmp = f"{LOCK}.{os.getpid()}.tmp"
+    try:
+        logf = open(os.path.join(folder, "render.log"), "w", encoding="utf-8")
+        p = subprocess.Popen([sys.executable, os.path.join(ROOT, "episode_job.py"), folder, *extra], stdout=logf,
+                             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, creationflags=flags, cwd=folder)
+        with open(lock_tmp, "w", encoding="utf-8") as lock:
+            lock.write(f"{p.pid}\n{folder}\n")
+        os.replace(lock_tmp, LOCK)
+    except Exception:
+        if p is not None:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True)
+            else:
+                p.terminate()
+        try:
+            os.remove(lock_tmp)
+        except OSError:
+            pass
+        try:
+            with open(LOCK, encoding="utf-8") as lock:
+                reserved_pid = lock.readline().strip()
+            if reserved_pid == str(os.getpid()):
+                os.remove(LOCK)
+        except OSError:
+            pass
+        raise
+    finally:
+        if logf:
+            logf.close()
+    print(f"working in the background (pid {p.pid}); progress: python castforge.py status \"{folder}\"")
+    print("it keeps going if this window or the calling tool closes; a stopped render resumes where it stopped")
+    if wait:
+        p.wait()
+        print(render_status(folder)["text"])
+    return p.pid
+
+
+def stop_job(folder):
+    held = _lock()
+    if not held:
+        return "nothing is rendering"
+    pid, owner = held
+    if os.path.normcase(owner) != os.path.normcase(folder):
+        return f"the running render is for {owner}, not this folder"
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+    else:
+        import signal
+        os.killpg(os.getpgid(pid), signal.SIGTERM)
+    try:
+        os.remove(LOCK)
+    except OSError:
+        pass
+    with open(os.path.join(folder, "render.log"), "a", encoding="utf-8") as f:
+        f.write("\nCF: stopped by the user\n")
+    return "stopped; finished frames are kept, and the episode command continues from there"
+
+
+def speak(text, voice, speed=1.0, fx="clean", out=None):
+    """A spoken line as a WAV (Kokoro on the CPU, so it works while a render uses the GPU)."""
+    import hashlib
+    import json
+    from core import media
+    key = hashlib.sha1(json.dumps([text, voice, speed]).encode()).hexdigest()[:16]
+    out = out or os.path.join(tempfile.gettempdir(), "castforge_voice", f"{voice}_{key}.wav")
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    if os.path.exists(out):
+        return media.process_voice(out, fx)
+    jobs = out + ".jobs.json"
+    json.dump([{"text": text, "voice": voice, "out": out, "speed": speed}], open(jobs, "w", encoding="utf-8"))
+    r = subprocess.run([config.AI_PYTHON, os.path.join(ROOT, "generate", "tts.py"), jobs, "--device", "cpu"],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    os.remove(jobs)
+    if r.returncode != 0 or not os.path.exists(out):
+        raise RuntimeError((r.stderr or r.stdout).strip().splitlines()[-1] if (r.stderr or r.stdout) else "TTS failed")
+    return media.process_voice(out, fx)
+
+
+def doctor():
+    """Check every tool and file CastForge needs; print a plain fix for each problem. Returns the problem count."""
+    problems = []
+
+    def report(ok, what, fix=""):
+        print(("  ok       " if ok else "  PROBLEM  ") + what + ("" if ok else f"\n           fix: {fix}"))
+        if not ok:
+            problems.append(what)
+
+    def run(cmd):
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace")
+            return r.returncode, (r.stdout + r.stderr).strip()
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return 1, str(e)
+
+    print("CastForge doctor\n")
+    code, out = run([config.BLENDER, "--version"])
+    report(code == 0, f"Blender: {out.splitlines()[0] if code == 0 else config.BLENDER}",
+           "install Blender 5.2, or set CASTFORGE_BLENDER to blender.exe")
+    mpfb = glob.glob(os.path.join(os.environ.get("APPDATA", ""), "Blender Foundation", "Blender", "*", "extensions",
+                                  "*", "mpfb*"))
+    report(bool(mpfb), "MPFB (MakeHuman for Blender) extension", "install MPFB 2 from extensions.blender.org")
+    code, out = run([config.FFMPEG, "-hide_banner", "-filters"])
+    report(code == 0 and " subtitles " in out and " loudnorm " in out, "ffmpeg with libass and loudnorm",
+           "install a full ffmpeg build (winget install Gyan.FFmpeg) and put it on PATH")
+    report(os.path.exists(config.FFPROBE) or bool(run([config.FFPROBE, "-version"])[0] == 0), "ffprobe",
+           "it comes with ffmpeg; put it on PATH")
+    report(os.path.exists(config.RHUBARB), "Rhubarb Lip Sync (lip-sync for recorded lines)",
+           "unzip Rhubarb-Lip-Sync-1.14.0-Windows into tools/")
+    code, out = run([config.AI_PYTHON, "-c", "import kokoro, torch, transformers, soundfile; "
+                     "print('cuda' if torch.cuda.is_available() else 'cpu')"])
+    report(code == 0, f"AI Python ({config.AI_PYTHON}): Kokoro, torch, transformers" + (f", {out}" if code == 0 else ""),
+           "pip install kokoro torch transformers soundfile (or set CASTFORGE_AI_PYTHON)")
+    code, _ = run([config.AI_PYTHON, "-c", "import faster_whisper"])
+    report(code == 0, "faster-whisper (automatic transcripts, optional)", "pip install faster-whisper")
+    code, _ = run([config.VENV_PY, "-c", "import mediapipe"])
+    report(code == 0, ".venv with MediaPipe (photo characters)", "python -m venv .venv && .venv\\Scripts\\pip install mediapipe numpy pillow")
+    for model in ("pose_landmarker_heavy.task", "selfie_multiclass_256x256.tflite", "face_landmarker.task"):
+        report(os.path.exists(os.path.join(ROOT, "models", model)), f"model {model}", "download it from Google MediaPipe into models/")
+    report(os.path.exists(os.path.join(ROOT, "asset_index.json")), "asset_index.json (skin tones)",
+           ".venv\\Scripts\\python generate/index_assets.py")
+    lib = os.path.join(config.SFX_DIR, "library.json")
+    missing = []
+    if os.path.exists(lib):
+        import json
+        data = json.load(open(lib, encoding="utf-8"))
+        for group in data.values():
+            for files in group.values():
+                missing += [f for f in files if not os.path.exists(os.path.join(config.SFX_DIR, f))]
+    report(os.path.exists(lib) and not missing, f"sound library ({len(missing)} missing files)" if missing else "sound library",
+           "python generate/make_sfx_library.py sfx --missing")
+    code, out = run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"])
+    report(code == 0, f"GPU: {out}" if code == 0 else "NVIDIA GPU", "update the NVIDIA driver")
+    try:
+        import fastapi  # noqa: F401
+        import uvicorn  # noqa: F401
+        report(True, "web app packages (fastapi, uvicorn)")
+    except ImportError:
+        report(False, "web app packages (fastapi, uvicorn)", f"{sys.executable} -m pip install fastapi uvicorn python-multipart")
+    print("\n" + ("Everything CastForge needs is here." if not problems else f"{len(problems)} problem(s) to fix."))
+    return len(problems)
 
 
 def main():
@@ -241,6 +335,12 @@ def main():
     ap.add_argument("command", nargs="?", default="help")
     ap.add_argument("args", nargs=argparse.REMAINDER)
     a = ap.parse_args()
+
+    def folder_arg():
+        return os.path.abspath(a.args[0] if a.args and not a.args[0].startswith("--") else ".")
+
+    def option(name, default=None):
+        return a.args[a.args.index(name) + 1] if name in a.args else default
 
     if a.command in ("help", "-h", "--help"):
         print(HELP)
@@ -289,46 +389,140 @@ def main():
             build += ["--hair", c.hair]
         subprocess.run(build, check=True)
         print(f"character ready: {os.path.join(c.out_dir, c.name + '.blend')} (previews in {c.name}_preview/)")
+    elif a.command == "set-build":
+        if not a.args:
+            sys.exit("usage: python castforge.py set-build SET_FOLDER")
+        set_dir = os.path.abspath(a.args[0])
+        if not os.path.isdir(set_dir):
+            sys.exit(f"set folder not found: {set_dir}")
+        blueprint_path = os.path.join(set_dir, "set_blueprint.json")
+        if not os.path.isfile(blueprint_path):
+            sys.exit(f"set blueprint not found: {blueprint_path}")
+        with open(blueprint_path, encoding="utf-8") as blueprint_file:
+            blueprint = json.load(blueprint_file)
+        images = sorted(name for name in os.listdir(set_dir)
+                        if name.lower().endswith((".png", ".jpg", ".jpeg"))
+                        and name.lower() != "set_preview.png")
+        image = blueprint.get("image")
+        image_path = os.path.join(set_dir, image) if image else (
+            os.path.join(set_dir, images[0]) if images else None)
+        if not image_path or not os.path.isfile(image_path):
+            sys.exit("set background image not found; add an image to the set folder")
+        geometry_dir = os.path.join(set_dir, ".castforge_geometry")
+        metadata_path = os.path.join(geometry_dir, "set.json")
+        rebuild = not os.path.isfile(metadata_path) or not os.path.isfile(os.path.join(geometry_dir, "set.obj"))
+        if not rebuild:
+            with open(metadata_path, encoding="utf-8") as metadata_file:
+                metadata = json.load(metadata_file)
+            rebuild = (os.path.normcase(metadata.get("image", "")) != os.path.normcase(os.path.abspath(image_path))
+                       or os.path.getmtime(metadata_path) < os.path.getmtime(image_path))
+        if rebuild:
+            subprocess.run([config.AI_PYTHON, os.path.join(ROOT, "generate", "depth_set.py"),
+                            image_path, geometry_dir], check=True)
+        subprocess.run([BLENDER, "-b", "--factory-startup", "--python-exit-code", "1", "-P",
+                        os.path.join(ROOT, "blender", "build_set.py"), "--",
+                        "--set-dir", set_dir, "--geometry-dir", geometry_dir,
+                        "--out", os.path.join(set_dir, "set.blend")], check=True)
+        print(f"3D set ready: {os.path.join(set_dir, 'set.blend')}")
+    elif a.command == "prop-build":
+        if not a.args:
+            sys.exit("usage: python castforge.py prop-build PROP_FOLDER")
+        prop_dir = os.path.abspath(a.args[0])
+        spec_path = os.path.join(prop_dir, "prop.json")
+        if not os.path.isfile(spec_path):
+            sys.exit(f"prop design not found: {spec_path}")
+        with open(spec_path, encoding="utf-8") as spec_file:
+            prop_spec = json.load(spec_file)
+        image_path = os.path.join(prop_dir, prop_spec.get("image", ""))
+        if not os.path.isfile(image_path):
+            sys.exit(f"prop reference image not found: {image_path}")
+        subprocess.run([BLENDER, "-b", "--factory-startup", "--python-exit-code", "1", "-P",
+                        os.path.join(ROOT, "blender", "build_prop_asset.py"), "--",
+                        "--spec", spec_path, "--out", os.path.join(prop_dir, f"{prop_spec['name']}.blend"),
+                        "--preview", os.path.join(prop_dir, "preview.png")], check=True)
+        print(f"3D prop ready: {os.path.join(prop_dir, prop_spec['name'] + '.blend')}")
+    elif a.command == "building-build":
+        if not a.args:
+            sys.exit("usage: python castforge.py building-build BUILDING_FOLDER")
+        building_dir = os.path.abspath(a.args[0])
+        spec_path = os.path.join(building_dir, "building.json")
+        if not os.path.isfile(spec_path):
+            sys.exit(f"building design not found: {spec_path}")
+        with open(spec_path, encoding="utf-8") as spec_file:
+            building_spec = json.load(spec_file)
+        name = building_spec.get("name")
+        if not isinstance(name, str) or not name:
+            sys.exit(f"building design has no valid name: {spec_path}")
+        subprocess.run([BLENDER, "-b", "--factory-startup", "--python-exit-code", "1", "-P",
+                        os.path.join(ROOT, "blender", "build_building_asset.py"), "--",
+                        "--spec", spec_path, "--out", os.path.join(building_dir, f"{name}.blend"),
+                        "--preview", os.path.join(building_dir, "preview.png")], check=True)
+        print(f"3D building ready: {os.path.join(building_dir, name + '.blend')}")
+    elif a.command == "library-build":
+        refresh = "--refresh" in a.args
+        built = skipped = 0
+        for template_id in BUILDING_DESIGNS:
+            spec = default_asset_spec(template_id)
+            asset_dir = os.path.join(ROOT, "library", spec["category"], template_id)
+            spec_path = os.path.join(asset_dir, "building.json")
+            blend_path = os.path.join(asset_dir, f"{template_id}.blend")
+            if os.path.exists(spec_path) or os.path.exists(blend_path):
+                existing_spec = None
+                if os.path.isfile(spec_path):
+                    with open(spec_path, encoding="utf-8") as spec_file:
+                        existing_spec = json.load(spec_file)
+                if not refresh or existing_spec != spec:
+                    print(f"Keeping existing library asset: {os.path.relpath(asset_dir, ROOT)}")
+                    skipped += 1
+                    continue
+            os.makedirs(asset_dir, exist_ok=True)
+            if not os.path.isfile(spec_path):
+                with open(spec_path, "w", encoding="utf-8") as spec_file:
+                    json.dump(spec, spec_file, indent=1)
+            subprocess.run([BLENDER, "-b", "--factory-startup", "--python-exit-code", "1", "-P",
+                            os.path.join(ROOT, "blender", "build_building_asset.py"), "--",
+                            "--spec", spec_path, "--out", blend_path,
+                            "--preview", os.path.join(asset_dir, "preview.png")], check=True)
+            print(f"Reusable asset ready: {os.path.relpath(blend_path, ROOT)}")
+            built += 1
+        print(f"Library starter build complete: {built} built, {skipped} kept.")
     elif a.command == "check":
         sys.exit(1 if check_scene(a.args[0] if a.args else ".") else 0)
-    elif a.command == "episode":
-        folder = os.path.abspath(a.args[0] if a.args and not a.args[0].startswith("--") else ".")
-        wait = "--wait" in a.args
-        quality = a.args[a.args.index("--quality") + 1] if "--quality" in a.args else None
-        running = render_status(folder)
-        if running and running["alive"]:
-            print("already rendering this episode:", running["text"])
-            print("(check again with: python castforge.py status", folder + ")")
-            return
-        other = render_lock_owner()
-        if other:
-            sys.exit(f"another render is running ({other}); one at a time, the GPU has only 4 GB. "
-                     "Check it with: python castforge.py status <its folder>")
-        log_path = os.path.join(folder, "render.log")
-        cmd = [sys.executable, os.path.join(ROOT, "episode_job.py"), folder]
-        if quality:
-            cmd += ["--quality", quality]
-        logf = open(log_path, "w", encoding="utf-8")
-        flags = 0x00000008 | 0x00000200 if os.name == "nt" else 0      # DETACHED_PROCESS | NEW_PROCESS_GROUP
-        p = subprocess.Popen(cmd, stdout=logf, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                             creationflags=flags, cwd=folder)
-        open(LOCK, "w").write(f"{p.pid}\n{folder}\n")
-        print(f"rendering in the background (pid {p.pid}); progress: python castforge.py status \"{folder}\"")
-        print("it keeps going if this window or the calling tool closes; a stopped render resumes where it stopped")
-        if wait:
-            p.wait()
-            print(render_status(folder)["text"])
+    elif a.command in ("episode", "storyboard"):
+        quality = option("--quality")
+        if quality and quality not in config.QUALITY:
+            sys.exit(f"unknown quality {quality!r}; choose {', '.join(config.QUALITY)}")
+        extra = (["--quality", quality] if quality else []) + (["--storyboard"] if a.command == "storyboard" else [])
+        start_job(folder_arg(), extra, wait="--wait" in a.args)
+    elif a.command == "finish":
+        folder = folder_arg()
+        if os.path.normcase(render_lock_owner() or "") == os.path.normcase(folder):
+            sys.exit("this episode is rendering; it is finished automatically when the render ends")
+        sys.exit(subprocess.run([sys.executable, os.path.join(ROOT, "episode_job.py"), folder, "--finish-only",
+                                 *(["--quality", option("--quality")] if option("--quality") else [])]).returncode)
+    elif a.command == "stop":
+        print(stop_job(folder_arg()))
+    elif a.command == "voice":
+        if not a.args or a.args[0].startswith("--"):
+            sys.exit('usage: python castforge.py voice "TEXT" --voice af_heart [--speed 1.0] [--fx clean] [--out f.wav]')
+        print(speak(a.args[0], option("--voice", "af_heart"), float(option("--speed", 1.0)), option("--fx", "clean"),
+                    option("--out")))
+    elif a.command == "transcribe":
+        if not a.args:
+            sys.exit("usage: python castforge.py transcribe FILE.wav")
+        sys.exit(subprocess.run([config.AI_PYTHON, os.path.join(ROOT, "generate", "transcribe.py"), a.args[0]]).returncode)
+    elif a.command == "doctor":
+        sys.exit(1 if doctor() else 0)
     elif a.command == "app":
         import threading
         import webbrowser
         import uvicorn
-        sys.path.insert(0, ROOT)
         threading.Timer(1.5, lambda: webbrowser.open("http://localhost:8765")).start()
         print("CastForge app: http://localhost:8765  (Ctrl+C to stop)")
         open(os.path.join(ROOT, ".app.pid"), "w").write(str(os.getpid()))
         uvicorn.run("app.server:app", host="127.0.0.1", port=8765, log_level="warning", app_dir=ROOT)
     elif a.command == "status":
-        st = render_status(os.path.abspath(a.args[0] if a.args else "."))
+        st = render_status(folder_arg())
         print(st["text"] if st else "no render has been started in this folder")
     else:
         print(f"unknown command '{a.command}'\n{HELP}")

@@ -13,7 +13,8 @@ app the main place to work.
 v2 has four parts:
 
 1. **Fix measured defects in the output.** Today's MP4s have 96 kHz audio, an untagged colour matrix, miss their
-   loudness target by about 1 LU, and keep the MP4 index at the end of the file (details in section 3).
+   loudness target by about 1 LU, and keep the MP4 index at the end of the file; and every set picture renders
+   20-75 % darker and less colourful than the picture it was made from (details in section 3).
 2. **Split rendering from finishing.** Blender renders each scene once (the expensive part). Titles, transitions,
    colour grade, subtitles, chapters, poster and loudness mastering run afterwards in ffmpeg and can be changed
    and re-run in seconds without re-rendering.
@@ -28,7 +29,8 @@ v2 has four parts:
 Goals, in priority order:
 
 1. Picture and sound of the delivered file meet common delivery norms: BT.709 tagged H.264, 48 kHz AAC,
-   integrated loudness within 0.5 LU of the target, true peak at or below -1.5 dBTP, fast-start MP4.
+   integrated loudness within 0.5 LU of the target, true peak at or below -1.0 dBTP after AAC encoding,
+   fast-start MP4. Where no shadow falls, the set picture renders within 8/255 mean error of its source.
 2. Changing anything that does not affect the 3D animation (titles, transitions, grade, subtitles, loudness)
    never triggers a Blender re-render.
 3. Characters act: they show emotion, look at each other, gesture, and hold a posture.
@@ -97,7 +99,7 @@ lays sound strips (dialogue, ambience, music, footsteps, effects), sets render q
 | # | Defect | Evidence | Cause |
 |---|---|---|---|
 | D1 | Audio is 96 kHz AAC | ffprobe: `sample_rate=96000` | `loudnorm` outputs 192 kHz; no `-ar 48000`, so the AAC encoder picks its highest rate and spreads 192 kbps over inaudible bandwidth |
-| D2 | Colour matrix untagged, transfer tagged sRGB | ffprobe: `color_space=unknown color_transfer=iec61966-2-1` | RGB PNG → YUV conversion uses swscale defaults (BT.601) and copies the PNG's sRGB tag; players may shift hues |
+| D2 | Colour matrix untagged, transfer tagged sRGB | ffprobe: `color_space=unknown color_transfer=iec61966-2-1` | RGB PNG → YUV conversion uses swscale defaults (BT.601) and copies the PNG's sRGB tag; players may shift hues. Note: ffmpeg 9 takes stream colour tags from the frames, so `-color_primaries`/`-color_trc` alone do nothing; the fix needs the `setparams` filter (verified) |
 | D3 | MP4 index at the end | atom order `ftyp free mdat moov` | no `-movflags +faststart` |
 | D4 | Loudness misses target | ebur128: -17.0 LUFS for a -16 target | single-pass `loudnorm` is dynamic (rides gain) and runs twice (shot, then episode) |
 | D5 | Possible clipping before mastering | mixdown format `S16` | many sources summed above 0 dBFS are clipped before `loudnorm` can lower them |
@@ -107,6 +109,8 @@ lays sound strips (dialogue, ambience, music, footsteps, effects), sets render q
 | D9 | Blender path hard-coded twice | `castforge.py`, `episode_job.py` | |
 | D10 | `uvicorn` missing from requirements | `.venv` cannot run the app | app runs on system Python by accident |
 | D11 | Docs do not mention working features | `beard`, `hat` designs; `think`, `exit`, `drive` steps; `music`, `set_pitch`, `shots`, `seed` keys | prompt docs fell behind the code |
+| D12 | The set picture renders darker and greyer than its source | Frame 1 (the picture's own viewpoint) vs the source picture, mean brightness per band from dark to white: `test/scene_assets` 0.63 / 0.79 / 0.84 / 0.80 / 0.75 (cinematic: 0.28 ... 0.74); the snowy `02_to_the_truck` whites 0.76 with colour halved. A set-only probe render: mean error 21.1/255 | (a) the shadow catcher's Diffuse BSDF keeps Blender's default 0.8 grey, so unshadowed ratio is at most 0.8; (b) the "expected light" uses the pre-cinematic world strength and ignores light colour; (c) the default AgX view transform remaps the picture's tones (whites to ~0.75) |
+| D13 | A rebuilt character or a new recording does not re-render a scene | `shot.sha256` covers scene.json text and code only | referenced files are not in the fingerprint |
 
 ### 3.2 Quality gaps
 
@@ -187,10 +191,13 @@ blender/
 
 **Render keys vs finishing keys.** `core/schema.py` defines `FINISH_KEYS = {"title", "credits", "transition",
 "transition_seconds", "grade", "vignette", "grain", "subtitles", "master", "poster", "chapter"}`. The render key
-of a scene is the SHA-256 of: the scene JSON with `FINISH_KEYS` removed (sorted keys), the quality name, and the
+of a scene is the SHA-256 of: the scene JSON with `FINISH_KEYS` removed (sorted keys), the quality name, the
 contents of every file in `core/config.RENDER_CODE` (`blender/scene_kit.py`, `acting.py`, `director.py`,
-`world.py`, `props.py`, `core/schema.py`, `core/media.py`). `episode_job.py` and `scene_kit.py` both call
-`core.config.render_key(...)`, so the shot cache and the resumable-frames cache agree.
+`world.py`, `props.py`, `core/schema.py`, `core/media.py`, `core/config.py`), and the path, size and
+modification time of every file the scene reads (background, character `.blend` files, prop models, recorded
+lines), which fixes D13. `episode_job.py` and `scene_kit.py` both call `core.config.render_key(...)`, so the shot
+cache and the resumable-frames cache agree. Grades and transition filters live in `core/finish.py`, which is not
+render code.
 
 **Shot outputs** (written by `scene_kit.py` into the scene folder):
 
@@ -248,21 +255,35 @@ Each feature lists its `scene.json` surface, how it works, and how we know it wo
 
 ### 6.1 Mastering and delivery
 
-- Video (shots and master): `-vf scale=out_color_matrix=bt709:out_range=tv,format=yuv420p`, `-colorspace bt709
-  -color_primaries bt709 -color_trc bt709 -color_range tv`, `-movflags +faststart`. Master: CRF 17, preset `slow`
-  (blocking/draft: CRF 20, `veryfast`). Optional `"master": {"codec": "hevc"}` → libx265 10-bit (`yuv420p10le`,
-  `-tag:v hvc1`).
-- Audio: Blender mixdown as stereo, 48 kHz, `F32` (fixes D5). Master: two-pass `loudnorm` with `linear=true`,
-  then `aresample=48000`, AAC 320 kbps. Defaults `"master": {"loudness": -16, "true_peak": -1.5}`. Presets in the
-  app: -16 (dialogue, default), -14 (YouTube), -23 (broadcast EBU R128).
-- Aspect ratio (a render key): `"aspect": "16:9" | "2.39:1" | "1.85:1" | "4:3" | "1:1"`. Width comes from the
+- Video (shots and master): `-vf scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=
+  color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv` plus the matching `-colorspace` flags,
+  `-movflags +faststart`. Master: CRF 17, preset `slow` (blocking/draft: CRF 20, `veryfast`). Optional
+  `"master": {"codec": "hevc"}` → libx265 10-bit (`yuv420p10le`, `-tag:v hvc1`).
+- Audio: Blender mixdown as stereo, 48 kHz, `F32` (fixes D5). Master: measure integrated loudness (pass 1,
+  `loudnorm=print_format=json`), then one constant gain to the target followed by a peak limiter 0.5 dB under
+  the ceiling (`alimiter` with `level=0` so it never re-levels, `latency=1` so it adds no delay), `aresample=48000`,
+  AAC 320 kbps. A constant gain keeps the mix's dynamics, unlike single-pass `loudnorm`, and unlike `loudnorm`'s
+  linear mode it never silently falls back to dynamic mode. Defaults `"master": {"loudness": -16, "true_peak":
+  -1.5}`. Presets in the app: -16 (dialogue, default), -14 (YouTube), -23 (broadcast EBU R128).
+- Aspect ratio (a render key): `"aspect": "16:9" | "1.85:1" | "2.39:1"`. Width comes from the
   quality; height = width / ratio, rounded to even. The set camera keeps its horizontal field of view, so wider
-  ratios crop the picture vertically, as cinema does.
+  ratios crop the picture vertically, as cinema does. Narrower ratios (4:3, 1:1) are not offered: they would show past
+  the edges of the 16:9 set picture (review B6).
 - New quality `ultra`: 1920 wide, 128 samples, full detail.
+
+- **Set picture fidelity (D12).** The shadow catcher's Diffuse BSDF is white, and its "expected light" is built
+  from the light actually in the scene: sun strength × luminance of the sun colour, world strength × luminance
+  of the world colour, decided before any material is made. Scenes render with the `Standard` view transform,
+  which shows the picture's pixels as they are; the film "look" (contrast, colour) moves to the finishing grade,
+  where it treats picture and characters alike. Measured on a set-only probe render of `test/scene_assets`
+  (mean error vs the source): today 21.1/255; white diffuse + AgX 12.8; white diffuse + `Standard` 6.4;
+  white diffuse + Khronos PBR Neutral 18.9 (it crushes shadows). Character light strengths are re-checked on
+  stills, because `Standard` shows highlights AgX used to compress.
 
 Acceptance: an integration test renders synthetic shots through `finish` and asserts with ffprobe: h264 yuv420p,
 `color_space=bt709`, `color_primaries=bt709`, `color_transfer=bt709`, AAC 48000 Hz stereo, `moov` before `mdat`,
-and ebur128 integrated loudness within 0.5 LU of the target.
+ebur128 integrated loudness within 0.5 LU of the target and true peak at or below -1.0 dBTP; pure red and green
+frames decode back within 14/255. A Blender probe render shows the set picture within 8/255 of its source.
 
 ### 6.2 Finishing: titles, credits, transitions, grade, subtitles, chapters, poster
 
@@ -293,8 +314,10 @@ and ebur128 integrated loudness within 0.5 LU of the target.
   `episode.srt` and `episode.vtt` (think and narrate lines in italics). `"subtitles": "soft"` (default) also
   muxes them as a selectable MP4 text track; `"burn"` draws them into the picture; `"off"` writes only the
   sidecar files.
-- **Chapters**: one per scene (its `chapter`, else its id in title case) in the MP4 metadata, and
-  `episode_chapters.txt` in the `0:00 Title` format that YouTube descriptions use.
+- **Chapters**: one per scene (its `chapter`, else its id in title case), plus the title card (named after the
+  title) and `Credits`, so chapters cover the film from 0:00 as players and YouTube expect, in the MP4 metadata
+  and in `episode_chapters.txt` (`0:00 Title` lines for a YouTube description). With titled chapters the MP4
+  muxer also writes a QuickTime chapter track (a `data` stream); that is expected.
 - **Poster**: `episode_poster.jpg`, the frame at `poster.time`, else the middle of the first close shot with
   dialogue, else one third in; the title is drawn on it when there is one.
 
@@ -372,10 +395,12 @@ must visibly point at the partner in a two-person close-up.
 
 - **Lighting moods**: `"lighting": "auto" | "classic" | "day" | "golden_hour" | "overcast" | "night" |
   "interior_warm" | "interior_cool" | "candlelight" | "moonlight" | "noir" | "studio"`. A mood sets key, fill and
-  rim colour and strength, the world tint, the sun (which casts the characters' shadows onto the set), and the AgX
-  look. `auto` (default) scales the character lights by the background picture's mean luminance
+  rim colour and strength, the world tint and the sun (which casts the characters' shadows onto the set);
+  every scene renders with the `Standard` view transform (6.1), so moods never change how the picture looks. `auto` (default) scales the character lights by the background picture's mean luminance
   (factor clamp((L/0.35)^0.8, 0.3, 1.4)), so characters in a dark picture are lit darkly; `classic` keeps v1's
-  fixed lights. Moods affect only the cast and props (light linking), never the picture.
+  fixed lights. Moods affect only the cast and props (light linking), never the picture. Measured L (sRGB
+  luminance) of the film's sets: cabin inside 0.14 (factor 0.48), truck cab 0.30 (0.88), test café 0.34 (0.98),
+  toy street 0.57 and snowy cabin outside 0.66 (both 1.4).
 - **Weather**: `"weather": {"type": "snow" | "rain", "amount": 0.5, "wind": 0.3, "fog": 0.2}` (or the shorthand
   `"weather": "snow"`). Particles fall in the volume between the camera and the set and are already falling at
   frame 1 (negative start frame); snow drifts (Brownian motion, slow fall), rain streaks (fast fall, motion blur).
@@ -439,6 +464,13 @@ the process tree recorded in the lock (`taskkill /T /F` on Windows) and removes 
 
 The app stays a single FastAPI file plus static files, with no build step (vanilla JavaScript), and keeps
 calling the CLI. The page is split into `app/index.html`, `app/static/app.css` and `app/static/app.js`.
+
+**Current working-tree progress:** `GET /api/schema` now serves the shared vocabulary, and `app/index.html`
+renders scene and finishing settings, cast placement/voice/expression/posture, procedural prop creation and
+editing, schema-driven non-dialogue actions, and dialogue expression/voice-effect/speed/pause controls as forms.
+The advanced JSON editor remains available. This is a first usable editor pass, not completion of the full
+studio plan below: there is no draggable stage map, storyboard/stop/finish toolbar, voice audition, or per-step
+reordering/duplication yet. The UI and render pipeline still need end-to-end browser and Blender validation.
 
 Screens:
 
@@ -531,3 +563,33 @@ If time runs short, ship complete phases in this order rather than partial featu
 1. Default loudness target: keep -16 LUFS (current), or -14 to match YouTube? Proposed: keep -16, offer presets.
 2. Should the new director, eye contact and `auto` lighting be default for existing films? Proposed: yes, with
    the off switches above.
+
+## 12. Review and decisions (Elephant Goldfish, 2026-11-02)
+
+Seven independent reviewers (design, scope, implementation readiness, codebase accuracy x2, comprehension,
+structure, style) reviewed this document against the v1 code: 6 blockers, 16 majors, 3 minors. Full report:
+the session's `egm_review_DESIGN_V2.md`. How each blocker was resolved in the implementation:
+
+| # | Finding | Decision |
+|---|---|---|
+| B1 | Code that only finishing uses must not force re-renders | Grades, transitions, cards and subtitles live in `core/finish.py` and `core/subtitles.py`, which are not render code. `core/media.py` stays render code (its voice chain shapes the shot's sound). Editing render code re-rendering once is accepted |
+| B2 | The render key must be computed once | `episode_job.py` computes it before Blender starts and passes `--render-key`; the frames cache and the shot cache use the same value; the stamp is written last, after all outputs exist |
+| B3 | Generated `scenes/NN_id` folders listed as episodes | The app no longer lists a `scenes/` folder that sits beside a `scene.json` (test added) |
+| B4 | View transform contradiction | `Standard` everywhere; moods change only lights (fixed in 6.5); the AgX look names were removed from the presets |
+| B5 | Gaze control may not exist | Verified on the film's rigs: Rigify `eye_common` drives both eyes (damped track); measured eye direction in head space changes per frame in a rendered scene |
+| B6 | 4:3 and 1:1 render past the picture | Removed; aspects are 16:9, 1.85:1, 2.39:1 |
+
+Majors acted on: non-English voices without phoneme timing fall back to Rhubarb lip-sync; a frame cut off by
+`stop` is rendered again on resume; `tts.py --device cpu` for previews; finishing runs with a 30-minute timeout
+in the app; finishing writes to a temporary file and renames it; finishing-key changes are tested not to change
+the render key. Deferred, with the reviewers: a job queue for all GPU work (character, set and sound builds
+still bypass the lock), Origin checks on the local server, a movie-level set cache, disk clean-up, cross-act
+assembly, a hook for AI-processed shots, and hand-contact acting (hold, carry) the film needs.
+
+Scope cuts considered: the reviewers asked for fewer transitions, grades, props, expressions and gestures.
+These were already built and tested by the time the review finished; they stay, because each is a small table
+entry checked by the schema and prompt-sync tests. Their advice to keep English voices only until lip-sync had
+a fallback was met by the Rhubarb fallback instead.
+
+Not yet measured: character skin and highlights under `Standard` at standard/final quality (checked only at
+blocking quality), and render time at `ultra`.

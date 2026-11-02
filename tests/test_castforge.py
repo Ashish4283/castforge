@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import castforge
+import pytest
 
 
 def write_scene(folder: Path, scene: dict) -> None:
@@ -37,6 +38,25 @@ def test_missing_required_fields_are_reported(tmp_path, capsys):
     assert 'missing "background"' in output
     assert 'missing "cast"' in output
     assert 'missing "script"' in output
+
+
+def test_render_start_uses_an_exclusive_lock_to_prevent_double_launch(tmp_path, monkeypatch):
+    lock = tmp_path / ".render.lock"
+    monkeypatch.setattr(castforge, "LOCK", str(lock))
+    monkeypatch.setattr(castforge, "render_status", lambda folder: None)
+    monkeypatch.setattr(castforge, "render_lock_owner", lambda: None)
+    launches = []
+
+    class Process:
+        pid = 12345
+
+    monkeypatch.setattr(castforge.subprocess, "Popen", lambda *args, **kwargs: launches.append(args) or Process())
+    castforge.start_job(str(tmp_path), [], wait=False)
+
+    assert lock.read_text(encoding="utf-8").splitlines() == ["12345", str(tmp_path)]
+    with pytest.raises(SystemExit, match="another render is running"):
+        castforge.start_job(str(tmp_path / "second"), [], wait=False)
+    assert len(launches) == 1
 
 
 def test_unknown_voice_is_reported(tmp_path, capsys):

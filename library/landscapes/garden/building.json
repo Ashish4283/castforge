@@ -1,0 +1,18 @@
+{
+ "name": "garden",
+ "template": "garden",
+ "family": "garden",
+ "category": "landscapes",
+ "footprint": [
+  24.0,
+  20.0
+ ],
+ "floors": 1,
+ "size": [
+  24.0,
+  20.0,
+  0.2
+ ],
+ "wall_color": "#577447",
+ "roof_color": "#88775a"
+}

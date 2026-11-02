@@ -6,7 +6,7 @@ Goal: a very easy tool for making animation. Every step is a script, so the web 
 **Free and local.** Everything runs on the laptop (RTX 3050 4 GB) with free tools and CC0 assets. Nothing uses AWS
 or paid GPUs.
 
-## Status (2026-11-01)
+## Status (2026-11-02)
 
 | Stage | State |
 |---|---|
@@ -16,8 +16,12 @@ or paid GPUs.
 | 4. Face likeness | **Working.** MediaPipe 478 landmarks → ~40 MakeHuman face shapes fitted (error ~2.5 → ~1.3 mm) + the photo's face blended onto the head through a landmark-guided warp (eyes/mouth interior kept 3D); nearest eye colour. Needs a face close-up (`--face-photo`) for a sharp result |
 | 5a. 3D set from the background (`generate/depth_set.py`) | **Working.** Depth Anything V2 (local) + floor calibration → solid relief set (characters stand among the furniture, hidden behind it, shadows on it) and a walkable-floor map; walks route around obstacles (A*), positions inside furniture snap to free floor; close-ups dolly in near the picture's viewpoint with shallow depth of field. `"set": "flat"` turns it off |
 | 5b. Set-to-props (`generate/set_props.py`) | Camera-matched floor props from marked image-space paths; the generated road mesh uses the background's UV texture and is cut out of the relief to prevent overlapping surfaces. Photographed doors can be fitted as hinged picture props. |
-| 5. Scene kit (`blender/scene_kit.py`) | **Working (lip-sync under test).** scene.json → background with shadow-receiving floor, cast placement, walk (planted feet), face, say (Rhubarb lip-sync), open/enter/exit doors, wait; blinks, breathing, talking head motion; Kokoro draft voices and WAV dialogue for final performances; footsteps on every landing (Stable Audio Open library); MP4 with mixed audio |
-| 6. Web app | Working: local movie/scene browser, character and render controls, form-based dialogue editing and WAV voice uploads; advanced scene JSON remains available |
+| 5c. User-directed set assets (`app` → Sets) | Image-guided forms let users mark an image region, choose a procedural 3D object and its dimensions, and link a door to another set. **Build 3D set** creates a reusable `.blend` and preview without changing movie scenes. This is a depth-relief background plus modeled objects, not full automatic reconstruction of every pixel into 3D. |
+| 5d. Reusable image-guided props (`app` → Props) | Choose a supported procedural prop, enter dimensions/material/color, and upload a reference image. CastForge builds a reusable `.blend` and preview; the image is kept in Blender as an editing reference, not converted into geometry or a texture. |
+| 5e. Shared city asset library (`app` → Library) | Reusable procedural buildings, event arenas, landscapes, trees, vehicles, and road modules can be customized and used across movies. |
+| 5. Scene kit (`blender/scene_kit.py`) | **Working.** scene.json → set picture shown true to its source (D12 fix: within ~6/255), cast, walk with pace (planted feet), face, look, say/think/narrate (Rhubarb or exact TTS lip-sync), facial expressions on the 52 ARKit shapes, eye contact with saccades, gestures (wave, point, shrug, nod, bow, ...), posture, doors, sitting; lighting moods matched to the picture's brightness, snow/rain/fog, 40 prop types with flickering firelight; an automatic director (establishing wide, medium then close, two-shots, reaction cutaways, push-ins) plus explicit camera steps; dialogue levelled and cleaned, voice effects, music/ambience ducking, stereo-placed footsteps and effects; float stereo mix |
+| 5f. Finishing (`core/finish.py`) | **Working.** Without re-rendering: title card, scrolling credits, transitions (cut, fade, dissolve, wipes...), colour grade per scene, vignette and grain, subtitles (selectable track or burnt in, SRT/VTT), chapters, poster, loudness mastering (-16 LUFS, peak -1.5). Output: BT.709-tagged H.264, 48 kHz AAC 320k, fast-start MP4 |
+| 6. Web app | **Working.** Schema-driven scene, cast, prop, action and finishing forms; dialogue with "Hear it" voice previews and WAV uploads; Storyboard, Render, Stop and Finish-only buttons; storyboard and download links; sets, props and the city library |
 | 7. YouTube upload | not started |
 
 Validated on three internal example photos. Their images and generated renders are not included in this
@@ -53,6 +57,54 @@ blender -b --factory-startup -P blender/build_character.py -- --spec spec.json -
 
 Gender, age and height come from the user (a form field in the web app), not from the photo.
 
+## Turn a set picture into a reusable set asset
+
+Open the app and go to **Sets**. Add one or more details, mark each detail's region on the set image, adjust its
+real-world width/depth/height, then save or choose **Build 3D set**. For a door, link another set to use its
+background as the view beyond the door. The app writes `set_blueprint.json`, then creates `set.blend` and
+`set_preview.png` in that set's folder. The source movie's scenes are not edited.
+
+The generated asset combines the depth-relief background with modeled objects. It does not infer a complete
+walkable 3D world from a single image; inspect and adjust dimensions and placements in the Blender asset as needed.
+
+## Build a reusable prop
+
+Open the app and go to **Props**. Give the asset a name, choose a supported procedural prop type, enter its
+real-world dimensions and material, then upload a PNG, JPEG, or WEBP reference image. **Build Blender prop**
+creates `movies/<movie>/props/<name>/<name>.blend` and a preview. The image is packed into the `.blend` in its
+own non-rendering reference collection. In an open episode, choose **Add to open scene** on a completed prop
+to reuse the model; save the episode to keep the reference.
+
+This is the first step toward a reusable asset catalog. The current prop builder uses known procedural shapes;
+it does not reconstruct arbitrary images, and uploaded prop builds are stored per movie. The shared starter
+building library is separate; roads and vehicles should be added as dedicated asset families with reusable
+templates, not treated as ordinary small props.
+
+## Reuse city-library assets
+
+The **Library** tab keeps the same scene studio and lets you switch the reusable asset layer by category:
+
+- **Buildings:** hut, house, row house, store, big store, shopping mall, hospital, station, police station, castle,
+  hotel, restaurant, diner, and jail.
+- **Arenas & venues:** stadium, wrestling arena, Roman arena, fighting-game arena, and disco arena.
+- **Landscapes:** garden with paths, planting beds, benches, and a fountain.
+- **Trees:** oak, pine, and palm.
+- **Vehicles:** car, jeep, truck, helicopter, and airplane.
+- **Roads:** straight segment, curved segment, crossroads, and T-junction.
+
+Choose a design, adjust dimensions, floors where relevant, and colors, then **Build and save to library**. The app
+creates a reusable `.blend`, a preview, and a small JSON specification under `library/<category>/<name>/`.
+Use **Add to open scene** to reference a shared model from any movie; the scene stores a relative path, so the model
+does not get copied into movie folders. `python castforge.py library-build` creates any missing default starter
+assets without replacing existing designs. `--refresh` rebuilds only starter assets whose specifications still
+match the built-in defaults, so customized library assets are left untouched.
+
+These are original procedural starter models, not copied assets from a commercial game or studio. They provide
+recognizable exteriors and silhouettes, but most are not complete production-ready sets: building interiors,
+openable architectural doors, articulated vehicle controls, and animated rotors/wheels are future work. Keep
+movie-specific characters, reference photos, and scene files out of the shared catalog. Curated library `.blend`
+files are intended to be reviewed before being added to GitHub so other CastForge users can reuse them.
+
 **Photo tips (for the web app's upload screen):** one person, head to toe, facing the camera, plain background,
 arms slightly away from the body (so the waist can be measured).
 
@@ -70,17 +122,27 @@ The back, sides and top of the head are therefore always complete and animate co
 ## Rendering
 
 ```
-python castforge.py episode <folder> [--quality blocking|draft|standard|final] [--wait]
-python castforge.py status <folder>
+python castforge.py check <folder>                  # mistakes in scene.json, in plain words
+python castforge.py storyboard <folder> [--wait]    # one still per shot -> storyboard.jpg (about a minute a scene)
+python castforge.py episode <folder> [--quality blocking|draft|standard|final|ultra] [--wait]
+python castforge.py status <folder>                 # progress; stop with: python castforge.py stop <folder>
+python castforge.py finish <folder>                 # redo titles, transitions, grade, subtitles, sound only
+python castforge.py voice "Ho ho ho" --voice am_santa [--fx phone]   # hear a line (CPU, works during a render)
+python castforge.py transcribe line.wav             # the words in a recording (for lip-sync transcripts)
+python castforge.py doctor                          # is every tool installed?
 ```
 
-- Runs in the background (one render at a time; the 4 GB GPU cannot run two) and resumes after a stop.
-- Quality: blocking (default, 480x270), draft (640x360), standard (960x540), final (scene resolution).
-  Timing, voices, lip-sync and sound are identical at every level.
-- An episode can be split into scenes (`"cast"` once + `"scenes": [...]`). Each scene is rendered in its own
-  Blender process into `scenes/NN_id/shot.mp4` (+ .blend), unchanged scenes are reused, and the shots are
-  joined into `episode.mp4`. The per-scene shots are the hand-off unit for ForgeFusion (CastForge +
-  ComfyUI/ForgeFilms).
+- Runs in the background (one GPU job at a time; the 4 GB GPU cannot run two) and resumes after a stop.
+- Quality: blocking (480 wide), draft (640), standard (960), final (scene resolution), ultra (1920). `"aspect"`
+  ("16:9", "2.39:1", "1.85:1", "4:3", "1:1") sets the picture shape. Timing, voices and sound are identical at every level.
+- Every scene (a single-scene folder too) renders in its own Blender process into `scenes/NN_id/` (`shot.mp4`,
+  `shot.wav` float stereo mix, `shot.timeline.json`, `shot.blend`). A scene re-renders only when its render key
+  changes: the scene without its finishing settings, the quality, the render code, and the files it reads (a
+  rebuilt character or new recording counts). Then finishing builds `episode.mp4`, `episode.srt/.vtt`,
+  `episode_chapters.txt` and `episode_poster.jpg`.
+- Finishing settings (no re-render): `"title"`, `"credits"`, `"transition"`, `"transition_seconds"`, `"grade"`,
+  `"vignette"`, `"grain"`, `"subtitles"` (soft/burn/off), `"master"` (`loudness`, `true_peak`, `codec`: h264/hevc,
+  `fade_in`, `fade_out`), `"poster"`, and per scene `"chapter"`. Design and measurements: `docs/DESIGN_V2.md`.
 
 ## Make a scene
 
@@ -101,7 +163,9 @@ the scene's `voices/` folder, and use a consistent voice for each character. Exa
 Kokoro's local voices are currently draft-quality and can sound synthetic, especially when slowed down. Use them
 to block timing; replace dialogue with reviewed performances before a final render. In the web app, add or edit
 dialogue in the Dialogue and voices form, then upload a WAV performance on that line; the exact transcript is
-saved for lip-sync. The advanced scene JSON editor is optional. `floor` picks footstep sounds
+saved for lip-sync. The Episodes editor also exposes scene settings, cast placement, procedural props, action
+steps and finishing controls as forms generated from the shared schema. The advanced scene JSON editor remains
+available for settings that do not yet have a dedicated control. `floor` picks footstep sounds
 (wood/concrete/carpet/tile). Install Rhubarb Lip Sync 1.14 locally under the ignored
 `tools/Rhubarb-Lip-Sync-1.14.0-Windows/` folder and generate local sound assets with
 `python generate/make_sfx_library.py sfx`. Generated audio and third-party binaries are not included here.
@@ -186,10 +250,12 @@ shot; treat its films as a craft and production benchmark, not a feature checkli
    - fog/clouds as volume shaders (light on VRAM);
    - baked cloth (parachute, capes);
    - props from TripoSR (MIT).
-4. Set builder (real 3D rooms/streets instead of a 2.5D background image):
+4. Set and reusable city asset builder (real 3D rooms/streets instead of a 2.5D background image):
    - props with options (`spin` for fans; hinged windows and doors);
    - cloth curtains/bedsheets with a pinned top edge and wind;
-   - Cycles option for final renders (OptiX, Fast GI, fewer bounces).
+   - Cycles option for final renders (OptiX, Fast GI, fewer bounces);
+   - expand the shared catalog with more road/street modules, vehicle variants, and curated props; add
+     per-use customization and detailed interiors/door interactions for building templates.
 5. Toon style (`"style": "toon"`): Line Art ink outlines + cel shading, the OpenToonz look without hand drawing.
 6. Web app (local FastAPI): upload photo → form (gender/age/height) → preview turntable → download .blend.
 4. Render + YouTube Data API upload (with the synthetic-content disclosure).

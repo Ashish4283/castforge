@@ -1,0 +1,18 @@
+{
+ "name": "wrestling_arena",
+ "template": "wrestling_arena",
+ "family": "arena",
+ "category": "arenas",
+ "footprint": [
+  34.0,
+  26.0
+ ],
+ "floors": 2,
+ "size": [
+  34.0,
+  26.0,
+  14.0
+ ],
+ "wall_color": "#28272d",
+ "roof_color": "#17181d"
+}

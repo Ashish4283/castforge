@@ -1,0 +1,18 @@
+{
+ "name": "jeep",
+ "template": "jeep",
+ "family": "vehicle",
+ "category": "vehicles",
+ "footprint": [
+  2.0,
+  4.5
+ ],
+ "floors": 1,
+ "size": [
+  2.0,
+  4.5,
+  2.0
+ ],
+ "wall_color": "#66734a",
+ "roof_color": "#343c2c"
+}

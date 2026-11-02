@@ -1,0 +1,18 @@
+{
+ "name": "roman_arena",
+ "template": "roman_arena",
+ "family": "arena",
+ "category": "arenas",
+ "footprint": [
+  42.0,
+  32.0
+ ],
+ "floors": 3,
+ "size": [
+  42.0,
+  32.0,
+  14.0
+ ],
+ "wall_color": "#b29a76",
+ "roof_color": "#68553e"
+}

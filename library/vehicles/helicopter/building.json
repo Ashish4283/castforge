@@ -1,0 +1,18 @@
+{
+ "name": "helicopter",
+ "template": "helicopter",
+ "family": "vehicle",
+ "category": "vehicles",
+ "footprint": [
+  3.2,
+  10.0
+ ],
+ "floors": 1,
+ "size": [
+  3.2,
+  10.0,
+  2.0
+ ],
+ "wall_color": "#64715b",
+ "roof_color": "#303739"
+}

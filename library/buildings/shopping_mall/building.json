@@ -1,0 +1,18 @@
+{
+ "name": "shopping_mall",
+ "template": "shopping_mall",
+ "family": "building",
+ "category": "buildings",
+ "footprint": [
+  30.0,
+  18.0
+ ],
+ "floors": 3,
+ "size": [
+  30.0,
+  18.0,
+  0
+ ],
+ "wall_color": "#c8d2d3",
+ "roof_color": "#56676c"
+}

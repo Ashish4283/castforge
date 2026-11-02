@@ -1,0 +1,18 @@
+{
+ "name": "t_junction",
+ "template": "t_junction",
+ "family": "road",
+ "category": "roads",
+ "footprint": [
+  24.0,
+  24.0
+ ],
+ "floors": 1,
+ "size": [
+  24.0,
+  24.0,
+  0.2
+ ],
+ "wall_color": "#383b40",
+ "roof_color": "#e8e4d7"
+}

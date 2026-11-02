@@ -3,7 +3,9 @@
 The voice name's first letter picks the language, e.g. af_heart / am_michael (American English),
 bf_emma / bm_george (British English), hf_alpha / hm_omega (Hindi).
 
-    python generate/tts.py jobs.json          # [{"text": ..., "voice": ..., "out": ..., "speed": 1.0}, ...]
+    python generate/tts.py jobs.json [--device cpu]   # [{"text": ..., "voice": ..., "out": ..., "speed": 1.0}, ...]
+
+--device cpu keeps the GPU free (voice previews while a render runs); the default uses CUDA when there is one.
 """
 import json
 import sys
@@ -41,11 +43,12 @@ def word_cues(phonemes, start, end):
 
 
 jobs = json.load(open(sys.argv[1], encoding="utf-8"))
+device = sys.argv[sys.argv.index("--device") + 1] if "--device" in sys.argv else None
 pipes = {}
 for job in jobs:
     lang = job["voice"][0]
     if lang not in pipes:
-        pipes[lang] = KPipeline(lang_code=lang, repo_id="hexgrad/Kokoro-82M")
+        pipes[lang] = KPipeline(lang_code=lang, repo_id="hexgrad/Kokoro-82M", device=device)
     chunks, cues, offset = [], [], 0.0
     for r in pipes[lang](job["text"], voice=job["voice"], speed=job.get("speed", 1.0)):
         audio = r.audio.numpy() if hasattr(r.audio, "numpy") else np.asarray(r.audio)

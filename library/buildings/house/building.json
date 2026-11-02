@@ -1,0 +1,18 @@
+{
+ "name": "house",
+ "template": "house",
+ "family": "building",
+ "category": "buildings",
+ "footprint": [
+  9.0,
+  7.0
+ ],
+ "floors": 2,
+ "size": [
+  9.0,
+  7.0,
+  0
+ ],
+ "wall_color": "#d2c2a5",
+ "roof_color": "#693e32"
+}

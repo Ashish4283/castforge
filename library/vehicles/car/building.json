@@ -1,0 +1,18 @@
+{
+ "name": "car",
+ "template": "car",
+ "family": "vehicle",
+ "category": "vehicles",
+ "footprint": [
+  1.85,
+  4.3
+ ],
+ "floors": 1,
+ "size": [
+  1.85,
+  4.3,
+  2.0
+ ],
+ "wall_color": "#4a77a8",
+ "roof_color": "#283039"
+}

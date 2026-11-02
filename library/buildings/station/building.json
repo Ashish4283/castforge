@@ -1,0 +1,18 @@
+{
+ "name": "station",
+ "template": "station",
+ "family": "building",
+ "category": "buildings",
+ "footprint": [
+  24.0,
+  12.0
+ ],
+ "floors": 2,
+ "size": [
+  24.0,
+  12.0,
+  0
+ ],
+ "wall_color": "#c5b99d",
+ "roof_color": "#4b5155"
+}

@@ -61,6 +61,33 @@ Rules:
   {"who": "<name>", "do": "stand"}
   {"do": "sound", "sfx": "door_bell" | "door_open" | "door_close" | "chair_sit" | "cup_place"}
   {"do": "wait", "seconds": 1.0}
+  {"who": "<name>", "do": "think", "text": "<an inner thought, heard but not spoken>"}
+  {"who": "<name>", "do": "exit", "door": "<door prop id>"}   (walks out through a door)
+  {"who": "<name>", "do": "drive", "seconds": 8}   (hands on a steering wheel)
+  {"do": "narrate", "text": "<voice-over>", "voice": "<voice>"}   (a narrator nobody sees)
+- Acting (use it: it makes the scene alive):
+  add "expression" to a say/think line: neutral, smile, happy, sad, angry, surprised, scared,
+  disgusted, worried, thinking, skeptical, determined, tired, smug.
+  {"who": "<name>", "do": "emote", "expression": "<expression>", "seconds": 2}   (without seconds it stays)
+  {"who": "<name>", "do": "gesture", "type": "<gesture>"}   gesture is one of: wave, raise_hand, point (add
+   "target": "<name>" or [x, y]), shrug, nod, shake_head, hands_on_hips, beckon, bow, look_around,
+   thumbs_up, cheer
+  {"who": "<name>", "do": "posture", "posture": "<posture>"}   neutral, confident, proud, relaxed, slumped,
+   tense, tired (a cast member can also start with "expression" and "posture")
+  {"who": "<name>", "do": "look", "target": "<name>" | "camera" | [x, y] | "left" | "right" | "up" | "down",
+   "seconds": 1.5}   (head and eyes only)
+  walk can have "pace": "stroll" | "normal" | "brisk" | "hurry".
+  a line can have "fx": "phone" | "radio" | "megaphone" | "echo" | "robot" for a voice effect.
+- Sound and camera:
+  {"do": "music", "bed": "<library music name>", "volume": 0.35}   and later {"do": "music", "stop": true}
+  {"do": "camera", "shot": "wide" | "medium" | "close" | "two_shot" | "over_shoulder", "on": "<name>",
+   "move": "static" | "push_in" | "pull_out" | "pan_left" | "pan_right" | "handheld", "seconds": 4}
+   (only for a shot that matters; the automatic director chooses good shots by itself)
+- Scene settings (optional): "lighting": auto, day, golden_hour, overcast, night, interior_warm,
+  interior_cool, candlelight, moonlight, noir, studio; "weather": "snow" or "rain" (or
+  {"type": "snow", "amount": 0.5, "fog": 0.2}); "grade": neutral, warm, cool, teal_orange, night, noir,
+  vintage, bleach, dream; for an episode: "title": {"text": "<film title>"}, "credits": {"lines": [...]},
+  "transition": "cut" | "fade" | "dissolve" between scenes.
 - Make it real: people who arrive come in through a door ("enter"; give that person no "position"
   in the cast). A door for arrivals stands at the back of the room (y about 2.3) with
   "rotation": 0; add "bell": true for a shop door bell. People who are waiting sit: give them
@@ -77,7 +104,10 @@ Rules:
     stool (0.38/0.38/0.75), bench (1.4/0.4/0.45), sofa (1.9/0.85/0.85), bed (1.6/2.0/0.55),
     shelf (0.9/0.32/1.8), counter (2.0/0.6/0.95), door (0.9/0.06/2.05), wall (3.0/0.12/2.6),
     window (1.2/0.08/1.2), lamp (0.35/0.35/1.6, gives warm light), cup (0.08/0.08/0.1),
-    plant (0.45/0.45/1.0), box (0.5/0.5/0.5), tv (1.1/0.25/1.2).
+    plant (0.45/0.45/1.0), box (0.5/0.5/0.5), tv (1.1/0.25/1.2),
+    armchair (0.85/0.85/1.0), desk, bookshelf, fireplace, christmas_tree, pine_tree, lantern, candle,
+    street_lamp, snowman, gift, sack, crate, barrel, riser, rug, picture_frame, bottle, book, phone, laptop,
+    cash_register, crowbar, santa_hat, pickup_truck, steering_wheel, car_radio (each has a sensible default size).
   material is one of: wood, metal, fabric, leather, glass, plastic, ceramic, stone.
   Leave walking space: keep props at least 0.6 m from where people stand and walk, and do not put
   props between two people who talk. Use props only where they help the story (0-8 of them).

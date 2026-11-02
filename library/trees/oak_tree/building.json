@@ -1,0 +1,18 @@
+{
+ "name": "oak_tree",
+ "template": "oak_tree",
+ "family": "tree",
+ "category": "trees",
+ "footprint": [
+  5.0,
+  5.0
+ ],
+ "floors": 1,
+ "size": [
+  5.0,
+  5.0,
+  8.0
+ ],
+ "wall_color": "#6b472b",
+ "roof_color": "#41633a"
+}

@@ -1,0 +1,18 @@
+{
+ "name": "straight_road",
+ "template": "straight_road",
+ "family": "road",
+ "category": "roads",
+ "footprint": [
+  10.0,
+  30.0
+ ],
+ "floors": 1,
+ "size": [
+  10.0,
+  30.0,
+  0.2
+ ],
+ "wall_color": "#383b40",
+ "roof_color": "#e8e4d7"
+}

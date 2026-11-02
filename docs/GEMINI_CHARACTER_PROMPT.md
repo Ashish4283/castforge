@@ -17,6 +17,8 @@ no explanation. Format:
   "build": "slim" | "average" | "athletic" | "heavy" | "muscular",
   "skin": "#rrggbb",
   "hair": {"length": "none" | "short" | "medium" | "long", "style": "auto", "color": "#rrggbb"},
+  "beard": "none" | "scruffy" | "full" | "long" | "faun" | "moustache",
+  "hat": "none" | "santa" | "newsboy",
   "eyes": "brown" | "brownlight" | "green" | "grey" | "blue" | "bluegreen" | "deepblue" | "lightblue" | "ice",
   "outfit": {"garment": "trousers" | "shorts" | "skirt" | "dress", "sleeves": "short" | "long",
              "top": "#rrggbb", "bottom": "#rrggbb", "shoes": "#rrggbb"}
