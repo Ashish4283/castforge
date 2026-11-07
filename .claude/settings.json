@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./movies/**)",
+      "Read(./library/**)",
+      "Read(./test/**)",
+      "Read(./tools/**)",
+      "Read(./sfx/**)",
+      "Read(./asset_packs/**)",
+      "Read(./asset_packs_unused/**)",
+      "Read(./.venv/**)",
+      "Read(./asset_index.json)",
+      "Read(./face_map.json)",
+      "Read(./**/*.blend)"
+    ]
+  }
+}

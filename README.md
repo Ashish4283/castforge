@@ -238,27 +238,4 @@ shot; treat its films as a craft and production benchmark, not a feature checkli
 
 ## Roadmap
 
-1. Face likeness from the photo (project the face onto the head texture; FLAME-style shape fit later).
-2. Scene kit: import Gemini backgrounds/audio/dialogue; place characters; walk/stop/turn/sit clips (free mocap,
-   e.g. CMU, retargeted to Rigify); lip-sync from dialogue audio (Rhubarb Lip Sync → the visemes already on the
-   character).
-3. More scene actions (each one a step type in scene.json):
-   - `hold`: IK hands pinned to a prop (cup, phone, gun grip, handlebars);
-   - `sit`;
-   - `drive`/`fly`: vehicle on a path;
-   - `hit`/`crash`: Blender rigid-body physics, with impact sounds placed at the simulated contact frames;
-   - fog/clouds as volume shaders (light on VRAM);
-   - baked cloth (parachute, capes);
-   - props from TripoSR (MIT).
-4. Set and reusable city asset builder (real 3D rooms/streets instead of a 2.5D background image):
-   - props with options (`spin` for fans; hinged windows and doors);
-   - cloth curtains/bedsheets with a pinned top edge and wind;
-   - Cycles option for final renders (OptiX, Fast GI, fewer bounces);
-   - expand the shared catalog with more road/street modules, vehicle variants, and curated props; add
-     per-use customization and detailed interiors/door interactions for building templates.
-5. Toon style (`"style": "toon"`): Line Art ink outlines + cel shading, the OpenToonz look without hand drawing.
-6. Web app (local FastAPI): upload photo → form (gender/age/height) → preview turntable → download .blend.
-4. Render + YouTube Data API upload (with the synthetic-content disclosure).
-
-Alternative for photo-exact geometry: `generate/space_reconstruct.py` (PSHuman on a free Hugging Face Space). The
-free GPU quota is too small for regular use.
+See `docs/ROADMAP.md`. Working rules and the code map for contributors: `CLAUDE.md`.

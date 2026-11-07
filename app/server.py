@@ -768,6 +768,7 @@ def gpu():
 
 
 app.mount("/media", StaticFiles(directory=MOVIES), name="media")
+app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
 app.mount("/library-media", StaticFiles(directory=LIBRARY), name="library-media")
 
 

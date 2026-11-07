@@ -1,0 +1,97 @@
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1c1a; --muted: #6b6862; --line: #e3e0da;
+    --accent: #b3261e; --accent-ink: #ffffff; --ok: #1f7a3d; --warn: #9a5b00; --code: #faf9f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161513; --panel: #201f1c; --ink: #ecebe7; --muted: #a29e96; --line: #34322e;
+            --accent: #e0574d; --accent-ink: #160f0e; --ok: #5cc985; --warn: #e5a54a; --code: #1b1a18; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 18px; margin: 0 12px 0 0; letter-spacing: .2px; }
+  header h1 span { color: var(--accent); }
+  nav { display: flex; gap: 4px; }
+  nav button { background: none; border: 0; padding: 7px 12px; border-radius: 8px; color: var(--muted); font: inherit; cursor: pointer; }
+  nav button.on { background: var(--bg); color: var(--ink); font-weight: 600; }
+  .spacer { flex: 1; }
+  #gpu { font-size: 13px; color: var(--muted); }
+  #gpu.busy { color: var(--warn); }
+  main { max-width: 1280px; margin: 0 auto; padding: 20px; }
+  select, input, textarea { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; }
+  textarea { width: 100%; font: 13px/1.5 ui-monospace, Consolas, monospace; background: var(--code); }
+  button.b { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 7px 13px; border-radius: 8px; cursor: pointer; }
+  button.b:hover { border-color: var(--muted); }
+  button.p { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .char { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .char img, .char .ph { width: 100%; aspect-ratio: 3/5; object-fit: cover; display: block; background: var(--bg); }
+  .char .ph { display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+  .char div.n { padding: 8px 10px; font-weight: 600; font-size: 14px; }
+  .two { display: grid; grid-template-columns: 220px 1fr; gap: 16px; }
+  @media (max-width: 800px) { .two { grid-template-columns: 1fr; } }
+  .list button { display: block; width: 100%; text-align: left; margin-bottom: 4px; }
+  .list button.on { border-color: var(--accent); }
+  .scene-picker { margin-bottom: 16px; }
+  .scene-picker h2 { margin: 0; }
+  .scene-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+  .scene-list button { width: 100%; text-align: left; }
+  .scene-list button.on { border-color: var(--accent); }
+  .episode-workspace { display: grid; gap: 16px; }
+  .studio-panel { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
+  .studio-panel h3 { font-size: 14px; margin: 14px 0 8px; }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+  .field { display: grid; gap: 4px; min-width: 0; align-content: start; }
+  .field label, .field-title { font-size: 13px; font-weight: 600; }
+  .field small { color: var(--muted); font-size: 12px; }
+  .field input, .field select { width: 100%; }
+  .studio-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .editor-list { display: grid; gap: 8px; margin-top: 8px; }
+  .editor-item { border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+  .editor-item .row > input, .editor-item .row > select { min-width: 110px; }
+  .action-form { display: grid; gap: 8px; margin-top: 8px; }
+  .action-form .row > * { flex: 1; min-width: 130px; }
+  .action-form .row > button { flex: 0 0 auto; }
+  .check-field { display: flex; align-items: center; gap: 7px; min-height: 38px; }
+  pre.out { white-space: pre-wrap; background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 13px; margin: 10px 0 0; max-height: 220px; overflow: auto; }
+  .bar { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .5s; }
+  video { width: 100%; border-radius: 10px; background: #000; }
+  .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  .tabs2 { display: flex; gap: 6px; margin-bottom: 10px; }
+  .sets { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 14px; }
+  .set-card { min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+  .set-stage { position: relative; overflow: hidden; border-radius: 8px; background: var(--bg); touch-action: none; }
+  .set-stage img { width: 100%; height: auto; display: block; }
+  .set-overlays { position: absolute; inset: 0; pointer-events: none; }
+  .set-mark { position: absolute; border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); pointer-events: none; }
+  .set-mark span { position: absolute; top: 0; left: 0; padding: 1px 4px; background: var(--accent); color: var(--accent-ink); font-size: 11px; }
+  .set-stage.drawing { cursor: crosshair; }
+  .set-card h3 { margin: 10px 0 4px; font-size: 16px; }
+  .set-preview { margin: 12px 0 0; }
+  .set-preview img { width: 100%; border-radius: 8px; display: block; }
+  .set-card .set-object { display: grid; gap: 7px; padding: 9px 0; border-top: 1px solid var(--line); }
+  .set-card .set-object .row > * { flex: 1 1 80px; min-width: 0; }
+  .set-card .set-object input, .set-card .set-object select { min-width: 0; width: 100%; }
+  .set-card .set-object label { display: grid; gap: 3px; color: var(--muted); font-size: 12px; }
+  .set-card .set-description { width: 100%; margin: 8px 0; }
+  .set-card .set-actions { margin-top: 10px; }
+  .set-card .set-hint { min-height: 18px; }
+  .help pre { white-space: pre-wrap; }
+  .hidden { display: none !important; }
+  .msg { margin-top: 8px; font-size: 13px; } .msg.err { color: var(--accent); } .msg.ok { color: var(--ok); }
+  #status { display: block; max-width: 100%; overflow-wrap: anywhere; }
+  @media (max-width: 640px) {
+    main { padding: 12px; }
+    .episode-workspace, .episode-workspace > .card, .studio-panel, .studio-grid, .studio-grid > div,
+    .form-grid, .field, .editor-item { min-width: 0; }
+    .form-grid, .studio-grid { grid-template-columns: minmax(0, 1fr); }
+    .row > * { min-width: 0; max-width: 100%; }
+    .sets { grid-template-columns: minmax(0, 1fr); }
+    .editor-item .row > input, .editor-item .row > select { min-width: 0; }
+  }
