@@ -1082,6 +1082,14 @@ def listener_of(actor):
     return best
 
 
+drives = []                         # (actor, start, end, wheel id, turn): hands on a steering wheel
+
+
+def steering(t, turn=0.0):
+    """Steering wheel angle at t seconds into a drive: small corrections, plus an optional steady turn."""
+    return 0.08 * math.sin(2 * math.pi * t / 3.3) + 0.035 * math.sin(2 * math.pi * t / 1.3) + turn * smooth01(t / 1.5)
+
+
 cursor, last_start = 2, 2
 for step in spec["script"]:
     start = last_start if step.get("with") == "previous" else cursor
@@ -1264,15 +1272,10 @@ for step in spec["script"]:
     elif do == "drive":
         end = start + int(step.get("seconds", 8.0) * FPS)
         who.driving.append((start, end))
-        for wheel in prop_factory.STEERING_WHEELS.values():
-            wheel.rotation_mode = "XYZ"
-            for frame in range(start, end + 1, max(1, FPS // 6)):
-                t = (frame - start) / FPS
-                wheel.rotation_euler = (0, 0.08 * math.sin(2 * math.pi * t / 3.3)
-                                         + 0.035 * math.sin(2 * math.pi * t / 1.3), 0)
-                wheel.keyframe_insert("rotation_euler", frame=frame)
-            wheel.rotation_euler = (0, 0, 0)
-            wheel.keyframe_insert("rotation_euler", frame=end)
+        wheels = prop_factory.STEERING_WHEELS
+        wheel_id = step.get("wheel") or (next(iter(wheels)) if len(wheels) == 1 else None)
+        if wheel_id in wheels:
+            drives.append((who, start, end, wheel_id, math.radians(float(step.get("turn", 0.0)))))
     elif do == "say":
         wav = path(step["audio"])
         cues = viseme_cues(wav, step.get("text"))
@@ -1551,6 +1554,47 @@ for act in cast.values():
                 for df, v in ((0, 0.0), (2, 1.0), (4, 0.0)):
                     k.value = v
                     k.keyframe_insert("value", frame=f + df)
+
+# --- hands on the wheel: the arms switch to IK and the hands hold the rim at ten to two, turning with it ---
+def hold_wheel(act, f0, f1, wheel_id, turn):
+    wheel = prop_factory.STEERING_WHEELS[wheel_id]
+    wheel.rotation_mode = "XYZ"
+    bpy.context.view_layer.update()
+    rest = wheel.matrix_world.copy()
+    size = max((max(c.dimensions) for c in wheel.children if c.type == "MESH"), default=0.4)
+    grip = 0.45 * size                                   # the middle of the rim, not its outer edge
+    scene.frame_set(f0)
+    to_rig = act.rig.matrix_world.inverted()
+    shoulders = {s_: act.rig.matrix_world @ act.pb[f"upper_arm_fk.{s_}"].bone.head_local for s_ in "LR"}
+    blend = max(2, int(0.3 * FPS))
+    for f in range(f0 - blend, f1 + blend + 1, 2):
+        t = max(0, f - f0) / FPS
+        angle = steering(t, turn) if f0 <= f <= f1 else 0.0
+        wheel.rotation_euler = (0, angle, 0)
+        wheel.keyframe_insert("rotation_euler", frame=f)
+        spin = rest @ Matrix.Rotation(angle, 4, "Y")
+        rim = [spin @ Vector((grip * math.sin(a), 0, grip * math.cos(a))) for a in (math.radians(-60), math.radians(60))]
+        # each hand takes the grip point nearer its own shoulder
+        near_l = (rim[0] - shoulders["L"]).length + (rim[1] - shoulders["R"]).length < \
+            (rim[1] - shoulders["L"]).length + (rim[0] - shoulders["R"]).length
+        hold = {"L": rim[0], "R": rim[1]} if near_l else {"L": rim[1], "R": rim[0]}
+        ik = smooth01((f - (f0 - blend)) / blend) * smooth01((f1 + blend - f) / blend)
+        scene.frame_set(f)                               # the hand controls' parents as they are at this frame
+        for side in "LR":
+            hand = act.pb[f"hand_ik.{side}"]
+            m = hand.matrix.copy()
+            m.translation = to_rig @ hold[side]          # armature space; Blender works out the parent space
+            hand.matrix = m
+            hand.keyframe_insert("location", frame=f)
+            parent = act.pb[f"upper_arm_parent.{side}"]
+            parent["IK_FK"] = 1.0 - ik                     # 0 = IK (hands on the wheel), 1 = FK
+            parent.keyframe_insert('["IK_FK"]', frame=f)
+            act.key_fingers(f, 0.0, 0.0, "fist", "fist", 0.8 * ik, 0.8 * ik)
+
+
+for act, f0, f1, wheel_id, turn in drives:
+    hold_wheel(act, f0, f1, wheel_id, turn)
+    log(f"{act.id}: hands on {wheel_id} frames {f0}-{f1}")
 
 # --- set: background image, floor that shows the same image but takes shadows, light, camera -------
 bg_img = bpy.data.images.load(path(spec["background"]))

@@ -63,7 +63,8 @@ Rules:
   {"do": "wait", "seconds": 1.0}
   {"who": "<name>", "do": "think", "text": "<an inner thought, heard but not spoken>"}
   {"who": "<name>", "do": "exit", "door": "<door prop id>"}   (walks out through a door)
-  {"who": "<name>", "do": "drive", "seconds": 8}   (hands on a steering wheel)
+  {"who": "<name>", "do": "drive", "seconds": 8, "wheel": "<steering_wheel prop id>", "turn": 0}
+   (seated driver; hands grip that wheel and turn with it; "turn" = steady steering in degrees)
   {"do": "narrate", "text": "<voice-over>", "voice": "<voice>"}   (a narrator nobody sees)
 - Acting (use it: it makes the scene alive):
   add "expression" to a say/think line: neutral, smile, happy, sad, angry, surprised, scared,
