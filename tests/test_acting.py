@@ -91,3 +91,21 @@ def test_postures_and_paces_are_complete():
     assert set(acting.POSTURES) >= {"neutral", "confident", "slumped", "tense"}
     for speed, step, swing, lean in acting.PACES.values():
         assert 0.5 < speed < 2.0 and 0.4 < step < 0.9 and swing > 0 and lean >= 0
+
+
+def test_whip_lags_overshoots_and_settles():
+    seconds = 2.0
+    # starts after the shoulder
+    assert acting.whip(0.05, seconds, acting.ELBOW_LAG) == 0.0 < acting.gesture_weight(0.05, seconds)
+    # passes its mark after arriving, then settles back
+    peak = max(acting.whip(i / 100, seconds, acting.ELBOW_LAG) for i in range(40, 100))
+    assert peak > 1.02
+    assert acting.whip(1.2, seconds, acting.ELBOW_LAG) == pytest.approx(1.0, abs=0.01)
+    # lets go after the gesture ends and comes to rest
+    end = seconds + acting.ELBOW_LAG + acting.SETTLE
+    assert abs(acting.whip(end, seconds, acting.ELBOW_LAG)) < 0.01
+
+
+def test_faces_are_not_mirror_perfect():
+    w = acting.asymmetric({"mouthSmileLeft": 0.5, "mouthSmileRight": 0.5, "browInnerUp": 0.3}, 0.08)
+    assert w["mouthSmileLeft"] > w["mouthSmileRight"] and w["browInnerUp"] == 0.3

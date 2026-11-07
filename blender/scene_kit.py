@@ -138,6 +138,7 @@ class Actor:
         self.looks = []                  # (start_s, end_s, target): head and eyes only
         self.gaze = True                 # eyes look at whoever matters
         self.voice_fx = "clean"
+        self.turn_blinks = []            # frames: a blink as the head swings into a big turn
         self.stance_width = 1.0          # foot spacing (a confident stance is wider)
 
     def _ensure_muscle_correctives(self):
@@ -336,6 +337,8 @@ class Actor:
         n = max(2, int(dur * FPS))
         # people look first, then turn: the head leads the body by a few frames
         lead = max(-0.6, min(0.6, d * 0.45))
+        if abs(d) > 0.6:                           # a big turn: people blink as the head swings round
+            self.turn_blinks.append(f0 + 1)
         self.head_yaw += [(f0 - 3, self.head_yaw[-1][1]), (f0 + n // 3, lead), (f0 + n + 4, 0.0)]
         h0, centre = self.heading, self.pos.copy()
         n = max(n, int((0.45 + 0.45 * abs(d) / math.pi) * FPS))      # bigger turns take longer
@@ -1362,11 +1365,15 @@ def spot_of(target, f):
 
 
 def gesture_at(act, t):
-    """(weight, pose, hands, side) of the gesture running at time t, or None."""
+    """(shoulder, elbow, hand weights, pose, hands, side) of the gesture at time t, or None. The elbow and hand
+    follow the shoulder late and overshoot (acting.whip), so the gesture runs a moment past its end."""
     for t0, seconds, name, options, side in act.gestures:
-        if t0 <= t <= t0 + seconds:
+        tr = t - t0
+        if 0 <= tr <= seconds + acting.HAND_LAG + acting.SETTLE:
             _, hands, pose = acting.GESTURES[name]
-            return acting.gesture_weight(t - t0, seconds), pose((t - t0) / seconds, t - t0, options), hands, side
+            weights = (acting.gesture_weight(tr, seconds), acting.whip(tr, seconds, acting.ELBOW_LAG),
+                       acting.whip(tr, seconds, acting.HAND_LAG))
+            return weights, pose(min(tr, seconds) / seconds, min(tr, seconds), options), hands, side
     return None
 
 
@@ -1399,6 +1406,7 @@ for act in cast.values():
     droops = "eyelids" in shapes
     bows = [(t0, t0 + sec) for t0, sec, name, _, _ in act.gestures if "torso" in acting.GESTURES[name][2](0.5, 0, {})]
     eye_rest = act.pb.get("eye_common")
+    tilt = rand.uniform(0.05, 0.1) * rand.choice((-1, 1))
     for f in range(1, scene.frame_end + 1, 2):
         t = f / FPS
         feel = act.expression.at(t)
@@ -1407,13 +1415,14 @@ for act in cast.values():
         for s, side, amp in gestures:
             g[side] = max(g[side], amp * bump((t - s) / 1.0))
         current = gesture_at(act, t)
-        weight, pose, hands, gside = current if current else (0.0, {}, "none", "R")
-        arm_sides = {"one": (gside,), "both": ("L", "R")}.get(hands, ()) if weight > 0 else ()
+        (weight, w_elbow, w_hand), pose, hands, gside = current if current else ((0.0, 0.0, 0.0), {}, "none", "R")
+        moving = weight > 0 or abs(w_elbow) > 1e-3 or abs(w_hand) > 1e-3
+        arm_sides = {"one": (gside,), "both": ("L", "R")}.get(hands, ()) if moving else ()
         arm = pose.get("arm", {})
         fingers = {"L": (g["L"], None, 0.0), "R": (g["R"], None, 0.0)}
         for side in arm_sides:
-            fingers[side] = (g[side] + weight * (arm.get("open", 0.0) - g[side]), arm.get("hand"),
-                             weight * arm.get("grip", 0.0))
+            fingers[side] = (g[side] + w_hand * (arm.get("open", 0.0) - g[side]), arm.get("hand"),
+                             max(0.0, w_hand * arm.get("grip", 0.0)))
         act.key_fingers(f, fingers["L"][0], fingers["R"][0], fingers["L"][1], fingers["R"][1],
                         fingers["L"][2], fingers["R"][2])
         seated_now = any(r[0] <= f and (r[1] is None or f < r[1]) for r in act.seated_ranges)
@@ -1430,8 +1439,8 @@ for act in cast.values():
             v = {}
             for side in "LR":
                 swing, bend = idle[side]
-                w = weight if side in arm_sides else 0.0
-                v[side] = (swing + w * (arm.get("swing", swing) - swing), bend + w * (arm.get("bend", bend) - bend),
+                w, we = (weight, w_elbow) if side in arm_sides else (0.0, 0.0)
+                v[side] = (swing + w * (arm.get("swing", swing) - swing), bend + we * (arm.get("bend", bend) - bend),
                            w * arm.get("raise", 0.0), w * arm.get("twist", 0.0))
             walking = f in act.walk_frames
             act.key_arms(f, v["L"][0], v["R"][0], v["L"][1], v["R"][1], v["L"][2], v["R"][2], v["L"][3], v["R"][3],
@@ -1516,6 +1525,7 @@ for act in cast.values():
             if name in act.keys:
                 act.keys[name].value = max(min(stress, 0.5) * k, feel.get(name, 0.0))
                 act.keys[name].keyframe_insert("value", frame=f)
+        feel = acting.asymmetric(feel, tilt)
         for name in face:
             act.keys[name].value = feel.get(name, 0.0)
             act.keys[name].keyframe_insert("value", frame=f)
@@ -1523,7 +1533,9 @@ for act in cast.values():
     t = rand.uniform(0.5, 2.0)
     blinks = []
     while t * FPS < scene.frame_end:
-        blinks.append(int(t * FPS))
+        f_ = int(t * FPS)
+        if all(abs(f_ - b) > FPS for b in act.turn_blinks):
+            blinks.append(f_)
         t += rand.uniform(2.0, 5.0)
     if droops:
         for f in range(1, scene.frame_end + 1):

@@ -274,6 +274,29 @@ def gesture_weight(t, seconds):
     return window(t, 0.0, seconds, min(0.45, 0.25 * seconds))
 
 
+# overlapping action: energy travels down the arm, so the elbow and then the hand start a little later than the
+# shoulder, pass their mark and settle (a damped spring), instead of every joint stopping on the same frame
+ELBOW_LAG, HAND_LAG, OVERSHOOT, SETTLE = 0.08, 0.14, 0.10, 0.4
+
+
+def whip(t, seconds, lag, overshoot=OVERSHOOT):
+    """Weight of a joint further down the arm: the gesture weight `lag` seconds late, with a damped overshoot
+    after it arrives and after it lets go. Runs until seconds + lag + SETTLE."""
+    w = gesture_weight(t - lag, seconds)
+    fade = min(0.45, 0.25 * seconds)
+    for edge, sign in ((lag + fade, 1.0), (lag + seconds, -1.0)):
+        dt = t - edge
+        if dt > 0:
+            w += sign * overshoot * math.exp(-dt / 0.1) * math.sin(math.pi * dt / 0.15)
+    return w
+
+
+def asymmetric(weights, tilt):
+    """A face is never mirror-perfect: Left shapes a little stronger, Right a little weaker (tilt ~ 0.05..0.1)."""
+    return {k: v * (1 + tilt) if k.endswith("Left") else v * (1 - tilt) if k.endswith("Right") else v
+            for k, v in weights.items()}
+
+
 # --- walking -----------------------------------------------------------------------------------------------
 # pace: speed (m/s), step length (m), arm swing scale, extra forward lean (rad)
 PACES = {"stroll": (0.8, 0.55, 0.7, 0.0), "normal": (1.1, 0.62, 1.0, 0.0),
