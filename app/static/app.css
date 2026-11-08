@@ -118,3 +118,9 @@
   table.eps .ok { color: var(--ok); }
   table.eps .warn { color: var(--warn); font-size: 13px; }
   @media (max-width: 700px) { table.eps th:nth-child(4), table.eps td:nth-child(4) { display: none; } }
+
+  /* picture fields: paste, drop or choose */
+  .paste { display: inline-flex; align-items: center; gap: 10px; min-width: 260px; min-height: 64px; padding: 8px 10px; border: 1.5px dashed var(--line); border-radius: 10px; color: var(--muted); font-size: 13px; outline: none; }
+  .paste:hover, .paste:focus, .paste.over { border-color: var(--accent); }
+  .paste img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; }
+  .paste .b { padding: 3px 9px; font-size: 13px; }

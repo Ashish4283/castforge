@@ -1235,3 +1235,69 @@ $("#buildPhoto").onclick = async () => {
   await load();
   await openMovieScene();
 })();
+
+// --- pictures: every image field takes a pasted (Ctrl+V), dropped or chosen picture, and shows it ---------
+let pasteTarget = null;                      // the picture field the pointer or focus was on last
+function setPicture(input, file) {
+  const t = new DataTransfer(); t.items.add(file); input.files = t.files;
+  input.dispatchEvent(new Event("change", {bubbles: true}));
+}
+function pictureFromClipboard(items) {
+  for (const it of items || []) if (it.kind === "file" && it.type.startsWith("image/")) {
+    const f = it.getAsFile(); return new File([f], `pasted.${f.type.split("/")[1] === "jpeg" ? "jpg" : "png"}`, {type: f.type});
+  }
+  return null;
+}
+function enhancePictureInput(input) {
+  if (input.dataset.paste) return;
+  input.dataset.paste = "1";
+  const zone = document.createElement("div");
+  zone.className = "paste"; zone.tabIndex = 0;
+  zone.innerHTML = `<img alt="" hidden><span>Paste (Ctrl+V), drop, or <button type="button" class="b">Choose…</button> <button type="button" class="b">Paste</button></span>`;
+  input.hidden = true;
+  input.after(zone);
+  const [choose, paste] = zone.querySelectorAll("button"), img = zone.querySelector("img");
+  choose.onclick = () => input.click();
+  paste.onclick = async () => {
+    try {
+      for (const item of await navigator.clipboard.read()) {
+        const type = item.types.find(t => t.startsWith("image/"));
+        if (type) return setPicture(input, new File([await item.getType(type)], `pasted.${type === "image/jpeg" ? "jpg" : "png"}`, {type}));
+      }
+      alert("There is no picture on the clipboard. Copy an image first.");
+    } catch { alert("The browser blocked reading the clipboard: click the box and press Ctrl+V instead."); }
+  };
+  input.addEventListener("change", () => {
+    const f = input.files[0];
+    if (img.src) URL.revokeObjectURL(img.src);
+    img.hidden = !f; if (f) img.src = URL.createObjectURL(f);
+    zone.classList.toggle("has", !!f);
+  });
+  for (const ev of ["pointerenter", "focus"]) zone.addEventListener(ev, () => pasteTarget = input);
+  zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("over"); });
+  zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+  zone.addEventListener("drop", e => {
+    e.preventDefault(); zone.classList.remove("over");
+    const f = [...e.dataTransfer.files].find(f => f.type.startsWith("image/"));
+    if (f) setPicture(input, f);
+  });
+}
+document.addEventListener("paste", e => {
+  if (e.target.matches?.("textarea, input:not([type=file])")) return;     // pasting text into a text box
+  const file = pictureFromClipboard(e.clipboardData?.items); if (!file) return;
+  const visible = [...document.querySelectorAll("input[data-paste]")].filter(i => i.nextElementSibling.offsetParent);
+  const target = visible.includes(pasteTarget) ? pasteTarget : visible.find(i => !i.files.length) || visible[0];
+  if (target) { e.preventDefault(); setPicture(target, file); }
+});
+document.querySelectorAll('input[type=file][accept^="image"]').forEach(enhancePictureInput);
+
+$("#addSet").onclick = async () => {
+  const name = $("#newSetName").value.trim(), pic = $("#newSetPic").files[0];
+  if (!name || !pic) return msg($("#setMsg"), "Give the set a name and a picture.");
+  const f = new FormData(); f.append("movie", movie()); f.append("name", name); f.append("picture", pic);
+  try {
+    await api("/api/set/new", {method: "POST", body: f});
+    msg($("#setMsg"), `Set ${name} added.`, true);
+    $("#newSetName").value = ""; $("#newSetPic").value = ""; $("#newSetPic").dispatchEvent(new Event("change")); await load(movie());
+  } catch (e) { msg($("#setMsg"), e.message); }
+};

@@ -614,6 +614,23 @@ def save_set_blueprint(set_dir, saved):
     os.replace(temporary_path, blueprint_path)
 
 
+@app.post("/api/set/new")
+async def new_set(movie: str = Form(...), name: str = Form(...), picture: UploadFile = File(...)):
+    """A new set from one picture (uploaded, pasted or dropped in the app): sets/<name>/background.<ext>."""
+    set_dir = os.path.join(movie_dir(safe(movie, "movie")), "sets", safe(name, "set"))
+    if os.path.exists(set_dir):
+        raise HTTPException(400, f"set {name!r} already exists")
+    ext = os.path.splitext(picture.filename or "")[1].lower()
+    if ext not in (".png", ".jpg", ".jpeg"):
+        ext = ".png"
+    content = await picture.read()
+    if not content:
+        raise HTTPException(400, "the picture is empty")
+    os.makedirs(set_dir)
+    open(os.path.join(set_dir, f"background{ext}"), "wb").write(content)
+    return {"ok": True, "set": name}
+
+
 @app.post("/api/set/blueprint")
 def save_set(body: dict):
     movie, set_name = safe(body.get("movie"), "movie"), safe(body.get("set"), "set")

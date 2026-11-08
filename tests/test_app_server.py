@@ -383,3 +383,16 @@ def test_movie_progress_names_the_next_step_and_missing_characters(tmp_path, mon
     assert steps == {"story": "done", "cast": "started", "sets": "todo", "storyboard": "todo",
                      "render": "started", "finish": "todo"}
     assert p["next"]["key"] == "cast"
+
+
+def test_new_set_saves_a_pasted_picture_and_lists_it(tmp_path, monkeypatch):
+    (tmp_path / "film").mkdir()
+    monkeypatch.setattr(server, "MOVIES", str(tmp_path))
+    png = io.BytesIO()
+    Image.new("RGB", (8, 8)).save(png, "PNG")
+    picture = UploadFile(io.BytesIO(png.getvalue()), filename="pasted.png")
+    assert asyncio.run(server.new_set("film", "truck_cab", picture)) == {"ok": True, "set": "truck_cab"}
+    assert (tmp_path / "film" / "sets" / "truck_cab" / "background.png").is_file()
+    assert [s["name"] for s in server.movies()[0]["sets"]] == ["truck_cab"]
+    with pytest.raises(HTTPException):
+        asyncio.run(server.new_set("film", "truck_cab", UploadFile(io.BytesIO(b"x"), filename="a.png")))
