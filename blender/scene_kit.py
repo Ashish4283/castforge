@@ -724,6 +724,42 @@ import props as prop_factory  # noqa: E402
 prop_tops = {}
 
 
+SEATS_ = prop_factory.SEATS
+
+
+def find_part(objects, name, pid, key):
+    """The object called name in a loaded model (Blender may have added .001 to the name)."""
+    for o in objects:
+        if o.name == name or o.name.rsplit(".", 1)[0] == name:
+            return o
+    raise ValueError(f'{pid}: "{key}": no object called {name!r} in the model '
+                     f'(it has: {", ".join(sorted(o.name for o in objects))})')
+
+
+def wheel_pivot(pid, part):
+    """Put a modelled steering wheel on a pivot at its centre whose Y axis is the wheel's axle (its thinnest
+    side), so a "drive" step can turn it and keep the hands on its rim."""
+    bpy.context.view_layer.update()
+    dims = part.dimensions
+    axle = min(range(3), key=lambda i: dims[i])
+    local_centre = sum((Vector(c) for c in part.bound_box), Vector()) / 8
+    centre = part.matrix_world @ local_centre
+    basis = part.matrix_world.to_3x3().normalized()
+    y = basis.col[axle].normalized()
+    z = basis.col[(axle + 2) % 3].normalized()
+    x = y.cross(z).normalized()
+    pivot = bpy.data.objects.new(f"{pid}_pivot", None)
+    scene.collection.objects.link(pivot)
+    world = part.matrix_world.copy()
+    pivot.parent = part.parent
+    bpy.context.view_layer.update()
+    pivot.matrix_world = Matrix.Translation(centre) @ Matrix((x, y, x.cross(y))).transposed().to_4x4()
+    part.parent = pivot
+    bpy.context.view_layer.update()
+    part.matrix_world = world
+    prop_factory.STEERING_WHEELS[pid] = pivot
+
+
 def load_prop_file(prop, n):
     f = path(prop["file"])
     before = set(bpy.data.objects)
@@ -736,11 +772,24 @@ def load_prop_file(prop, n):
         bpy.ops.import_scene.fbx(filepath=f)
     elif ext == ".blend":
         with bpy.data.libraries.load(f, link=False) as (source, destination):
-            if "CastForge Prop Asset" not in source.collections:
-                raise ValueError(f"Blender prop file has no CastForge Prop Asset collection: {f}")
-            destination.collections = ["CastForge Prop Asset"]
-        collection = destination.collections[0]
-        scene.collection.children.link(collection)
+            asset = "CastForge Prop Asset" in source.collections
+            if asset:
+                destination.collections = ["CastForge Prop Asset"]
+            else:                       # a model made by hand in Blender: take every object in the file
+                destination.objects = list(source.objects)
+        if asset:
+            collection = destination.collections[0]
+            scene.collection.children.link(collection)
+        else:
+            collection = bpy.data.collections.new(prop.get("id", f"model_{n}"))
+            scene.collection.children.link(collection)
+            for o in destination.objects:
+                if o is None:
+                    continue
+                if o.type in ("CAMERA", "LIGHT"):     # the scene brings its own camera and light
+                    bpy.data.objects.remove(o)
+                else:
+                    collection.objects.link(o)
     else:
         raise ValueError(f"unsupported prop file {f}; use .blend, .glb, .gltf, .obj or .fbx")
     new = ([o for o in collection.all_objects if o not in before]
@@ -761,8 +810,18 @@ def load_prop_file(prop, n):
     lowest = min(p_.z for p_ in pts)
     w_ = to_world(prop.get("position", [0, 0]))
     base = prop_tops.get(prop.get("on"), 0.0)
-    holder.location = (w_.x, w_.y, base - lowest)
+    holder.location = (w_.x, w_.y, base + float(prop.get("elevation", 0.0)) - lowest)
     bpy.context.view_layer.update()
+    pid = holder.name
+    if prop.get("wheel"):                  # an object in the model is a steering wheel the hands can hold
+        wheel_pivot(pid, find_part(new, prop["wheel"], pid, "wheel"))
+    if prop.get("seat"):                   # an object in the model is the seat: sit on its top, at its middle
+        part = find_part(new, prop["seat"], pid, "seat")
+        pts_ = [part.matrix_world @ Vector(c) for c in part.bound_box]
+        a = math.radians(prop.get("rotation", 0))
+        SEATS_[pid] = {"seat_h": max(p_.z for p_ in pts_), "depth": float(prop.get("seat_depth", 0.45)),
+                       "centre": Vector((sum(p_.x for p_ in pts_) / 8, sum(p_.y for p_ in pts_) / 8, 0)),
+                       "front": Vector((math.sin(a), -math.cos(a), 0)), "heading": a}
     pts = [o.matrix_world @ Vector(c) for o in meshes for c in o.bound_box]
     xs_, ys_ = [p_.x for p_ in pts], [p_.y for p_ in pts]
     corners = [Vector((x, y, 0)) for x in (min(xs_), max(xs_)) for y in (min(ys_), max(ys_))]

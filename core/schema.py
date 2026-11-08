@@ -415,6 +415,9 @@ def check_parsed(folder, sc):
                 errors.append(f'prop {pr.get("id", "?")}: unsupported model file type {pr["file"]!r}')
             elif not os.path.isfile(os.path.join(folder, pr["file"])):
                 errors.append(f'prop {pr.get("id", "?")}: model file not found: {pr["file"]}')
+            for key in ("seat", "wheel"):
+                if pr.get(key) is not None and not isinstance(pr[key], str):
+                    errors.append(f'prop {pr.get("id", "?")}: "{key}" must be the name of an object in the model')
         if pr.get("material") and (not isinstance(pr["material"], str) or pr["material"] not in MATERIALS):
             warnings.append(f"prop {pr.get('id', '?')}: unknown material {pr['material']} (use {', '.join(MATERIALS)})")
         if pr.get("picture_rect") is not None and not _is_rect(pr["picture_rect"]):
@@ -495,7 +498,7 @@ def check_parsed(folder, sc):
             errors.append(f'step {n}: open needs "door": the id of a door prop')
         elif do == "sit":
             seat = props.get(st.get("on") if isinstance(st.get("on"), str) else None, {})
-            if seat.get("make") not in SEAT_TYPES:
+            if seat.get("make") not in SEAT_TYPES and not seat.get("seat"):
                 errors.append(f'step {n}: sit needs "on": the id of a chair, armchair, stool, bench, sofa or seat prop')
             else:
                 pos[who] = seat.get("position", pos[who])

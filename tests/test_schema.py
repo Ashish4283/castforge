@@ -38,6 +38,16 @@ def test_vehicle_can_expose_an_openable_driver_door(tmp_path, capsys):
     assert {"pickup_truck", "steering_wheel", "car_radio"} <= set(described)
 
 
+def test_a_model_prop_can_be_sat_on_once_it_names_its_seat(tmp_path, capsys):
+    (tmp_path / "cab.blend").write_bytes(b"")
+    steps = [{"who": "maya", "do": "sit", "on": "cab"}, {"who": "maya", "do": "drive", "wheel": "cab"}]
+    folder = scene(tmp_path, steps, props=[{"id": "cab", "file": "cab.blend", "seat": "Seat", "wheel": "Wheel"}])
+    assert schema.check_scene(folder) == 0
+    folder = scene(tmp_path, steps, props=[{"id": "cab", "file": "cab.blend"}])
+    assert schema.check_scene(folder) >= 1
+    assert "sit needs" in capsys.readouterr().out
+
+
 def test_picture_rect_and_doorway_environment_are_validated(tmp_path, capsys):
     folder = scene(tmp_path, [], props=[{"id": "door", "make": "door", "outside_image": "missing.png",
                                          "outside_rect": [0.8, 0.2, 0.1, 0.9],

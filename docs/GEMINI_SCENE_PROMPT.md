@@ -112,6 +112,11 @@ Rules:
   material is one of: wood, metal, fabric, leather, glass, plastic, ceramic, stone.
   Leave walking space: keep props at least 0.6 m from where people stand and walk, and do not put
   props between two people who talk. Use props only where they help the story (0-8 of them).
+- A model made in Blender (or a .glb/.obj/.fbx) is a prop with "file" instead of "make":
+  {"id": "cab", "file": "../sets/truck_cab/cab.blend", "position": [x, y], "rotation": 0,
+   "seat": "<name of the seat object in the model>", "wheel": "<name of the steering wheel object>"}
+  "seat" makes it something to sit on ("sit" "on": "cab"); "wheel" lets a "drive" step hold and turn that
+  object ("wheel": "cab"). Object names are the ones in Blender's Outliner.
 - For a photographed outdoor set, a picture-matched road surface can be generated with
   {"id":"road", "make":"picture_road", "screen_path":[[0.65,0.65],[0.60,0.9]], "width":3.5}.
   screen_path points are normalized [x,y] image coordinates; width is metres. To make a photographed
