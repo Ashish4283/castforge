@@ -239,6 +239,65 @@ def new_movie(body: dict):
     return {"ok": True, "movie": m}
 
 
+# --- studio: where a movie stands, step by step (story, cast, sets, storyboard, render, finish) ----------
+def episode_progress(folder):
+    """What exists on disk for one episode folder: scenes written, missing characters, storyboard, renders."""
+    try:
+        spec = json.load(open(os.path.join(folder, "scene.json"), encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"scenes": 0, "broken": True}
+    scenes = spec.get("scenes") if isinstance(spec.get("scenes"), list) else [spec]
+    wanted = set()
+    for entry in [spec.get("cast", {})] + [sc.get("cast", {}) for sc in scenes if isinstance(sc, dict)]:
+        for c in (entry or {}).values():
+            if isinstance(c, dict) and isinstance(c.get("character"), str):
+                wanted.add(os.path.normpath(os.path.join(folder, c["character"])))
+    out_dir = os.path.join(folder, "scenes")
+    rendered = sum(os.path.isfile(os.path.join(out_dir, d, "shot.sha256"))
+                   for d in (os.listdir(out_dir) if os.path.isdir(out_dir) else []))
+    video = os.path.join(folder, "episode.mp4")
+    spec_time = os.path.getmtime(os.path.join(folder, "scene.json"))
+    return {"scenes": len(scenes), "rendered": min(rendered, len(scenes)),
+            "missing": sorted(os.path.basename(c) for c in wanted if not os.path.isfile(c)),
+            "storyboard": os.path.isfile(os.path.join(folder, "storyboard.jpg")),
+            "film": os.path.isfile(video), "current": os.path.isfile(video) and os.path.getmtime(video) >= spec_time}
+
+
+@app.get("/api/movie/progress")
+def movie_progress(movie: str):
+    d = movie_dir(movie)
+    listed = next((m for m in movies() if m["name"] == movie), None) or {"episodes": [], "characters": [], "sets": []}
+    eps = {e: episode_progress(os.path.join(d, *e.split("/"))) for e in listed["episodes"]}
+    missing = sorted({c for e in eps.values() for c in e.get("missing", [])})
+    scenes = sum(e["scenes"] for e in eps.values())
+    rendered = sum(e.get("rendered", 0) for e in eps.values())
+    boards = sum(e.get("storyboard", False) for e in eps.values())
+    current = sum(e.get("current", False) for e in eps.values())
+    stale = [n for n, e in eps.items() if e.get("film") and not e.get("current")]
+    built = sum(1 for s_ in listed["sets"] if s_.get("asset"))
+
+    def step(key, title, tab, done, total, detail, ok=None):
+        state = "done" if (ok if ok is not None else total and done >= total) else ("started" if done else "todo")
+        return {"key": key, "title": title, "tab": tab, "state": state, "detail": detail}
+
+    steps = [
+        step("story", "Story", "episodes", len(eps), 1, f"{len(eps)} episodes, {scenes} scenes"
+             if eps else "Write the first episode (Gemini scene prompt)", ok=bool(scenes)),
+        step("cast", "Cast", "characters", len(listed["characters"]), 1,
+             f"missing: {', '.join(missing)}" if missing else f"{len(listed['characters'])} characters",
+             ok=bool(listed["characters"]) and not missing),
+        step("sets", "Sets", "sets", len(listed["sets"]), 1,
+             f"{len(listed['sets'])} sets, {built} built in 3D" if listed["sets"] else "Add a set picture",
+             ok=bool(listed["sets"])),
+        step("storyboard", "Storyboard", "episodes", boards, len(eps), f"{boards} of {len(eps)} episodes boarded"),
+        step("render", "Render", "episodes", rendered, scenes, f"{rendered} of {scenes} scenes rendered"),
+        step("finish", "Film", "episodes", current, len(eps),
+             f"{current} of {len(eps)} films up to date" + (f"; changed since render: {', '.join(stale)}" if stale else "")),
+    ]
+    return {"movie": movie, "steps": steps, "episodes": eps,
+            "next": next((s_ for s_ in steps if s_["state"] != "done"), None)}
+
+
 # --- episodes ----------------------------------------------------------------------------------------
 TEMPLATE = {
     "cast": {},

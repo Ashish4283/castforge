@@ -693,7 +693,24 @@ function clearEpisode() {
   $("#epMsg").textContent = "";
   renderSceneForms();
 }
+async function renderStudio() {
+  if (!movie()) return;
+  let p;
+  try { p = await api(`/api/movie/progress?movie=${encodeURIComponent(movie())}`); } catch (e) { $("#studioNext").textContent = e.message; return; }
+  const next = p.next;
+  $("#studioNext").innerHTML = next
+    ? `<div><div class="muted">Next step</div><strong>${esc(next.title)}</strong> <span class="muted">${esc(next.detail)}</span></div><button class="b p" data-go="${next.tab}">Go to ${esc(next.title)}</button>`
+    : `<div><div class="muted">All steps done</div><strong>${esc(p.movie)}</strong> <span class="muted">every film is rendered and up to date</span></div>`;
+  $("#studioSteps").innerHTML = p.steps.map((s, i) =>
+    `<li class="${s.state}" data-go="${s.tab}"><span class="n">${s.state === "done" ? "✓" : i + 1}</span><b>${esc(s.title)}</b><small>${esc(s.detail)}</small></li>`).join("");
+  const film = e => e.broken ? "scene.json is broken" : !e.film ? "not made" : e.current ? "up to date" : "changed since render";
+  $("#studioEps").innerHTML = Object.entries(p.episodes).map(([n, e]) =>
+    `<tr><td>${esc(n)}${(e.missing || []).length ? `<div class="warn">missing: ${esc(e.missing.join(", "))}</div>` : ""}</td><td>${e.scenes}</td>
+     <td>${e.rendered ?? 0} / ${e.scenes}</td><td>${e.storyboard ? "yes" : "—"}</td><td class="${e.current ? "ok" : ""}">${film(e)}</td>
+     <td><button class="b" data-ep="${esc(n)}">Open</button></td></tr>`).join("") || `<tr><td colspan="6" class="muted">No episodes yet.</td></tr>`;
+}
 function activateTab(name) {
+  if (name === "studio") renderStudio();
   document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === name));
   document.querySelectorAll("main > section").forEach(s => s.classList.toggle("hidden", s.id !== "tab-" + name));
 }
@@ -702,7 +719,7 @@ async function openMovieScene() {
   curEp = null;
   clearEpisode();
   render();
-  activateTab("episodes");
+  renderStudio();
   if (!m || !m.episodes.length) return;
   let ep = null;
   try { ep = localStorage.getItem("cf.episode." + m.name); } catch {}
@@ -758,9 +775,11 @@ setInterval(async () => {
   } catch {}
 }, 3000);
 
-document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
-  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
-  document.querySelectorAll("main > section").forEach(s => s.classList.toggle("hidden", s.id !== "tab-" + b.dataset.tab));
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => activateTab(b.dataset.tab));
+$("#tab-studio").addEventListener("click", async e => {
+  const go = e.target.closest("[data-go]"), ep = e.target.closest("[data-ep]");
+  if (ep) { activateTab("episodes"); await openEp(ep.dataset.ep); }
+  else if (go) activateTab(go.dataset.go);
 });
 $("#sets").addEventListener("input", e => { if (e.target.tagName !== "SELECT") updateSetField(e.target); });
 $("#sets").addEventListener("change", e => { if (e.target.tagName === "SELECT") updateSetField(e.target); });

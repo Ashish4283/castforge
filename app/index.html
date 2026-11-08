@@ -13,7 +13,8 @@
   <button class="b" id="openMovie">Open movie</button>
   <button class="b" id="newMovie">New movie</button>
   <nav>
-    <button data-tab="characters" class="on">Characters</button>
+    <button data-tab="studio" class="on">Studio</button>
+    <button data-tab="characters">Characters</button>
     <button data-tab="episodes">Episodes</button>
     <button data-tab="sets">Sets</button>
     <button data-tab="props">Props</button>
@@ -24,8 +25,24 @@
   <span id="gpu">GPU free</span>
 </header>
 <main>
+  <!-- Studio: where this movie stands and what to do next -->
+  <section id="tab-studio">
+    <div class="card next" id="studioNext"></div>
+    <ol class="steps" id="studioSteps"></ol>
+    <h2 class="sub">Create</h2>
+    <div class="create">
+      <button data-go="characters"><b>Character</b><span>from a photo or a Gemini design</span></button>
+      <button data-go="sets"><b>Set</b><span>a picture, built into a 3D set</span></button>
+      <button data-go="props"><b>Prop</b><span>an object from a reference picture</span></button>
+      <button data-go="library"><b>Library</b><span>reusable buildings and assets</span></button>
+      <button data-go="episodes"><b>Episode</b><span>scenes, dialogue, acting, camera</span></button>
+    </div>
+    <h2 class="sub">Episodes</h2>
+    <div class="card"><table class="eps"><thead><tr><th>Episode</th><th>Scenes</th><th>Rendered</th><th>Storyboard</th><th>Film</th><th></th></tr></thead><tbody id="studioEps"></tbody></table></div>
+  </section>
+
   <!-- Characters -->
-  <section id="tab-characters">
+  <section id="tab-characters" class="hidden">
     <div class="grid" id="chars"></div>
     <div class="card" style="margin-top:16px">
       <h2>Add a character</h2>

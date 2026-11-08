@@ -95,3 +95,26 @@
     .sets { grid-template-columns: minmax(0, 1fr); }
     .editor-item .row > input, .editor-item .row > select { min-width: 0; }
   }
+
+  /* studio: next step, the six steps of a film, create shortcuts, episode table */
+  .next { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .next strong { font-size: 17px; margin-right: 6px; }
+  .steps { list-style: none; margin: 0 0 8px; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+  .steps li { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; cursor: pointer; display: grid; gap: 2px; }
+  .steps li:hover { border-color: var(--muted); }
+  .steps .n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 600; background: var(--bg); color: var(--muted); margin-bottom: 4px; }
+  .steps li.done .n { background: var(--ok); color: var(--panel); }
+  .steps li.started .n { background: var(--warn); color: var(--panel); }
+  .steps small { color: var(--muted); font-size: 13px; }
+  h2.sub { font-size: 15px; margin: 20px 0 8px; color: var(--muted); font-weight: 600; }
+  .create { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+  .create button { text-align: left; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; cursor: pointer; display: grid; gap: 2px; }
+  .create button:hover { border-color: var(--accent); }
+  .create span { color: var(--muted); font-size: 13px; }
+  table.eps { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.eps th { text-align: left; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--line); padding: 6px 8px; }
+  table.eps td { border-bottom: 1px solid var(--line); padding: 8px; vertical-align: top; }
+  table.eps tr:last-child td { border-bottom: 0; }
+  table.eps .ok { color: var(--ok); }
+  table.eps .warn { color: var(--warn); font-size: 13px; }
+  @media (max-width: 700px) { table.eps th:nth-child(4), table.eps td:nth-child(4) { display: none; } }

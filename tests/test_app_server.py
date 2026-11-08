@@ -363,3 +363,23 @@ def test_generated_scene_folders_are_not_listed_as_episodes(tmp_path, monkeypatc
     (ep / "scenes" / "01_cabin" / "scene.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(server, "MOVIES", str(tmp_path))
     assert server.movies()[0]["episodes"] == ["ep"]
+
+
+def test_movie_progress_names_the_next_step_and_missing_characters(tmp_path, monkeypatch):
+    ep = tmp_path / "film" / "ep1"
+    (ep / "scenes" / "01_a").mkdir(parents=True)
+    (tmp_path / "film" / "characters").mkdir()
+    (tmp_path / "film" / "characters" / "maya.blend").write_bytes(b"")
+    spec = {"cast": {"maya": {"character": "../characters/maya.blend"}, "tom": {"character": "../characters/tom.blend"}},
+            "scenes": [{"id": "a"}, {"id": "b"}]}
+    (ep / "scene.json").write_text(json.dumps(spec), encoding="utf-8")
+    (ep / "scenes" / "01_a" / "shot.sha256").write_text("x", encoding="utf-8")
+    monkeypatch.setattr(server, "MOVIES", str(tmp_path))
+
+    p = server.movie_progress("film")
+    assert p["episodes"]["ep1"] == {"scenes": 2, "rendered": 1, "missing": ["tom.blend"],
+                                    "storyboard": False, "film": False, "current": False}
+    steps = {s["key"]: s["state"] for s in p["steps"]}
+    assert steps == {"story": "done", "cast": "started", "sets": "todo", "storyboard": "todo",
+                     "render": "started", "finish": "todo"}
+    assert p["next"]["key"] == "cast"

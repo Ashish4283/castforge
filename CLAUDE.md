@@ -53,6 +53,8 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | CLI commands, lock, status text | `castforge.py` (`def main`, `def render_status`) |
 | scene/episode job | `episode_job.py` |
 | web API | `app/server.py` (`@app.get/post`); UI markup `app/index.html`, logic `app/static/app.js` |
+| Studio page (next step, progress) | `server.py` `# --- studio`; `app.js` `renderStudio` |
+| model props (seat / wheel objects) | `scene_kit.py` `def load_prop_file`, `def wheel_pivot` |
 | character build | `blender/build_character.py` (photo spec: `generate/analyze_photo.py`, .venv only) |
 | city library, set/prop builders | `blender/build_*_asset.py`, `build_set.py`, `library_geometry.py`, `core/buildings.py` |
 | TTS / transcripts / SFX generation | `generate/tts.py`, `transcribe.py`, `make_sfx_library.py` |
