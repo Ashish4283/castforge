@@ -1,23 +1,47 @@
 # CastForge roadmap (short; update when an item ships)
 
-## Done (v2, 2026-11-02)
-Render/finish split, BT.709 + 48 kHz + loudness mastering, set picture fidelity, expressions, gaze, gestures,
-posture, pace, narrator, voice FX, ducking, panning, director + camera steps, lighting moods, weather, 40 props,
-titles/credits/transitions/grades/subtitles/chapters/poster, storyboard, stop/finish/voice/transcribe/doctor,
-city library (Copilot), schema-driven app forms.
+## Direction (2026-11-10)
+Target: game-cinematic quality an enthusiast can make and publish: real motion, clear character designs,
+fights that read well. Built as **mini projects**, each with a file contract (what it reads and writes), that
+later combine into one studio. Phase 1: small test versions on the local GPU (RTX 3050, 4 GB). Phase 2, once
+promising: a rented GPU with ComfyUI and FLORA character design feeding the 3D pipeline (movies and games).
+Not reachable on 4 GB: battles of hundreds, film-grade fur/cloth, photoreal skin; a stylised look gets more
+per GPU-second.
 
-## Next (in order)
-1. Check character skin/highlights under `Standard` at standard quality; tune `world.NOMINAL` if needed.
-2. One job queue for all GPU work (character, set, SFX builds still bypass `.render.lock`).
-3. Stage map in the app (drag cast/props on `set/floor_map.png`).
-4. Hand contact (IK): hold, carry, clap, dust sleeves — the Santa film needs hold/carry.
-5. Assemble acts into one film (`movies/<m>/film.json` listing episodes).
-6. Disk clean-up command (old frames, voices, sets).
+## Mini projects (in order)
+| Project | Contract | State |
+|---|---|---|
+| Motion library | Mixamo FBX / CMU BVH -> `motions/clips/<name>.blend` + `.json`; scene step `perform` | v1 done 2026-11-10 |
+| Hands and weapons | props attached to hand bones; IK hold, carry, clap | |
+| Fight choreography | `fight` step: beats (attack/defend), clips synced on contact frames, spacing by reach, impact sound, hit-stop, shake; director action rules (180° line, faster cuts) | after hands |
+| Editor 1: 3D scene editor | app: the scene in 3D (preview.glb), play/scrub, timeline of steps, drag start spots and walk targets, undo, save history | v1 done 2026-11-10 |
+| Editor 2: pose fixes | grab a body part at a moment and rotate it; stored as fixes in scene.json, re-applied on every render (animation layer) | next |
+| Editor 3: character design | design editor over `<name>.design.json` (body, face, hair, outfit, costume), ready-made looks, previews, rebuild; costume kit: long coat, fabric, fur trim, belt+buckle, gloves, boots | v1 done 2026-11-11 |
+| Costume kit v2 | more looks (uniforms, armour, robes); capes/hoods as real garments; fur with hair strands | |
+| Editor 4: art | light, weather, grade, props per scene, previewed in the 3D view; move seats and props by dragging | |
+| Motion library page | app: search CMU, import Mixamo files, preview a clip, pick from/to visually | with canvas |
+| 3D sets for action | free CC0 kits and the city library instead of the 2.5D picture | |
+| Any humanoid character | imported rigged model (bone map like motion.py) + costume and armour props | |
+| Face capture | webcam -> MediaPipe blendshapes -> face keys | |
+| Publish kit | platform presets (YouTube -14 LUFS...), YouTube-valid chapters (bug: the 4 s title card makes a chapter under 10 s, so YouTube drops them all), 1280x720 thumbnail, upload check | small |
+| Phase 2 bridge | rented GPU: ComfyUI + FLORA designs -> image-to-3D -> rig -> CastForge | later |
 
-## Later
-Crowds, mocap retargeting (CMU/Mixamo), vehicles on paths, Chatterbox TTS engine, YouTube upload,
-Origin check on the local server.
+Motion v1 limits: fingers stay procedural; the follow camera and gaze use the base path (approximate while a
+clip travels); feet can slide a little when a clip's proportions differ. Mixamo files are downloaded by the
+user (free Adobe account) and must not be redistributed: `motions/` is git-ignored.
+
+## Maintenance
+Check character skin/highlights under `Standard`; one GPU job queue (character, set, SFX builds bypass
+`.render.lock`); assemble acts into one film (`movies/<m>/film.json`); disk clean-up command.
+
+## Done
+React app with sidebar (2026-11-11): Overview, Episodes (scene, script, 3D editor, output, finishing, JSON),
+Characters + designer, Sets, Props, City library, Help. v2 (2026-11-02): render/finish split, BT.709 + 48 kHz + loudness mastering, set picture fidelity, expressions,
+gaze, gestures, posture, pace, narrator, voice FX, ducking, panning, director + camera steps, lighting moods,
+weather, 40 props, titles/credits/transitions/grades/subtitles/chapters/poster, storyboard, city library
+(Copilot), schema-driven app forms. Motion library v1 (2026-11-10).
 
 ## Film needs (movies/santa_is_a_lie/STORY.md)
-Missing: hold/carry, crouch/duck, crowd queue, Santa suit prop, sounds (door slam, lock bolt, crowbar,
-crash, crowd murmur, truck driving: add prompts in `generate/make_sfx_library.py`, run `--missing`).
+Missing: hold/carry, crouch/duck (now possible with a clip), crowd queue, Santa suit prop, sounds (door slam,
+lock bolt, crowbar, crash, crowd murmur, truck driving: add prompts in `generate/make_sfx_library.py`, run
+`--missing`).

@@ -43,6 +43,8 @@ ap.add_argument("--scene", required=True)
 ap.add_argument("--out", required=True)
 ap.add_argument("--stills", help="comma-separated frames to render as PNG instead of the video")
 ap.add_argument("--storyboard", action="store_true", help="one still per shot instead of the video")
+ap.add_argument("--preview3d", action="store_true",
+                help="preview.glb + preview.json for the app's scene editor instead of the video")
 ap.add_argument("--keep-frames", action="store_true", help="keep the rendered PNG frames after the MP4 is made")
 ap.add_argument("--render-key", help="the scene's render key from episode_job.py (the same one guards the frames)")
 ap.add_argument("--quality", help="blocking (default) | draft | standard | final | ultra; overrides scene.json")
@@ -55,6 +57,8 @@ for p_ in (ROOT, HERE):
         sys.path.insert(0, p_)
 import acting  # noqa: E402
 import director  # noqa: E402
+import motion  # noqa: E402
+import motion_rig  # noqa: E402
 import world as world_kit  # noqa: E402
 from core import config, media, schema  # noqa: E402
 
@@ -1150,6 +1154,7 @@ def steering(t, turn=0.0):
 
 
 cursor, last_start = 2, 2
+step_frames = []                    # (start, end) of every step, in script order (the scene editor's timeline)
 for step in spec["script"]:
     start = last_start if step.get("with") == "previous" else cursor
     who = cast.get(step.get("who"))
@@ -1357,11 +1362,35 @@ for step in spec["script"]:
             who.expression.overlay(start / FPS, f1 / FPS + 0.5, feeling(step["expression"], step.get("intensity", 1.0)))
         sounds.append((heard(wav, step.get("fx", who.voice_fx)), start, 2 + len(sounds) % 4, who.pos.copy()))
         end = start + int(math.ceil((dur + step.get("pause", 0.3)) * FPS))
+    elif do == "perform":
+        clip = motion.load(config.MOTIONS_DIR, step["clip"])
+        if clip is None:
+            raise ValueError(f"no motion clip {step['clip']!r} (python castforge.py motion list)")
+        t0, t1 = motion.window(clip, step.get("from", 0.0), step.get("to"))
+        speed, travel = float(step.get("speed", 1.0)), step.get("travel", True)
+        end = start + motion.scene_frames(t0, t1, FPS, speed)
+        keys = motion.fades(start, end, round(float(step.get("blend", 0.3)) * FPS))
+        who.key_pose(start)
+        who.key_pose(keys[1][0])
+        motion_rig.play(who, clip, t0, start, FPS, speed, keys, travel)
+        move, turn, feet = motion.ending(clip, t0, t1)
+        size, pos0, heading0 = motion_rig.hip_height(who), (who.pos.x, who.pos.y), who.heading
+        if travel:
+            who.pos = Vector((*motion.to_world(pos0, heading0, size, move), 0.0))
+            moves.append((who, start, end))
+        for side, (x, y, yaw) in feet.items():          # the base pose takes over where the clip's feet ended
+            local = (x, y) if travel else (x - move[0], y - move[1])
+            who.feet[side] = Vector((*motion.to_world(pos0, heading0, size, local), 0.0))
+            who.foot_heading[side] = heading0 + yaw
+        who.heading = heading0 + turn
+        who.key_pose(keys[2][0])
+        who.key_pose(end)
     elif do == "wait":
         end = start + int(step.get("seconds", 1.0) * FPS)
     else:
         raise ValueError(f"unknown action {do}")
     log(f"{step.get('who', '-')}: {do} frames {start}-{end}")
+    step_frames.append((start, end))
     last_start = start
     cursor = max(cursor, end)
 
@@ -2395,6 +2424,48 @@ timeline = {"version": 1, "id": spec.get("id", "scene"), "fps": FPS, "frames": s
             "lines": [{"start": (ln["f0"] - 1) / FPS, "end": (ln["f1"] - 1) / FPS, "who": ln["who"],
                        "kind": ln["kind"], "text": ln["text"]} for ln in lines],
             "shots": [{"time": (f - 1) / FPS, "kind": k, "on": on} for f, k, on in shot_list]}
+
+if args.preview3d:
+    # the scene as a light 3D file for the app's scene editor: cast with their baked motion (deform bones only,
+    # no face shapes), set and props; every other frame. preview.json maps its timeline back to scene.json.
+    def ever_shown(o):              # visible at some frame (someone who exits is keyed hidden at the end)
+        if not o.hide_render:
+            return True
+        ad = o.animation_data
+        bag = ad and ad.action and anim_utils.action_get_channelbag_for_slot(ad.action, ad.action_slot)
+        fc = bag and bag.fcurves.find("hide_render")
+        return bool(fc) and any(k.co[1] < 0.5 for k in fc.keyframe_points)
+
+    bpy.ops.object.select_all(action="DESELECT")
+    motion_coll = bpy.data.collections.get("CF_motion")
+    for o in scene.objects:
+        if o.type in {"MESH", "ARMATURE"} and ever_shown(o) and not o.name.startswith("WGT-")                 and not (motion_coll and o.name in motion_coll.objects) and not any(
+                    c.hide_render for c in o.users_collection):
+            o.hide_viewport = False
+            o.hide_set(False)
+            o.select_set(True)
+            for m in getattr(o, "modifiers", []):  # masks and cloth offsets apply; subdivision only weighs it down
+                if m.type == "SUBSURF":
+                    m.show_viewport = m.show_render = False
+    glb = os.path.join(os.path.dirname(out), "preview.glb")
+    bpy.ops.export_scene.gltf(filepath=glb, export_format="GLB", use_selection=True, export_animations=True,
+                              export_animation_mode="SCENE", export_frame_step=2, export_def_bones=True,
+                              export_morph=False, export_lights=False, export_cameras=False, export_apply=True)
+    origin = to_world((0.0, 0.0))
+
+    def start_spot(a):                  # where someone is on frame 1 (seated starts have no "position")
+        x, y = (c.evaluate(1) if c else 0.0 for c in a.curves[0][:2])
+        return [round(x - origin.x, 3), round(y - origin.y, 3)]
+
+    json.dump({"fps": FPS, "frames": scene.frame_end, "origin": [origin.x, origin.y],
+               "cast": {cid: {"start": start_spot(a), "rig": a.rig.name} for cid, a in cast.items()},
+               "steps": [{"n": i, "who": st.get("who"), "do": st["do"], "f0": f0, "f1": f1,
+                          **({"to": st["to"]} if isinstance(st.get("to"), list) else {})}
+                         for i, (st, (f0, f1)) in enumerate(zip(spec["script"], step_frames))],
+               "lines": timeline["lines"], "shots": timeline["shots"]},
+              open(os.path.join(os.path.dirname(out), "preview.json"), "w", encoding="utf-8"), indent=1)
+    log(f"3D preview: {os.path.getsize(glb) / 1e6:.1f} MB")
+    sys.exit(0)
 
 if args.storyboard:
     # one small still per shot, a little into it, with what is being said there

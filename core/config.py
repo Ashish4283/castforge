@@ -30,6 +30,7 @@ AI_PYTHON = os.environ.get("CASTFORGE_AI_PYTHON") or shutil.which("python") or "
 VENV_PY = os.path.join(ROOT, ".venv", "Scripts", "python.exe")
 RHUBARB = os.path.join(ROOT, "tools", "Rhubarb-Lip-Sync-1.14.0-Windows", "rhubarb.exe")
 SFX_DIR = os.path.join(ROOT, "sfx")
+MOTIONS_DIR = os.path.join(ROOT, "motions", "clips")      # motion capture clips (motion.py)
 
 # render quality: picture width (None = the scene's own "resolution"), EEVEE samples, cinematic look allowed,
 # full detail (subdivision, ray tracing, motion blur). Timing, voices and lip-sync are the same at every level.
@@ -59,7 +60,8 @@ def resolution(quality, spec):
 
 # everything that changes a rendered scene; editing one of these files re-renders every scene once
 RENDER_CODE = ["blender/scene_kit.py", "blender/props.py", "blender/acting.py", "blender/director.py",
-               "blender/world.py", "core/schema.py", "core/media.py", "core/config.py"]
+               "blender/world.py", "blender/motion.py", "blender/motion_rig.py", "core/schema.py", "core/media.py",
+               "core/config.py"]
 
 
 def scene_files(scene):
@@ -69,6 +71,8 @@ def scene_files(scene):
     out += [c.get("character") for c in scene.get("cast", {}).values()]
     out += [p.get("file") for p in scene.get("props", [])]
     out += [st.get("audio") for st in scene.get("script", [])]
+    out += [os.path.join(MOTIONS_DIR, st["clip"] + ".json") for st in scene.get("script", [])
+            if st.get("do") == "perform" and isinstance(st.get("clip"), str)]
     return [p for p in out if isinstance(p, str) and p]
 
 

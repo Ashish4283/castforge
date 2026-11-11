@@ -18,3 +18,5 @@ __pycache__/
 *.wav
 library/**/build.log
 library/**/*.tmp
+motions/
+web/node_modules/

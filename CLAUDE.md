@@ -5,9 +5,10 @@ Free, local 3D-animated-film maker: photo/design -> rigged character (Blender 5.
 
 ## Token rules (follow every session)
 1. Do NOT explore. Use the code map below, then `grep -n` the anchor and read only that range (`Read offset/limit`).
-2. Never read whole: `blender/scene_kit.py` (2.3k lines), `app/static/app.js` (1.2k), `blender/props.py`,
-   `blender/build_character.py`, `core/schema.py`. Grep first.
-3. Never open: `movies/`, `library/`, `test/`, `tools/`, `sfx/`, `asset_packs*/`, `.venv/`, `*.blend`, `*.json` under
+2. Never read whole: `blender/scene_kit.py` (2.3k lines), `blender/props.py`, `blender/build_character.py`,
+   `core/schema.py`. Grep first.
+3. Never open: `movies/`, `library/`, `test/`, `tools/`, `sfx/`, `motions/`, `asset_packs*/`, `.venv/`, `web/node_modules/`,
+   `app/ui/` (built), `*.blend`, `*.json` under
    `set/` or `voices/` (huge machine-written data). `asset_index.json`, `face_map.json`: data, don't read.
 4. One change = one place. The vocabulary lives only in `core/schema.py`; never re-list actions, props,
    voices or presets anywhere else (the app, checker and Gemini prompt read it; a test enforces the prompt).
@@ -21,6 +22,7 @@ Free, local 3D-animated-film maker: photo/design -> rigged character (Blender 5.
 .venv\Scripts\python -m pytest -q          # all unit + ffmpeg tests (~130, 5 s)
 python castforge.py check|storyboard|episode|status|stop|finish FOLDER [--quality blocking] [--wait]
 python castforge.py voice "text" --voice af_heart | transcribe f.wav | doctor | app (port 8765)
+cd web && npm run build                    # the React app -> app/ui/ (commit app/ui; `npm run dev` = hot reload on 5173, API on 8777)
 blender -b --python-exit-code 1 -P blender/catalog.py -- OUTDIR     # picture of every prop
 ```
 
@@ -39,6 +41,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | what a step does in Blender | `scene_kit.py` anchor `# --- script` then `elif do == "<name>"` |
 | walking, sitting, turning, arms, fingers | `scene_kit.py` `class Actor` (`def walk`, `def key_arms`...) |
 | expressions, gestures, postures, gaze maths | `blender/acting.py` (pure, tested) |
+| motion clips: bone maps, placement maths | `blender/motion.py` (pure, tested); import `import_motion.py`; playback `motion_rig.py` (`def play`); step `elif do == "perform"`; CLI `motion add/cmu/list` |
 | per-frame life: blinks, nods, gaze, gestures applied | `scene_kit.py` anchor `# --- life` |
 | which shot when | `blender/director.py` (pure, tested); cameras: `scene_kit.py` `def close_up`/`two_shot` |
 | 2.5D set from the picture, floor map, A* walks | `generate/depth_set.py`; `scene_kit.py` anchor `# --- 3D set` |
@@ -52,8 +55,11 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | paths, qualities, aspects, render key | `core/config.py` |
 | CLI commands, lock, status text | `castforge.py` (`def main`, `def render_status`) |
 | scene/episode job | `episode_job.py` |
-| web API | `app/server.py` (`@app.get/post`); UI markup `app/index.html`, logic `app/static/app.js` |
-| Studio page (next step, progress) | `server.py` `# --- studio`; `app.js` `renderStudio` |
+| web API | `app/server.py` (`@app.get/post`) |
+| the app (React 18 + TS + Vite, sidebar layout) | `web/src/`: `main.tsx` routes, `app/store.tsx` (movies, GPU, jobs, toasts, hash route), `app/episode.tsx` (open scene model: `update`, `save`, `scene()`, `cast()`), `components/ui.tsx` (Button, Card, Field...), `components/ParamInput.tsx` (any schema parameter), `pages/*`; design tokens at the top of `styles.css`. Old page at `/classic` (`app/index.html`, `static/app.js`) until removed |
+| Overview page (next step, progress) | `server.py` `/api/movie/progress`; `web/src/pages/Studio.tsx` |
+| 3D scene editor (view, timeline, drag spots) | `web/src/pages/episodes/viewer.ts` (three.js) + `Editor3D.tsx`; export `scene_kit.py` `if args.preview3d`; job `--preview3d` |
+| character designer, costumes | vocabulary `schema.CHARACTER`/`COSTUMES`/`check_design`; routes `/api/character`, `/api/character/rebuild`; UI `pages/CharacterDesigner.tsx`; build `build_character.py` anchor `# --- costume`; maths `blender/costume.py` (pure, tested) |
 | model props (seat / wheel objects) | `scene_kit.py` `def load_prop_file`, `def wheel_pivot` |
 | character build | `blender/build_character.py` (photo spec: `generate/analyze_photo.py`, .venv only) |
 | city library, set/prop builders | `blender/build_*_asset.py`, `build_set.py`, `library_geometry.py`, `core/buildings.py` |
@@ -80,6 +86,15 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Scenes render with view transform `Standard` (AgX greys the set picture; see DESIGN_V2 D12).
 - Bash tool: heredocs with apostrophes break; write edit scripts to a file.
 - The user's app runs on 8765; test servers use 8777.
+- A just-appended object's `matrix_world` is not evaluated (reads identity): build on `matrix_basis`.
+- Preview export (glTF): MakeHuman meshes need `export_apply` (masks, `cf_layer` cloth offset) and come as BLEND
+  materials (editor draws them cut-out); someone who exits is keyed hidden, so select by `ever_shown`.
+- Every save of scene.json keeps the previous one in `<episode>/.history/` (newest 50).
+- Costume pieces are made after the Rigify rig (copies of garment/skin faces keep their DEF- weights); a garment
+  is too coarse to pick a belt by whole faces, so `cut()` bisects it. bmesh faces are flat-shaded unless `smooth`.
+- A photo + design build: the photo gives face, body and colours; the design adds hat, beard, costume and overrides
+  what it states. `<name>.design.json` `use_photo` records how the character was last built.
+- Mixamo FBX imports with x0.01 scale and a 90° axis turn on the armature object; CMU BVH (cgspeed) at 120 fps.
 
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).

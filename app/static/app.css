@@ -124,3 +124,17 @@
   .paste:hover, .paste:focus, .paste.over { border-color: var(--accent); }
   .paste img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; }
   .paste .b { padding: 3px 9px; font-size: 13px; }
+
+/* 3D scene editor (editor3d.js): the viewport stays dark in both themes, like any 3D view */
+#viewport { position: relative; margin-top: 10px; border-radius: 10px; overflow: hidden; background: #1b1a18; aspect-ratio: 16 / 9; }
+#viewport canvas { display: block; width: 100% !important; height: 100% !important; touch-action: none; }
+.empty3d { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; color: #a29e96; padding: 16px; text-align: center; }
+#scrub3d { width: 100%; margin-top: 8px; padding: 0; }
+#lanes { position: relative; margin-top: 8px; }
+#lanes .lane { display: flex; align-items: center; gap: 8px; height: 30px; }
+#lanes .who { width: 90px; flex: none; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#lanes .track { position: relative; flex: 1; height: 24px; background: var(--code); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+#lanes .blk { position: absolute; top: 2px; height: 18px; padding: 0 4px; font: 11px/16px system-ui, sans-serif; color: var(--ink); background: var(--panel); border: 1px solid; border-radius: 4px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+#lanes .blk.on { background: var(--accent); color: var(--accent-ink); }
+#lanes .heads { position: absolute; top: 0; bottom: 0; left: 98px; right: 0; pointer-events: none; }
+#playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); }

@@ -10,6 +10,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -333,11 +334,18 @@ def episode(movie: str, episode: str):
                                   ("episode.vtt", "Subtitles (WebVTT)"), ("episode_chapters.txt", "YouTube chapters"),
                                   ("episode_poster.jpg", "Poster"))
                  if os.path.exists(os.path.join(d, f))]
+    previews = []
+    if os.path.isdir(sdir):
+        for s in sorted(os.listdir(sdir)):
+            glb, meta = os.path.join(sdir, s, "preview.glb"), os.path.join(sdir, s, "preview.json")
+            if os.path.exists(glb) and os.path.exists(meta):
+                previews.append({"name": s, "glb": media_url(glb), "meta": media_url(meta)})
     board = os.path.join(d, "storyboard.jpg")
     return {"scene": open(os.path.join(d, "scene.json"), encoding="utf-8").read(),
             "status": st["text"] if st else "not rendered yet", "rendering": bool(st and st["alive"]),
             "video": media_url(video) if os.path.exists(video) else None, "shots": shots,
-            "storyboard": media_url(board) if os.path.exists(board) else None, "downloads": downloads}
+            "storyboard": media_url(board) if os.path.exists(board) else None, "downloads": downloads,
+            "previews": previews}
 
 
 @app.post("/api/episode/save")
@@ -349,7 +357,14 @@ def save_episode(body: dict):
     except json.JSONDecodeError as e:
         line = text.splitlines()[e.lineno - 1].strip() if e.lineno - 1 < len(text.splitlines()) else ""
         raise HTTPException(400, f"not valid JSON at line {e.lineno}: {e.msg}  ->  {line}")
-    open(os.path.join(d, "scene.json"), "w", encoding="utf-8").write(text)
+    path = os.path.join(d, "scene.json")
+    if os.path.exists(path):           # every save keeps the previous version (the newest 50), so edits can be undone
+        hist = os.path.join(d, ".history")
+        os.makedirs(hist, exist_ok=True)
+        shutil.copy2(path, os.path.join(hist, time.strftime("scene_%Y%m%d_%H%M%S.json")))
+        for old in sorted(os.listdir(hist))[:-50]:
+            os.remove(os.path.join(hist, old))
+    open(path, "w", encoding="utf-8").write(text)
     return {"ok": True}
 
 
@@ -425,7 +440,8 @@ def render_episode(body: dict):
     out, code = run_cli("check", d)
     if code != 0:
         raise HTTPException(400, "fix these first:\n" + out)
-    out, code = run_cli("storyboard" if body.get("storyboard") else "episode", d, "--quality", quality)
+    command = "preview3d" if body.get("preview3d") else "storyboard" if body.get("storyboard") else "episode"
+    out, code = run_cli(command, d, "--quality", quality)
     return {"ok": code == 0, "output": out}
 
 
@@ -433,6 +449,12 @@ def render_episode(body: dict):
 def storyboard_episode(body: dict):
     """One still per shot (about a minute per scene) before committing to a render."""
     return render_episode({**body, "storyboard": True, "quality": "draft"})
+
+
+@app.post("/api/episode/preview3d")
+def preview3d_episode(body: dict):
+    """The scene editor's 3D view of every scene (builds the scenes, renders nothing: under a minute each)."""
+    return render_episode({**body, "preview3d": True, "quality": "blocking"})
 
 
 @app.post("/api/episode/stop")
@@ -780,9 +802,9 @@ def character_from_design(body: dict):
         design = json.loads(body.get("design", ""))
     except json.JSONDecodeError as e:
         raise HTTPException(400, f"the design is not valid JSON (line {e.lineno}: {e.msg})")
-    for key in ("gender", "age", "height_cm"):
-        if key not in design:
-            raise HTTPException(400, f"the design needs {key!r}")
+    problems = schema.check_design(design)
+    if problems:
+        raise HTTPException(400, "; ".join(problems))
     busy = gpu_busy()
     if busy:
         raise HTTPException(409, f"the GPU is busy with {busy}; try again when it is done")
@@ -795,10 +817,13 @@ def character_from_design(body: dict):
 @app.post("/api/character/photo")
 async def character_from_photo(movie: str = Form(...), name: str = Form(...), gender: str = Form(...),
                                age: float = Form(...), height_cm: float = Form(...),
-                               photo: UploadFile = File(...), face_photo: UploadFile | None = File(None)):
+                               photo: UploadFile = File(...), face_photo: UploadFile | None = File(None),
+                               costume: str = Form("")):
     movie, name = safe(movie, "movie"), safe(name)
     if gender not in ("male", "female"):
         raise HTTPException(400, "gender must be male or female")
+    if costume and costume not in schema.COSTUMES:
+        raise HTTPException(400, f"no costume {costume!r} (choose {', '.join(schema.COSTUMES)})")
     busy = gpu_busy()
     if busy:
         raise HTTPException(409, f"the GPU is busy with {busy}; try again when it is done")
@@ -813,6 +838,84 @@ async def character_from_photo(movie: str = Form(...), name: str = Form(...), ge
         fp = os.path.join(cdir, f"{name}_face{fext}")
         open(fp, "wb").write(await face_photo.read())
         args += ["--face-photo", fp]
+    # the design editor starts from this; a costume adds its pieces (the photo still gives face and colours)
+    design = {"name": name, "gender": gender, "age": age, "height_cm": height_cm, "use_photo": True}
+    for key, value in schema.COSTUMES.get(costume, {}).items():
+        if not key.startswith("outfit.") and key != "build":
+            design_set(design, key, value)
+    dpath = os.path.join(movie_dir(movie), "characters", f"{name}.design.json")
+    json.dump(design, open(dpath, "w", encoding="utf-8"), indent=1)
+    return {"job": start_build(movie, name, args + ["--design", dpath])}
+
+
+def design_set(design, key, value):
+    *path, last = key.split(".")
+    for part in path:
+        design = design.setdefault(part, {})
+    design[last] = value
+
+
+def character_files(movie, name):
+    """A character's folder, its body photo and its face photo (None when there is none)."""
+    cdir = os.path.join(movie_dir(movie), "characters")
+
+    def photo(stem):
+        return next((p for ext in (".png", ".jpg", ".jpeg", ".webp")
+                     if os.path.exists(p := os.path.join(cdir, "photos", stem + ext))), None)
+    return cdir, photo(name), photo(f"{name}_face")
+
+
+@app.get("/api/character")
+def character(movie: str, name: str):
+    """One character for the design editor: its design (photo colours filled in), photos, previews, last build."""
+    name = safe(name)
+    cdir, photo, face = character_files(movie, name)
+    dpath, spath = os.path.join(cdir, f"{name}.design.json"), os.path.join(cdir, f"{name}.spec.json")
+    if not any(os.path.exists(p) for p in (dpath, spath, os.path.join(cdir, f"{name}.blend"))):
+        raise HTTPException(404, f"no character {name!r}")
+    try:
+        design = json.load(open(dpath, encoding="utf-8")) if os.path.exists(dpath) else {}
+    except ValueError:
+        design = {}
+    if photo and os.path.exists(spath):
+        spec = json.load(open(spath, encoding="utf-8"))
+        cols = spec.get("colours") or {}
+        for key, col in (("skin", "skin"), ("hair.color", "hair"), ("outfit.top", "top"),
+                         ("outfit.bottom", "bottom"), ("outfit.shoes", "shoes")):
+            if cols.get(col) and schema.design_get(design, key) in (None, ""):
+                design_set(design, key, "#%02x%02x%02x" % tuple(int(c) for c in cols[col]))
+        for key, value in (("outfit.garment", (spec.get("clothing") or {}).get("garment")),
+                           ("outfit.sleeves", (spec.get("clothing") or {}).get("sleeves"))):
+            if value and schema.design_get(design, key) in (None, ""):
+                design_set(design, key, value)
+    previews = {v: media_url(f) for v in ("front", "side", "back")
+                if os.path.exists(f := os.path.join(cdir, f"{name}_preview", f"{v}.png"))}
+    log = os.path.join(cdir, f"{name}.build.log")
+    lines = [l[4:] for l in open(log, encoding="utf-8", errors="ignore").read().splitlines()
+             if l.startswith("CF:") and "face shape" not in l] if os.path.exists(log) else []
+    return {"name": name, "design": design, "photo": media_url(photo) if photo else None,
+            "face": media_url(face) if face else None, "previews": previews, "log": lines[-14:]}
+
+
+@app.post("/api/character/rebuild")
+def character_rebuild(body: dict):
+    """Rebuild a character from its edited design; with use_photo, the photo still gives face and body."""
+    movie, name = safe(body.get("movie"), "movie"), safe(body.get("name"))
+    design = body.get("design")
+    problems = schema.check_design(design)
+    if problems:
+        raise HTTPException(400, "; ".join(problems))
+    busy = gpu_busy()
+    if busy:
+        raise HTTPException(409, f"the GPU is busy with {busy}; try again when it is done")
+    cdir, photo, face = character_files(movie, name)
+    dpath = os.path.join(cdir, f"{name}.design.json")
+    use_photo = bool(body.get("use_photo") and photo)
+    json.dump({**design, "name": name, "use_photo": use_photo}, open(dpath, "w", encoding="utf-8"), indent=1)
+    if use_photo:
+        args = [photo, name, "--design", dpath] + (["--face-photo", face] if face else [])
+    else:
+        args = ["--design", dpath, name]
     return {"job": start_build(movie, name, args)}
 
 
@@ -848,8 +951,20 @@ app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__
 app.mount("/library-media", StaticFiles(directory=LIBRARY), name="library-media")
 
 
+UI = os.path.join(os.path.dirname(__file__), "ui")      # the React app, built from web/ (npm run build)
+if os.path.isdir(os.path.join(UI, "assets")):
+    app.mount("/assets", StaticFiles(directory=os.path.join(UI, "assets")), name="ui-assets")
+
+
 @app.get("/")
 def index():
+    built = os.path.join(UI, "index.html")
+    return FileResponse(built if os.path.exists(built) else os.path.join(os.path.dirname(__file__), "index.html"))
+
+
+@app.get("/classic")
+def classic():
+    """The previous page, kept while the React app settles in."""
     return FileResponse(os.path.join(os.path.dirname(__file__), "index.html"))
 
 

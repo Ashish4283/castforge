@@ -309,9 +309,10 @@ function fieldMarkup(key, definition, value, group) {
       <label class="muted">Fog <input type="number" min="0" max="1" step="0.1" data-weather-prop="fog" data-weather-key="${group}.${key}" value="${esc(weather.fog ?? 0)}"></label></div>`;
   } else if (definition.type === "voice") {
     control = `<select id="${id}" data-setting="${group}.${key}"><option value="">Choose voice</option>${optionsMarkup(Object.keys(formSchema.voices), value)}</select>`;
-  } else if (definition.type === "bed" || definition.type === "sfx") {
-    const list = formSchema.library[definition.type === "bed" ? "beds" : "sfx"] || [];
-    control = `<input id="${id}" data-setting="${group}.${key}" list="${id}-options" value="${esc(value ?? "")}" placeholder="Choose a library name or enter a file path">
+  } else if (definition.type === "bed" || definition.type === "sfx" || definition.type === "clip") {
+    const list = formSchema.library[{bed: "beds", sfx: "sfx", clip: "clips"}[definition.type]] || [];
+    const hint = definition.type === "clip" ? "Choose a motion clip" : "Choose a library name or enter a file path";
+    control = `<input id="${id}" data-setting="${group}.${key}" list="${id}-options" value="${esc(value ?? "")}" placeholder="${hint}">
       <datalist id="${id}-options">${optionsMarkup(list, value)}</datalist>`;
   } else if (definition.type === "image") {
     const depth = curEp?.split("/").length || 1;
@@ -738,6 +739,7 @@ function showEp(e) {
   $("#shots").innerHTML = e.shots.map(s => `<div><div class="muted">${esc(s.name)}</div><video src="${s.video}" controls preload="metadata"></video></div>`).join("")
     + (e.storyboard ? `<div style="grid-column:1/-1"><div class="muted">Storyboard</div><a href="${e.storyboard}" target="_blank"><img src="${e.storyboard}" alt="Storyboard" style="width:100%;border-radius:8px"></a></div>` : "")
     + ((e.downloads || []).length ? `<div style="grid-column:1/-1" class="row">${e.downloads.map(d => `<a class="b" href="${d.url}" download>${esc(d.name)}</a>`).join("")}</div>` : "");
+  dispatchEvent(new CustomEvent("cf:episode", {detail: e}));     // the 3D scene editor (editor3d.js) listens
 }
 function startPoll() {
   clearInterval(poll);
@@ -1300,4 +1302,11 @@ $("#addSet").onclick = async () => {
     msg($("#setMsg"), `Set ${name} added.`, true);
     $("#newSetName").value = ""; $("#newSetPic").value = ""; $("#newSetPic").dispatchEvent(new Event("change")); await load(movie());
   } catch (e) { msg($("#setMsg"), e.message); }
+};
+
+// the 3D scene editor (editor3d.js) reads and edits the open scene through these
+window.cf = {
+  model: () => sceneModel, part: () => activeScene(), partIndex: () => activeSceneIndex ?? 0,
+  castEntry: name => castEntryForEdit(name), movie, episode: () => curEp, post, save: saveScene,
+  changed: () => { refreshSceneJson(); renderSceneForms(); renderActionEditor(); },
 };

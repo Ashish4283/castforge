@@ -63,6 +63,12 @@ CastForge - how to make an episode
    Text dialogue uses Kokoro voices; hear one first with: python castforge.py voice "Hello" --voice af_heart
    For a final performance, put one WAV per line in voices/ and set both "audio" and "text" on the step.
 
+   Motion capture: "perform" plays a clip from the motion library (a punch, a sword swing, a dance):
+   python castforge.py motion cmu punch                   (search the free CMU library)
+   python castforge.py motion cmu 02_05 --name punch      (download and add a CMU take)
+   python castforge.py motion add Jab.fbx --name jab      (a Mixamo download: FBX, 30 fps, without skin)
+   python castforge.py motion list
+
 3. Check, preview, render
    python castforge.py check my_scene_folder         (finds mistakes in scene.json)
    python castforge.py storyboard my_scene_folder    (one still per shot: check staging and camera first)
@@ -143,6 +149,8 @@ def render_status(folder):
     done = len(glob.glob(os.path.join(frames_dir, "*.png")))
     if re.search(r"CF: video .*episode\.mp4", log):
         text = f"finished: {os.path.join(folder, 'episode.mp4')}"
+    elif re.search(r"CF: 3D preview ready", log):
+        text = "3D preview ready"
     elif re.search(r"CF: storyboard ready", log):
         text = f"storyboard ready: {os.path.join(folder, 'storyboard.jpg')}"
     elif "CF: stopped by the user" in log and not alive:
@@ -150,6 +158,8 @@ def render_status(folder):
     elif alive:
         if "CF: finishing" in log:
             text = "finishing: titles, transitions, subtitles and sound"
+        elif "CF: 3D preview" in log:
+            text = where + "3D preview: building the scene"
         elif "CF: storyboard" in log:
             text = where + "storyboard: building the scene and its shots"
         else:
@@ -244,6 +254,53 @@ def stop_job(folder):
     with open(os.path.join(folder, "render.log"), "a", encoding="utf-8") as f:
         f.write("\nCF: stopped by the user\n")
     return "stopped; finished frames are kept, and the episode command continues from there"
+
+
+# --- motion clips ------------------------------------------------------------------------------------------
+CMU_MIRROR = "https://raw.githubusercontent.com/sfd158/cmu-mocap/master/"    # the cgspeed BVH release of CMU
+CMU_DIR = os.path.join(ROOT, "motions", "sources", "cmu")
+
+
+def motion_add(src, name=None):
+    """Import a Mixamo FBX or CMU BVH into the motion library (motions/clips); True when it worked."""
+    if not os.path.isfile(src):
+        print(f"file not found: {src}")
+        return False
+    name = name or re.sub(r"[^a-z0-9_]+", "_", os.path.splitext(os.path.basename(src))[0].lower()).strip("_")
+    out = os.path.join(config.MOTIONS_DIR, name)
+    os.makedirs(config.MOTIONS_DIR, exist_ok=True)
+    r = subprocess.run([BLENDER, "-b", "--factory-startup", "--python-exit-code", "1", "-P",
+                        os.path.join(ROOT, "blender", "import_motion.py"), "--", os.path.abspath(src),
+                        out + ".blend", out + ".json"], capture_output=True, text=True, encoding="utf-8",
+                       errors="replace")
+    for line in r.stdout.splitlines():
+        if line.startswith("CF:"):
+            print(line[4:])
+    if r.returncode:
+        print(f"could not import {src} (details: blender -b -P blender/import_motion.py -- FILE OUT.blend OUT.json)")
+    return r.returncode == 0
+
+
+def motion_cmu(what, name=None):
+    """A CMU take by number (02_05) is downloaded and imported; other words search the CMU index."""
+    import urllib.request
+    os.makedirs(CMU_DIR, exist_ok=True)
+    if re.fullmatch(r"\d{2,3}_\d{2}", what):
+        subject = what.split("_")[0].zfill(3)
+        dest = os.path.join(CMU_DIR, what + ".bvh")
+        if not os.path.exists(dest):
+            print(f"downloading CMU take {what}...")
+            urllib.request.urlretrieve(f"{CMU_MIRROR}data/{subject}/{what}.bvh", dest)
+        return motion_add(dest, name or f"cmu_{what}")
+    index = os.path.join(CMU_DIR, "index.txt")
+    if not os.path.exists(index):
+        urllib.request.urlretrieve(CMU_MIRROR + "cmu-mocap-index-text.txt", index)
+    hits = [ln.strip() for ln in open(index, encoding="utf-8", errors="replace")
+            if re.match(r"\d+_\d+\t", ln) and what.lower() in ln.lower()]
+    print("\n".join(hits[:40]) or f"no CMU take mentions {what!r}")
+    if hits:
+        print("import one with: python castforge.py motion cmu 02_05 --name punch")
+    return bool(hits)
 
 
 def speak(text, voice, speed=1.0, fx="clean", out=None):
@@ -371,11 +428,17 @@ def main():
         build = [BLENDER, "-b", "--factory-startup", "-P", os.path.join(ROOT, "blender", "build_character.py"), "--",
                  "--out", os.path.join(c.out_dir, f"{c.name}.blend"),
                  "--preview", os.path.join(c.out_dir, f"{c.name}_preview")]
+        design = json.load(open(c.design, encoding="utf-8")) if c.design else {}
+        c.gender = c.gender or design.get("gender")
+        c.age = c.age or design.get("age")
+        c.height_cm = c.height_cm or design.get("height_cm")
+        if not (c.photo or c.design):
+            sys.exit("give a PHOTO or --design DESIGN.json (or both: the design then adds a costume to the photo)")
         if c.design:
             build += ["--design", c.design]
-        else:
-            if not (c.photo and c.gender and c.age and c.height_cm):
-                sys.exit("a photo character needs: PHOTO NAME --gender --age --height-cm")
+        if c.photo:
+            if not (c.gender and c.age and c.height_cm):
+                sys.exit("a photo character needs: PHOTO NAME --gender --age --height-cm (or a design that has them)")
             spec = os.path.join(c.out_dir, f"{c.name}.spec.json")
             cmd = [VENV_PY, os.path.join(ROOT, "generate", "analyze_photo.py"), c.photo, spec]
             if c.face_photo:
@@ -486,13 +549,27 @@ def main():
             print(f"Reusable asset ready: {os.path.relpath(blend_path, ROOT)}")
             built += 1
         print(f"Library starter build complete: {built} built, {skipped} kept.")
+    elif a.command == "motion":
+        sub, rest = (a.args[0] if a.args else "list"), a.args[1:]
+        if sub == "add" and rest:
+            sys.exit(0 if motion_add(rest[0], option("--name")) else 1)
+        elif sub == "cmu" and rest:
+            sys.exit(0 if motion_cmu(rest[0], option("--name")) else 1)
+        elif sub == "list":
+            from blender import motion
+            for n in motion.names(config.MOTIONS_DIR):
+                m = motion.load(config.MOTIONS_DIR, n)
+                print(f"{n:24} {m['seconds']:6.1f} s  {m['source']:6}  {m['file']}")
+        else:
+            sys.exit("usage: python castforge.py motion add FILE [--name NAME] | motion cmu SEARCH|TAKE [--name NAME]"
+                     " | motion list")
     elif a.command == "check":
         sys.exit(1 if check_scene(a.args[0] if a.args else ".") else 0)
-    elif a.command in ("episode", "storyboard"):
+    elif a.command in ("episode", "storyboard", "preview3d"):
         quality = option("--quality")
         if quality and quality not in config.QUALITY:
             sys.exit(f"unknown quality {quality!r}; choose {', '.join(config.QUALITY)}")
-        extra = (["--quality", quality] if quality else []) + (["--storyboard"] if a.command == "storyboard" else [])
+        extra = (["--quality", quality] if quality else []) + ([f"--{a.command}"] if a.command != "episode" else [])
         start_job(folder_arg(), extra, wait="--wait" in a.args)
     elif a.command == "finish":
         folder = folder_arg()

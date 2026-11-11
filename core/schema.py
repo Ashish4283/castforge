@@ -8,7 +8,7 @@ import json
 import math
 import os
 
-from blender import acting
+from blender import acting, motion
 from core import config, finish, media
 
 # --- names ------------------------------------------------------------------------------------------------
@@ -201,6 +201,14 @@ ACTIONS = {
                           "move": p("enum", "camera move", default="static", values=CAMERA_MOVES),
                           "lens": p("number", "lens in mm (empty: chosen for the shot)"),
                           "seconds": p("number", "how long (empty: until the next camera step)")}},
+    "perform": {"who": True, "help": "play a motion-capture clip (Mixamo or CMU): a punch, a sword swing, a dance",
+                "params": {"clip": p("clip", "name in the motion library (python castforge.py motion list)", True),
+                           "from": p("number", "start this many seconds into the clip", default=0.0),
+                           "to": p("number", "stop at this second of the clip (empty: its end)"),
+                           "speed": p("number", "playback speed", default=1.0),
+                           "blend": p("number", "seconds to blend into and out of the clip", default=0.3),
+                           "travel": p("bool", "move across the floor with the clip (off: on the spot)",
+                                       default=True)}},
     "wait": {"who": False, "help": "nothing happens for a while",
              "params": {"seconds": p("number", "how long", default=1.0)}},
 }
@@ -236,14 +244,82 @@ FINISH_SETTINGS = {
 }
 
 
+# --- character designs (<name>.design.json; blender/build_character.py builds them) -------------------------
+# keys with a dot are nested: "hair.color" is design["hair"]["color"]
+BODY_BUILDS = ["slim", "average", "athletic", "heavy", "muscular"]
+BEARDS = ["none", "scruffy", "full", "long", "faun", "moustache", "santa"]
+HATS = ["none", "santa", "newsboy"]
+EYES = ["brown", "brownlight", "green", "grey", "blue", "bluegreen", "deepblue", "lightblue", "ice"]
+CHARACTER = {
+    "gender": p("enum", "body type", required=True, values=["male", "female"]),
+    "age": p("number", "years, 16-90", required=True),
+    "height_cm": p("number", "height in centimetres", required=True),
+    "build": p("enum", "body build", default="average", values=BODY_BUILDS),
+    "skin": p("color", "skin tone"),
+    "eyes": p("enum", "eye colour", values=EYES),
+    "hair.length": p("enum", "hair length", default="short", values=["none", "short", "medium", "long"]),
+    "hair.color": p("color", "hair colour (a beard takes it too)"),
+    "beard": p("enum", "beard", default="none", values=BEARDS),
+    "hat": p("enum", "hat (hides the hair)", default="none", values=HATS),
+    "outfit.garment": p("enum", "below the waist", default="trousers", values=["trousers", "shorts", "skirt", "dress"]),
+    "outfit.sleeves": p("enum", "sleeves", default="long", values=["short", "long"]),
+    "outfit.top": p("color", "top colour"),
+    "outfit.bottom": p("color", "trousers / skirt colour"),
+    "outfit.shoes": p("color", "shoe colour"),
+    "costume.coat": p("enum", "long: the top becomes a coat down to mid-thigh", default="none", values=["none", "long"]),
+    "costume.fabric": p("enum", "garment: its own knit/cloth texture; or a plain velvet, leather or cotton",
+                        default="garment", values=["garment", "velvet", "leather", "cotton"]),
+    "costume.trim": p("color", "fur trim on cuffs, hem, collar, front and boot tops (empty: none)"),
+    "costume.belt": p("color", "belt at the waist (empty: none)"),
+    "costume.buckle": p("color", "belt buckle"),
+    "costume.gloves": p("color", "gloves (empty: bare hands)"),
+    "costume.boots": p("color", "boots instead of shoes (empty: shoes)"),
+}
+# ready-made looks the app offers; each is a set of design keys (dotted, as above)
+COSTUMES = {
+    "santa": {"hat": "santa", "beard": "santa", "build": "heavy", "hair.color": "#eeeae4", "outfit.garment": "trousers",
+              "outfit.sleeves": "long", "outfit.top": "#8c1018", "outfit.bottom": "#8c1018",
+              "costume.coat": "long", "costume.fabric": "velvet", "costume.trim": "#f3efe8", "costume.belt": "#141414",
+              "costume.buckle": "#c9a227", "costume.gloves": "#f3efe8", "costume.boots": "#141414"},
+}
+
+
+def design_get(design, key):
+    """A dotted design key's value (None when missing)."""
+    for part in key.split("."):
+        design = design.get(part) if isinstance(design, dict) else None
+    return design
+
+
+def check_design(design):
+    """Plain-language problems in a character design (empty list: it can be built)."""
+    if not isinstance(design, dict):
+        return ["the design must be a JSON object"]
+    problems = []
+    for key, spec in CHARACTER.items():
+        v = design_get(design, key)
+        if v is None or v == "":
+            if spec["required"]:
+                problems.append(f"the design needs {key!r}")
+        elif spec["type"] == "enum" and v not in spec["values"]:
+            problems.append(f"{key}: {v!r} is not one of {', '.join(spec['values'])}")
+        elif spec["type"] == "number" and not isinstance(v, (int, float)):
+            problems.append(f"{key}: {v!r} must be a number")
+        elif spec["type"] == "color" and not (isinstance(v, str) and len(v.lstrip("#")) == 6
+                                              and all(c in "0123456789abcdefABCDEF" for c in v.lstrip("#"))):
+            problems.append(f"{key}: {v!r} must be a colour like #a3161a")
+    return problems
+
+
 def library():
-    """The sound library's names: footstep floors, effects and beds."""
+    """The library's names: footstep floors, sound effects and beds, and motion clips."""
     path = os.path.join(config.SFX_DIR, "library.json")
     try:
         lib = json.load(open(path, encoding="utf-8"))
     except (OSError, ValueError):
-        return {"footsteps": [], "sfx": [], "beds": []}
-    return {k: sorted(lib.get(k, {})) for k in ("footsteps", "sfx", "beds")}
+        lib = {}
+    return dict({k: sorted(lib.get(k, {})) for k in ("footsteps", "sfx", "beds")},
+                clips=motion.names(config.MOTIONS_DIR))
 
 
 def describe():
@@ -254,7 +330,7 @@ def describe():
             "gestures": GESTURES, "postures": POSTURES, "paces": PACES, "voice_fx": VOICE_FX, "grades": GRADES,
             "transitions": TRANSITIONS, "lighting": list(LIGHTING), "weather": WEATHER, "shots": SHOT_KINDS,
             "moves": CAMERA_MOVES, "qualities": QUALITIES, "aspects": ASPECTS, "seats": SEAT_TYPES,
-            "library": library()}
+            "character": CHARACTER, "costumes": COSTUMES, "library": library()}
 
 
 # --- checking ----------------------------------------------------------------------------------------------
@@ -471,6 +547,9 @@ def check_parsed(folder, sc):
             elif par["type"] == "sfx" and lib["sfx"] and value not in lib["sfx"]:
                 warnings.append(f"step {n}: no {value!r} sound in sfx/library.json "
                                 "(python generate/make_sfx_library.py sfx --missing)")
+            elif par["type"] == "clip" and (not isinstance(value, str) or value not in lib["clips"]):
+                problems.append(f"no motion clip {value!r}: add it with python castforge.py motion add FILE "
+                                "(or motion cmu SEARCH)")
             elif par["type"] in ("text", "audio", "bed", "door", "seat") and not isinstance(value, str):
                 problems.append(f'"{key}" must be text')
             elif par["type"] == "bool" and not isinstance(value, bool):

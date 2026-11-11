@@ -17,17 +17,21 @@ no explanation. Format:
   "build": "slim" | "average" | "athletic" | "heavy" | "muscular",
   "skin": "#rrggbb",
   "hair": {"length": "none" | "short" | "medium" | "long", "style": "auto", "color": "#rrggbb"},
-  "beard": "none" | "scruffy" | "full" | "long" | "faun" | "moustache",
+  "beard": "none" | "scruffy" | "full" | "long" | "faun" | "moustache" | "santa",
   "hat": "none" | "santa" | "newsboy",
   "eyes": "brown" | "brownlight" | "green" | "grey" | "blue" | "bluegreen" | "deepblue" | "lightblue" | "ice",
   "outfit": {"garment": "trousers" | "shorts" | "skirt" | "dress", "sleeves": "short" | "long",
-             "top": "#rrggbb", "bottom": "#rrggbb", "shoes": "#rrggbb"}
+             "top": "#rrggbb", "bottom": "#rrggbb", "shoes": "#rrggbb"},
+  "costume": {"coat": "none" | "long", "fabric": "garment" | "velvet" | "leather" | "cotton",
+              "trim": "#rrggbb", "belt": "#rrggbb", "buckle": "#rrggbb", "gloves": "#rrggbb", "boots": "#rrggbb"}
 }
 
 Rules:
 - The character must be invented, not a real or famous person.
 - Use realistic, natural colours for skin and hair that fit the character's background and age.
 - For a dress, use the same colour for top and bottom.
+- "costume" is only for costumes (Santa, uniforms, fantasy): leave it out for everyday clothes. Leave out
+  any costume piece the character does not wear (no trim, no belt...).
 
 Character: <DESCRIBE THE CHARACTER HERE>
 ```

@@ -19,8 +19,9 @@ files it reads (core/config.render_key). Then core/finish.py turns the shots int
 transitions, grade, subtitles, chapters, a poster and mastered sound.
 
     python episode_job.py FOLDER [--quality blocking|draft|standard|final|ultra]
-                                 [--storyboard] [--finish-only] [--prepare]
+                                 [--storyboard] [--preview3d] [--finish-only] [--prepare]
     --storyboard   one still per shot -> scenes/NN_id/storyboard.jpg and FOLDER/storyboard.jpg (no render)
+    --preview3d    the app's scene editor files -> scenes/NN_id/preview.glb and preview.json (no render)
     --finish-only  redo only the finishing (the shots must be up to date)
     --prepare      write each scene's scene.json without rendering (for test frames)
 """
@@ -37,6 +38,7 @@ from core.schema import FINISH_KEYS  # noqa: E402
 folder = os.path.abspath(sys.argv[1])
 quality = sys.argv[sys.argv.index("--quality") + 1] if "--quality" in sys.argv else None
 STORYBOARD, FINISH_ONLY = "--storyboard" in sys.argv, "--finish-only" in sys.argv
+PREVIEW3D = "--preview3d" in sys.argv
 spec = json.load(open(os.path.join(folder, "scene.json"), encoding="utf-8"))
 
 
@@ -130,7 +132,11 @@ for i, (sid, d, scene) in enumerate(scenes, 1):
     key = config.render_key(scene, q, d, FINISH_KEYS)
     stamp, shot = os.path.join(d, "shot.sha256"), os.path.join(d, "shot.mp4")
     log(f"scene {i}/{n} {sid}")
-    if STORYBOARD:
+    if PREVIEW3D:
+        log("3D preview: building the scene")
+        if blender_scene(scene_file, shot, ["--preview3d"]) != 0:
+            sys.exit(f"CF: FAILED 3D preview of scene {sid} (see the lines above)")
+    elif STORYBOARD:
         if blender_scene(scene_file, shot, ["--storyboard"]) != 0:
             sys.exit(f"CF: FAILED storyboard of scene {sid} (see the lines above)")
         storyboard.contact_sheet([(f"{i}. {sid[3:].replace('_', ' ').title()}", storyboard.scene_tiles(d))],
@@ -149,6 +155,9 @@ for i, (sid, d, scene) in enumerate(scenes, 1):
             open(stamp, "w").write(key)
     done.append((sid, d, scene))
 
+if PREVIEW3D:
+    log("3D preview ready")
+    sys.exit(0)
 if "--prepare" in sys.argv:
     sys.exit(0)
 if STORYBOARD:

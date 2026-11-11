@@ -47,17 +47,25 @@ if args.design:
 
     hair = DESIGN.get("hair", {})
     outfit = DESIGN.get("outfit", {})
-    args.gender = args.gender or DESIGN["gender"]
-    args.age = args.age or float(DESIGN["age"])
-    args.height_cm = args.height_cm or float(DESIGN["height_cm"])
+    args.gender = args.gender or DESIGN.get("gender")
+    args.age = args.age or float(DESIGN.get("age") or 0) or None
+    args.height_cm = args.height_cm or float(DESIGN.get("height_cm") or 0) or None
     if hair.get("style") and hair["style"] != "auto":
         args.hair = args.hair or hair["style"]
-    spec = {"ratios": {}, "face": None,
-            "colours": {"skin": rgb(DESIGN.get("skin")), "hair": rgb(hair.get("color")),
-                        "top": rgb(outfit.get("top")), "bottom": rgb(outfit.get("bottom")),
-                        "shoes": rgb(outfit.get("shoes"))},
-            "clothing": {"garment": outfit.get("garment", "trousers"), "sleeves": outfit.get("sleeves", "long")},
-            "hair_length": hair.get("length", "short")}
+    colours = {"skin": rgb(DESIGN.get("skin")), "hair": rgb(hair.get("color")), "top": rgb(outfit.get("top")),
+               "bottom": rgb(outfit.get("bottom")), "shoes": rgb(outfit.get("shoes"))}
+    if args.spec:
+        # a photo character with a design on top: the photo gives body, face and colours; the design adds
+        # hat, beard, costume and replaces what it states (a colour, the garment, the hair length)
+        spec = json.load(open(args.spec))
+        spec["colours"].update({k: v for k, v in colours.items() if v})
+        spec["clothing"].update({k: outfit[k] for k in ("garment", "sleeves") if outfit.get(k)})
+        if hair.get("length"):
+            spec["hair_length"] = hair["length"]
+    else:
+        spec = {"ratios": {}, "face": None, "colours": colours,
+                "clothing": {"garment": outfit.get("garment", "trousers"), "sleeves": outfit.get("sleeves", "long")},
+                "hair_length": hair.get("length", "short")}
 elif args.spec:
     spec = json.load(open(args.spec))
 else:
@@ -181,10 +189,11 @@ def error():
 
 
 best = (error(), {"weight": 0.5, "muscle": 0.5, "proportions": 0.5})
-if DESIGN:
+FIT = not DESIGN or bool(args.spec)     # a photo shapes the body; a design alone uses its build preset
+if not FIT:
     wt, mu, pr = BUILDS.get(DESIGN.get("build", "average"), BUILDS["average"])
     best = (0.0, {"weight": wt, "muscle": mu, "proportions": pr})
-for weight in ((0.15, 0.35, 0.5, 0.65, 0.85) if not DESIGN else ()):
+for weight in ((0.15, 0.35, 0.5, 0.65, 0.85) if FIT else ()):
     for muscle in (0.25, 0.5, 0.75):
         for proportions in (0.0, 0.5, 1.0):
             set_macros(weight=weight, muscle=muscle, proportions=proportions)
@@ -193,7 +202,7 @@ for weight in ((0.15, 0.35, 0.5, 0.65, 0.85) if not DESIGN else ()):
                 best = (e, {"weight": weight, "muscle": muscle, "proportions": proportions})
 # refine around the best grid point
 step = {"weight": 0.08, "muscle": 0.1, "proportions": 0.2}
-for _ in range(2 if not DESIGN else 0):
+for _ in range(2 if FIT else 0):
     for k in ("weight", "muscle", "proportions"):
         for d in (-step[k], step[k]):
             trial = dict(best[1]); trial[k] = min(max(trial[k] + d, 0.0), 1.0)
@@ -518,18 +527,21 @@ if h_name != "none":
     log("hair", h_name)
 
 # beards and hats (CC0 packs bodyparts05, hats01); a beard takes the hair colour
-BEARDS = {"scruffy": "wdg_scruffy_beard", "long": "rehmanpolanski_beard_viking", "full": "grinsegold_beard_sigmund_wip",
-          "faun": "culturalibre_faun_beard", "moustache": "rehmanpolanski_moustache_viking"}
+BEARDS = {"scruffy": ["wdg_scruffy_beard"], "long": ["rehmanpolanski_beard_viking"],
+          "full": ["grinsegold_beard_sigmund_wip"], "faun": ["culturalibre_faun_beard"],
+          "moustache": ["rehmanpolanski_moustache_viking"],
+          "santa": ["rehmanpolanski_beard_viking", "rehmanpolanski_moustache_viking"]}
 HATS = {"santa": "joepal_xmas_cap", "newsboy": "jujube_newsboy_cap"}
-beard_obj = hat_obj = None
+beard_objs, hat_obj = [], None
 beard = (DESIGN or {}).get("beard", "none")
 if beard in BEARDS:
-    beard_obj = asset(f"{BEARDS[beard]}/{BEARDS[beard]}.mhclo", "clothes", "Clothes")
+    beard_objs = [o for o in (asset(f"{b}/{b}.mhclo", "clothes", "Clothes") for b in BEARDS[beard]) if o]
     log("beard", beard)
 hat = (DESIGN or {}).get("hat", "none")
 if hat in HATS:
     hat_obj = asset(f"{HATS[hat]}/{HATS[hat]}.mhclo", "clothes", "Clothes")
     log("hat", hat)
+COSTUME = (DESIGN or {}).get("costume") or {}     # coat, trim, belt, buckle, gloves, boots (core/schema.py)
 
 # plain garments (CC0 packs) whose textures recolour cleanly; picked from what the photo shows
 clothing = spec.get("clothing", {"garment": "trousers", "sleeves": "long"})
@@ -551,8 +563,9 @@ else:
     bottom_name = BOTTOM[clothing["garment"]]
     bottom_obj, top_obj = cloth(bottom_name), cloth(top_name)
     worn = [top_name, bottom_name]
-shoes_obj = cloth("shoes04")
-log("wearing", worn + ["shoes04"], clothing)
+shoes_name = "shoes03" if COSTUME.get("boots") else "shoes04"     # shoes03: black boots
+shoes_obj = cloth(shoes_name)
+log("wearing", worn + [shoes_name], clothing)
 
 # layering: push each garment out along its (posed) normals so the outer layer always covers
 # the inner one and the body never pokes through, also while animating
@@ -677,10 +690,11 @@ if hair_obj and cols.get("hair"):
     recolour(hair_obj, cols["hair"])
 if brows_obj and cols.get("hair"):
     recolour(brows_obj, cols["hair"])
-if beard_obj and cols.get("hair"):
+for beard_obj in beard_objs if cols.get("hair") else []:
     recolour(beard_obj, cols["hair"])
-if shoes_obj and cols.get("shoes"):
-    recolour(shoes_obj, cols["shoes"])
+shoes_col = rgb(COSTUME["boots"]) if COSTUME.get("boots") else cols.get("shoes")
+if shoes_obj and shoes_col:
+    recolour(shoes_obj, shoes_col)
 top_col = cols.get("top") or cols.get("bottom")
 bottom_col = cols.get("bottom") or cols.get("top")
 for obj, col in ((top_obj, top_col), (bottom_obj, bottom_col), (dress_obj, top_col)):
@@ -754,6 +768,312 @@ root = rig
 lowest = ObjectService.get_lowest_point(human)
 root.location.z -= human.matrix_world.translation.z + human.matrix_world.to_scale().z * lowest
 log("rig", rig.name, len(rig.pose.bones), "pose bones")
+
+# --- costume: long coat, fur trim, belt, gloves, boot tops (after the rig: every piece copies the bone
+# --- weights of the garment or skin it is made from; geometry maths in costume.py) ---------------------
+if COSTUME:
+    import bmesh
+    from mathutils import Vector
+    from mathutils.bvhtree import BVHTree
+    from mathutils.kdtree import KDTree
+    sys.path.insert(0, HERE)
+    import costume as kit
+    bpy.context.view_layer.update()
+
+    def lin(h):
+        c = rgb(h) if isinstance(h, str) else h
+        return tuple(float(x) for x in srgb_to_linear(c)) if c else None
+
+    def material(name, colour, rough, metal=0.0, sheen=0.0, coat=0.0, fluff=0.0):
+        m = bpy.data.materials.new(name)
+        m.use_nodes = True
+        nt = m.node_tree
+        b = nt.nodes["Principled BSDF"]
+        b.inputs["Base Color"].default_value = (*colour, 1)
+        b.inputs["Roughness"].default_value = rough
+        b.inputs["Metallic"].default_value = metal
+        b.inputs["Sheen Weight"].default_value = sheen
+        b.inputs["Sheen Tint"].default_value = (*(min(1.0, 0.25 + 1.5 * c) for c in colour), 1)   # velvet glows in its own colour
+        b.inputs["Coat Weight"].default_value = coat
+        if fluff:   # fur: a fine noise bump so the trim reads soft, not plastic
+            noise = nt.nodes.new("ShaderNodeTexNoise")
+            noise.inputs["Scale"].default_value = 420.0
+            noise.inputs["Detail"].default_value = 8.0
+            bump = nt.nodes.new("ShaderNodeBump")
+            bump.inputs["Strength"].default_value = fluff
+            bump.inputs["Distance"].default_value = 0.004
+            nt.links.new(noise.outputs["Fac"], bump.inputs["Height"])
+            nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+        return m
+
+    def rest(obj):
+        """Rest-pose vertex positions (shape keys mixed, no modifiers): local array and world tuples."""
+        mods = [(m, m.show_viewport) for m in obj.modifiers]
+        for m, _ in mods:
+            m.show_viewport = False
+        ev = obj.evaluated_get(bpy.context.evaluated_depsgraph_get())
+        me = ev.to_mesh()
+        local = np.empty(len(me.vertices) * 3)
+        me.vertices.foreach_get("co", local)
+        ev.to_mesh_clear()
+        for m, shown in mods:
+            m.show_viewport = shown
+        local = local.reshape(-1, 3)
+        mw = np.array(obj.matrix_world)
+        world = local @ mw[:3, :3].T + mw[:3, 3]
+        return local, [tuple(v) for v in world]
+
+    def faces_of(obj):
+        return [tuple(p.vertices) for p in obj.data.polygons]
+
+    def dominant(obj):
+        """Each vertex's strongest vertex-group name, lower case ('' when unweighted)."""
+        names = {g.index: g.name.lower() for g in obj.vertex_groups}
+        return [names.get(max(v.groups, key=lambda g: g.weight).group, "") if len(v.groups) else ""
+                for v in obj.data.vertices]
+
+    def piece(src, name, keep, mat, lift, thick):
+        """A new rigged mesh from faces `keep` of `src`, `lift` m out along its normals, `thick` m thick."""
+        o = src.copy()
+        o.data = src.data.copy()
+        o.name = name
+        for c in src.users_collection:
+            c.objects.link(o)
+        for k in list(o.keys()):
+            if k.lower().startswith("mpfb"):
+                del o[k]
+        if o.data.shape_keys:          # keep the shaped body, drop the face shapes
+            local, _ = rest(src)
+            o.shape_key_clear()
+            o.data.vertices.foreach_set("co", local.ravel())
+        bm = bmesh.new()
+        bm.from_mesh(o.data)
+        keep = set(keep)
+        bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.index not in keep], context="FACES")
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+        bm.to_mesh(o.data)
+        bm.free()
+        for m in list(o.modifiers):
+            if m.type not in ("ARMATURE", "SUBSURF", "DISPLACE"):
+                o.modifiers.remove(m)
+        o.data.materials.clear()
+        o.data.materials.append(mat)
+        o.data.polygons.foreach_set("material_index", [0] * len(o.data.polygons))
+        if lift:
+            d = o.modifiers.new("cf_lift", "DISPLACE")
+            d.strength, d.mid_level = lift, 0.0
+        if thick:
+            sol = o.modifiers.new("cf_thick", "SOLIDIFY")
+            sol.thickness, sol.offset, sol.use_rim = thick, 1.0, True
+        return o
+
+    def cut(o, keep):
+        """Slice mesh `o` along the world planes in `keep` [(axis, lo, hi)...] and drop faces outside them;
+        the new vertices on the cuts get interpolated bone weights and UVs."""
+        mw = o.matrix_world
+        inv = mw.inverted()
+        bm = bmesh.new()
+        bm.from_mesh(o.data)
+        for axis, lo, hi in keep:
+            for v in (lo, hi):
+                point = [0.0, 0.0, 0.0]
+                point[axis] = v
+                normal = [0.0, 0.0, 0.0]
+                normal[axis] = 1.0
+                co_l = inv @ Vector(point)
+                no_l = (inv.to_3x3().transposed().inverted() @ Vector(normal)).normalized()
+                geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
+                bmesh.ops.bisect_plane(bm, geom=geom, plane_co=co_l, plane_no=no_l)
+        drop = []
+        for f in bm.faces:
+            c = mw @ f.calc_center_median()
+            if any(not (lo <= c[axis] <= hi) for axis, lo, hi in keep):
+                drop.append(f)
+        bmesh.ops.delete(bm, geom=drop, context="FACES")
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+        bm.to_mesh(o.data)
+        bm.free()
+
+    def head(bone):
+        b = rig.data.bones.get(bone)
+        return rig.matrix_world @ b.head_local if b else None
+
+    centre_x = head("DEF-spine").x
+    hip_z, knee_z = head("DEF-thigh.L").z, head("DEF-shin.L").z
+    TORSO = ("spine", "pelvis", "thigh", "torso", "hips")
+    made = []
+
+    # the body surface without helpers: keeps the coat clear of the legs; its weights shape the coat's skirt
+    _, body_w = rest(human)
+    in_body = set(int(v) for v in body_idx)
+    body_bvh = BVHTree.FromPolygons(body_w, [f for f in faces_of(human) if all(v in in_body for v in f)])
+    body_kd = KDTree(len(in_body))
+    for v in in_body:
+        body_kd.insert(body_w[v], v)
+    body_kd.balance()
+    body_names = {g.index: g.name for g in human.vertex_groups}
+
+    def body_weights(v):
+        return {body_names[g.group]: g.weight for g in human.data.vertices[v].groups
+                if body_names[g.group].startswith("DEF-")}
+
+    def clear_of_body(p):
+        hit, normal, _, _ = body_bvh.find_nearest(p)
+        return kit.push_clear(p, tuple(hit), tuple(normal), 0.03) if hit is not None else p
+
+    # long coat: continue the top's hem down to mid-thigh, flaring a little, weighted from hips toward legs
+    if COSTUME.get("coat") == "long" and top_obj:
+        _, co = rest(top_obj)
+        hem = kit.openings(co, kit.boundary_loops(faces_of(top_obj)), centre_x).get("hem")
+        length = (kit.centroid(co, hem)[2] - (hip_z - 0.55 * (hip_z - knee_z))) if hem else 0.0
+        if length > 0.03:
+            n_rings = max(2, round(length / 0.03))
+            c = kit.centroid(co, hem)
+            rings = [[clear_of_body(p) for p in ring]
+                     for ring in kit.hem_rings([co[v] for v in hem], c[:2], length, n_rings, 0.12)]
+            names = {g.index: g.name for g in top_obj.vertex_groups}
+            hem_w = [{names[g.group]: g.weight for g in top_obj.data.vertices[v].groups} for v in hem]
+            inv = np.linalg.inv(np.array(top_obj.matrix_world))
+            bm = bmesh.new()
+            bm.from_mesh(top_obj.data)
+            bm.verts.ensure_lookup_table()
+            uv = bm.loops.layers.uv.active
+            deform = bm.verts.layers.deform.verify()
+
+            def column(a, b):
+                """UVs of the quads stacked above hem edge a-b: [((bottom a, bottom b), (top a, top b)), ...]."""
+                va, vb = bm.verts[a], bm.verts[b]
+                edge = bm.edges.get((va, vb))
+                face, out = (edge.link_faces[0] if edge and edge.link_faces else None), []
+                while face is not None and len(face.verts) == 4 and len(out) < n_rings:
+                    loops = {l.vert: l for l in face.loops}
+                    if va not in loops or vb not in loops:
+                        break
+                    la, lb = loops[va], loops[vb]
+                    ua = la.link_loop_prev.vert if la.link_loop_next.vert == vb else la.link_loop_next.vert
+                    ub = lb.link_loop_next.vert if lb.link_loop_prev.vert == va else lb.link_loop_prev.vert
+                    out.append(((la[uv].uv.copy(), lb[uv].uv.copy()), (loops[ua][uv].uv.copy(), loops[ub][uv].uv.copy())))
+                    top = bm.edges.get((ua, ub))
+                    face = next((f for f in top.link_faces if f != face), None) if top else None
+                    va, vb = ua, ub
+                return out
+
+            columns = [column(hem[i], hem[(i + 1) % len(hem)]) for i in range(len(hem))]
+            rows = []
+            for k, ring in enumerate(rings, 1):
+                row = []
+                for i, p in enumerate(ring):
+                    nv = bm.verts.new((inv @ np.array([*p, 1.0]))[:3])
+                    _, near, _ = body_kd.find(p)
+                    for g, wt in kit.mix_weights(hem_w[i], body_weights(near), 0.2 + 0.5 * k / n_rings).items():
+                        gi = top_obj.vertex_groups.get(g) or top_obj.vertex_groups.new(name=g)
+                        nv[deform][gi.index] = wt
+                    row.append(nv)
+                rows.append(row)
+            bm.verts.index_update()
+            bm.verts.ensure_lookup_table()
+            new_faces = []
+            for n, f in enumerate(kit.ring_faces(hem, [[v.index for v in r] for r in rows])):
+                try:
+                    nf = bm.faces.new([bm.verts[i] for i in f])
+                except ValueError:
+                    continue
+                nf.smooth = True
+                col = columns[n % len(hem)]       # the coat below the hem mirrors the garment above it
+                if col:
+                    (ba, bb), (ta, tb) = col[(n // len(hem)) % len(col)]
+                    for loop, value in zip(nf.loops, (ba, bb, tb, ta)):
+                        loop[uv].uv = value
+                new_faces.append(nf)
+            bmesh.ops.recalc_face_normals(bm, faces=new_faces)
+            bm.to_mesh(top_obj.data)
+            bm.free()
+            made.append(f"coat +{length:.2f} m")
+
+    FABRICS = {"velvet": {"rough": 0.65, "sheen": 0.7, "fluff": 0.05}, "leather": {"rough": 0.4, "coat": 0.3},
+               "cotton": {"rough": 0.85, "sheen": 0.25, "fluff": 0.03}}
+    fabric = FABRICS.get(COSTUME.get("fabric"))
+    for obj, col in ((top_obj, top_col), (bottom_obj, bottom_col), (dress_obj, top_col)) if fabric else ():
+        if obj and col:
+            obj.data.materials.clear()
+            obj.data.materials.append(material(f"cf_{COSTUME['fabric']}", lin(col), **fabric))
+            obj.data.polygons.foreach_set("material_index", [0] * len(obj.data.polygons))
+            made.append(f"{COSTUME['fabric']} {obj.name}")
+
+    trim = lin(COSTUME.get("trim"))
+    garment = top_obj or dress_obj
+    if trim and garment:
+        _, co = rest(garment)
+        fs = faces_of(garment)
+        edges = kit.edges_of(fs)
+        ops = kit.openings(co, kit.boundary_loops(fs), centre_x)
+        keep = set()
+        if ops.get("hem"):
+            keep |= kit.band(co, edges, ops["hem"], 0.075)
+        if ops.get("collar"):
+            keep |= kit.band(co, edges, ops["collar"], 0.04)
+        for cuff in ops["cuffs"] if clothing.get("sleeves") == "long" else []:
+            keep |= kit.band(co, edges, cuff, 0.055)
+        if COSTUME.get("coat") == "long" and ops.get("hem") and ops.get("collar"):
+            dom = dominant(garment)
+            c = kit.centroid(co, ops["hem"])
+            keep |= kit.front_strip(co, [v for v in range(len(co)) if any(t in dom[v] for t in TORSO)], c[:2],
+                                    0.035, (c[2], kit.centroid(co, ops["collar"])[2]))
+        piece(garment, "cf_trim", kit.faces_inside(fs, keep), material("cf_fur", trim, 0.95, sheen=1.0, fluff=0.5),
+              0.004, 0.012)
+        made.append("trim")
+
+    belt = lin(COSTUME.get("belt"))
+    if belt and garment:
+        _, co = rest(garment)
+        fs = faces_of(garment)
+        dom = dominant(garment)
+        belt_z = head("DEF-spine.001").z
+        # the torso's faces around the belt line (not the hanging arms), then cut clean at the belt's edges
+        torso_faces = [i for i, f in enumerate(fs)
+                       if sum(any(t in dom[v] for t in TORSO) for v in f) * 2 > len(f)
+                       and any(abs(co[v][2] - belt_z) < 0.08 for v in f)]
+        b = piece(garment, "cf_belt", torso_faces, material("cf_belt", belt, 0.35, coat=0.3), 0.007, 0.009)
+        cut(b, [(2, belt_z - 0.04, belt_z + 0.04)])
+        buckle = lin(COSTUME.get("buckle"))
+        if buckle:
+            front_y = min(p[1] for p in co if abs(p[2] - belt_z) < 0.05)
+            k = piece(garment, "cf_buckle", torso_faces, material("cf_buckle", buckle, 0.25, metal=1.0), 0.016, 0.01)
+            cut(k, [(2, belt_z - 0.05, belt_z + 0.05), (0, centre_x - 0.055, centre_x + 0.055),
+                    (1, front_y - 0.05, front_y + 0.08)])
+        made.append(f"belt at {belt_z:.2f} m")
+
+    gloves = lin(COSTUME.get("gloves"))
+    if gloves:
+        HAND = ("hand", "palm", "thumb", "f_index", "f_middle", "f_ring", "f_pinky")
+        names = {g.index: g.name.lower() for g in human.vertex_groups}
+        verts = {v.index for v in human.data.vertices if v.index in in_body and
+                 sum(g.weight for g in v.groups if any(h in names[g.group] for h in HAND)) >= 0.5}
+        piece(human, "cf_gloves", kit.faces_inside(faces_of(human), verts),
+              material("cf_gloves", gloves, 0.8, sheen=0.4), 0.0025, 0.0)
+        made.append(f"gloves ({len(verts)} vertices)")
+
+    if COSTUME.get("boots") and shoes_obj:
+        _, co = rest(shoes_obj)
+        fs = faces_of(shoes_obj)
+        tops = kit.highest_per_side(co, kit.boundary_loops(fs), centre_x)
+        top_z = min(kit.centroid(co, l)[2] for l in tops) if tops else None
+        if trim and tops:
+            keep = set()
+            for l in tops:
+                keep |= kit.band(co, kit.edges_of(fs), l, 0.05)
+            piece(shoes_obj, "cf_boot_trim", kit.faces_inside(fs, keep),
+                  material("cf_fur_boots", trim, 0.95, sheen=1.0, fluff=0.5), 0.006, 0.014)
+        if bottom_obj and top_z is not None and clothing.get("garment") == "trousers":
+            _, bco = rest(bottom_obj)     # trousers tucked into the boots
+            tucked = [i for i, p in enumerate(bco) if p[2] < top_z - 0.015]
+            if tucked:
+                vg = bottom_obj.vertex_groups.new(name="cf_in_boots")
+                vg.add(tucked, 1.0, "REPLACE")
+                m = bottom_obj.modifiers.new("cf_hide_in_boots", "MASK")
+                m.vertex_group, m.invert_vertex_group = "cf_in_boots", True
+        made.append(f"boots (top {top_z:.2f} m)" if top_z is not None else "boots")
+    log("costume", made)
 
 # self-contained: textures (skin, clothes, the face photo) go inside the .blend, so the character still
 # works after it is copied into a movie folder

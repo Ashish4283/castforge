@@ -152,6 +152,23 @@
           <p class="muted" id="noVideo">Not rendered yet.</p>
           <div class="shots" id="shots"></div>
         </div>
+        <div class="card" style="margin-top:16px" id="editorCard">
+          <h2>Scene editor (3D)</h2>
+          <p class="muted">See this scene in 3D and fix it: scrub or play, orbit with the mouse, click a step on the timeline. Drag where people start (discs) and where they walk to (rings). Save, then build the preview again to see the new movement.</p>
+          <div class="row">
+            <button class="b p" id="build3d" title="Builds the scene without rendering: about 20 seconds per scene">Build 3D preview</button>
+            <button class="b" id="play3d">Play</button>
+            <button class="b" id="front3d">Front view</button>
+            <button class="b" id="top3d">Top view</button>
+            <button class="b" id="undo3d" disabled title="Ctrl+Z">Undo</button>
+            <button class="b" id="save3d" disabled>Save changes</button>
+          </div>
+          <div id="viewport"><div id="empty3d" class="empty3d">No 3D preview yet. Press <b>&nbsp;Build 3D preview&nbsp;</b> (about 20 seconds per scene; it renders nothing).</div></div>
+          <input type="range" id="scrub3d" min="1" max="1" value="1" aria-label="Timeline">
+          <div class="muted" id="time3d"></div>
+          <div id="lanes"></div>
+          <div class="msg" id="note3d"></div>
+        </div>
         <div class="card" style="margin-top:16px" id="dialogueCard">
           <h2>Dialogue for this scene</h2>
           <p class="muted">Watch the animation above, then edit this scene's lines. Kokoro voices are drafts; upload a WAV performance for final dialogue.</p>
@@ -240,6 +257,8 @@
     <div class="card"><h2>How to make an episode</h2><pre id="helpText"></pre></div>
   </section>
 </main>
+<script type="importmap">{"imports": {"three": "/static/vendor/three/build/three.module.min.js"}}</script>
 <script src="/static/app.js"></script>
+<script type="module" src="/static/editor3d.js"></script>
 </body>
 </html>

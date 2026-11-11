@@ -396,3 +396,70 @@ def test_new_set_saves_a_pasted_picture_and_lists_it(tmp_path, monkeypatch):
     assert [s["name"] for s in server.movies()[0]["sets"]] == ["truck_cab"]
     with pytest.raises(HTTPException):
         asyncio.run(server.new_set("film", "truck_cab", UploadFile(io.BytesIO(b"x"), filename="a.png")))
+
+
+def test_saving_a_scene_keeps_the_previous_version(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "MOVIES", str(tmp_path))
+    ep = tmp_path / "film" / "act1"
+    ep.mkdir(parents=True)
+    (ep / "scene.json").write_text('{"v": 1}', encoding="utf-8")
+    server.save_episode({"movie": "film", "episode": "act1", "scene": '{"v": 2}'})
+    assert json.loads((ep / "scene.json").read_text(encoding="utf-8")) == {"v": 2}
+    assert [json.loads(p.read_text(encoding="utf-8")) for p in (ep / ".history").iterdir()] == [{"v": 1}]
+
+
+def test_episode_lists_its_3d_previews(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "MOVIES", str(tmp_path))
+    ep = tmp_path / "film" / "act1"
+    shot = ep / "scenes" / "01_cabin"
+    shot.mkdir(parents=True)
+    (ep / "scene.json").write_text('{"script": []}', encoding="utf-8")
+    (shot / "preview.glb").write_bytes(b"glTF")
+    (shot / "preview.json").write_text("{}", encoding="utf-8")
+    previews = server.episode("film", "act1")["previews"]
+    assert [p["name"] for p in previews] == ["01_cabin"] and previews[0]["glb"].startswith("/media/film/act1/")
+
+
+def test_character_detail_fills_photo_colours_into_the_design(tmp_path, monkeypatch):
+    chars = tmp_path / "film" / "characters"
+    (chars / "photos").mkdir(parents=True)
+    (chars / "photos" / "ann.png").write_bytes(b"png")
+    (chars / "ann.design.json").write_text(json.dumps({"gender": "female", "age": 30, "height_cm": 165,
+                                                        "outfit": {"top": "#112233"}}), encoding="utf-8")
+    (chars / "ann.spec.json").write_text(json.dumps({"colours": {"top": [255, 0, 0], "bottom": [0, 0, 255]},
+                                                      "clothing": {"garment": "skirt"}}), encoding="utf-8")
+    (chars / "ann.build.log").write_text("noise\nCF: rig ok\nCF: saved ann.blend\n", encoding="utf-8")
+    monkeypatch.setattr(server, "MOVIES", str(tmp_path))
+
+    d = server.character("film", "ann")
+
+    assert d["design"]["outfit"] == {"top": "#112233", "bottom": "#0000ff", "garment": "skirt"}   # the design wins
+    assert d["photo"].startswith("/media/film/characters/photos/ann.png?")
+    assert d["log"] == ["rig ok", "saved ann.blend"]
+
+
+def test_rebuilding_a_character_checks_the_design_and_keeps_the_photo_choice(tmp_path, monkeypatch):
+    chars = tmp_path / "film" / "characters"
+    (chars / "photos").mkdir(parents=True)
+    (chars / "photos" / "bob.png").write_bytes(b"png")
+    monkeypatch.setattr(server, "MOVIES", str(tmp_path))
+    monkeypatch.setattr(server, "gpu_busy", lambda: None)
+    started = []
+    monkeypatch.setattr(server, "start_build", lambda movie, name, args: started.append(args) or "job")
+
+    with pytest.raises(HTTPException) as bad:
+        server.character_rebuild({"movie": "film", "name": "bob", "design": {"gender": "male", "hat": "crown"}})
+    assert "height_cm" in bad.value.detail and "crown" in bad.value.detail
+
+    design = {"gender": "male", "age": 60, "height_cm": 180, "costume": {"belt": "#000000"}}
+    server.character_rebuild({"movie": "film", "name": "bob", "design": design, "use_photo": False})
+    server.character_rebuild({"movie": "film", "name": "bob", "design": design, "use_photo": True})
+
+    assert started[0][0] == "--design" and started[1][0].endswith("bob.png")
+    saved = json.loads((chars / "bob.design.json").read_text(encoding="utf-8"))
+    assert saved["use_photo"] is True and saved["costume"] == {"belt": "#000000"}
+
+
+def test_the_react_app_is_served_at_the_root():
+    page = Path(server.index().path).read_text(encoding="utf-8")
+    assert 'id="root"' in page

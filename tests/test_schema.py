@@ -6,7 +6,7 @@ import pytest
 from core import schema
 
 TYPES = {"point", "number", "text", "audio", "enum", "target", "look", "voice", "door", "seat", "sfx", "bed", "bool",
-         "cast_list"}
+         "clip", "cast_list"}
 
 
 def test_every_parameter_has_a_known_type_and_help():
