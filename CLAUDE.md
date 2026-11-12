@@ -86,6 +86,8 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Scenes render with view transform `Standard` (AgX greys the set picture; see DESIGN_V2 D12).
 - Bash tool: heredocs with apostrophes break; write edit scripts to a file.
 - The user's app runs on 8765; test servers use 8777.
+- One GPU at a time, two locks: `.render.lock` (renders) and `.build.lock` (character/set/prop/building builds,
+  written by `castforge.claim_build`). Renders and builds refuse each other; `gpu_busy` reads both.
 - A just-appended object's `matrix_world` is not evaluated (reads identity): build on `matrix_basis`.
 - Preview export (glTF): MakeHuman meshes need `export_apply` (masks, `cf_layer` cloth offset) and come as BLEND
   materials (editor draws them cut-out); someone who exits is keyed hidden, so select by `ever_shown`.

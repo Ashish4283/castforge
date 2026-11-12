@@ -141,7 +141,7 @@ def gpu_busy():
         if "library" in kinds:
             return "a library building build"
         return "a character build"
-    return None
+    return cf.build_owner()      # a build started from a terminal (the app's own builds are listed above)
 
 
 # --- movies ----------------------------------------------------------------------------------------

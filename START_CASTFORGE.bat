@@ -1,7 +1,7 @@
 @echo off
 rem Starts the CastForge app and opens it in the browser (http://localhost:8765).
 cd /d "%~dp0"
-netstat -ano | findstr ":8765" | findstr "LISTENING" >nul
+curl -s -m 2 -o nul http://127.0.0.1:8765/api/gpu
 if %errorlevel%==0 (
     echo CastForge is already running.
     start "" http://localhost:8765

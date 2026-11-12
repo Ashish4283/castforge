@@ -19,13 +19,16 @@
     python castforge.py doctor                   check that every tool CastForge needs is installed
 """
 import argparse
+import atexit
 import glob
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
@@ -104,6 +107,16 @@ def pid_alive(pid):
         return False
 
 
+def port_free(port):
+    """True when nothing is listening on the port (the app can bind it)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+
 def _lock():
     """(pid, folder) of the render holding the lock, or None; a lock left by a dead or half-written render is
     cleared."""
@@ -126,6 +139,51 @@ def render_lock_owner():
     """Folder of the render that holds the lock, or None."""
     held = _lock()
     return held[1] if held else None
+
+
+BUILD_LOCK = os.path.join(ROOT, ".build.lock")
+
+
+def build_owner():
+    """What GPU build is running (e.g. "a character build (maya)"), or None; a stale lock is cleared."""
+    if not os.path.exists(BUILD_LOCK):
+        return None
+    try:
+        pid, what = open(BUILD_LOCK, encoding="utf-8").read().split("\n")[:2]
+        if pid.strip().isdigit() and pid_alive(int(pid)):
+            return what.strip() or "a build"
+    except (OSError, ValueError):
+        pass
+    try:
+        os.remove(BUILD_LOCK)
+    except OSError:
+        pass
+    return None
+
+
+def claim_build(what):
+    """Take the GPU for one build (character, set, prop, building): exits with a plain message when the GPU
+    is already working. The lock is removed when this process ends."""
+    owner = render_lock_owner()
+    if owner:
+        sys.exit(f"the GPU is rendering {owner}; one GPU job at a time on this laptop. "
+                 "Wait for it, or stop it with: python castforge.py stop <its folder>")
+    busy = build_owner()
+    if busy:
+        sys.exit(f"the GPU is busy with {busy}; one GPU job at a time on this laptop")
+    try:
+        with open(BUILD_LOCK, "x", encoding="utf-8") as lock:
+            lock.write(f"{os.getpid()}\n{what}\n")
+    except FileExistsError:
+        sys.exit(f"the GPU is busy with {build_owner() or 'another build'}; one GPU job at a time")
+
+    def release():
+        try:
+            if open(BUILD_LOCK, encoding="utf-8").readline().strip() == str(os.getpid()):
+                os.remove(BUILD_LOCK)
+        except OSError:
+            pass
+    atexit.register(release)
 
 
 def render_status(folder):
@@ -166,8 +224,15 @@ def render_status(folder):
             text = where + (f"rendering: {done}/{total} frames" if total else "preparing the scene (voices, set, cast)")
     else:
         err = [ln for ln in log.splitlines() if "Error" in ln or "FAILED" in ln or "Traceback" in ln]
-        text = (where + f"stopped at {done}/{total or '?'} frames" + (f" ({err[-1].strip()})" if err else "")
-                + "; run the episode command again to continue from there")
+        try:
+            fresh = time.time() - os.path.getmtime(log_path) < 8
+        except OSError:
+            fresh = False
+        if fresh and not err:                   # the job just ended: its final lines are still landing
+            text = where + "wrapping up: writing the result"
+        else:
+            text = (where + f"stopped at {done}/{total or '?'} frames" + (f" ({err[-1].strip()})" if err else "")
+                    + "; run the episode command again to continue from there")
     return {"alive": alive, "text": text, "done": done, "total": total}
 
 
@@ -182,6 +247,9 @@ def start_job(folder, extra, wait=False):
     if other:
         sys.exit(f"another render is running ({other}); one at a time, the GPU has only 4 GB. "
                  "Check it with: python castforge.py status <its folder>")
+    building = build_owner()
+    if building:
+        sys.exit(f"the GPU is busy with {building}; start the render when it is done")
     try:
         with open(LOCK, "x", encoding="utf-8") as lock:
             lock.write(f"{os.getpid()}\n{folder}\n")
@@ -424,6 +492,7 @@ def main():
         p.add_argument("--hair")
         p.add_argument("--out-dir", default=".")
         c = p.parse_args(a.args)
+        claim_build(f"a character build ({c.name})")
         os.makedirs(c.out_dir, exist_ok=True)
         build = [BLENDER, "-b", "--factory-startup", "-P", os.path.join(ROOT, "blender", "build_character.py"), "--",
                  "--out", os.path.join(c.out_dir, f"{c.name}.blend"),
@@ -461,6 +530,7 @@ def main():
         blueprint_path = os.path.join(set_dir, "set_blueprint.json")
         if not os.path.isfile(blueprint_path):
             sys.exit(f"set blueprint not found: {blueprint_path}")
+        claim_build(f"a 3D set build ({os.path.basename(set_dir)})")
         with open(blueprint_path, encoding="utf-8") as blueprint_file:
             blueprint = json.load(blueprint_file)
         images = sorted(name for name in os.listdir(set_dir)
@@ -499,6 +569,7 @@ def main():
         image_path = os.path.join(prop_dir, prop_spec.get("image", ""))
         if not os.path.isfile(image_path):
             sys.exit(f"prop reference image not found: {image_path}")
+        claim_build(f"a 3D prop build ({prop_spec.get('name', os.path.basename(prop_dir))})")
         subprocess.run([BLENDER, "-b", "--factory-startup", "--python-exit-code", "1", "-P",
                         os.path.join(ROOT, "blender", "build_prop_asset.py"), "--",
                         "--spec", spec_path, "--out", os.path.join(prop_dir, f"{prop_spec['name']}.blend"),
@@ -516,12 +587,14 @@ def main():
         name = building_spec.get("name")
         if not isinstance(name, str) or not name:
             sys.exit(f"building design has no valid name: {spec_path}")
+        claim_build(f"a building build ({name})")
         subprocess.run([BLENDER, "-b", "--factory-startup", "--python-exit-code", "1", "-P",
                         os.path.join(ROOT, "blender", "build_building_asset.py"), "--",
                         "--spec", spec_path, "--out", os.path.join(building_dir, f"{name}.blend"),
                         "--preview", os.path.join(building_dir, "preview.png")], check=True)
         print(f"3D building ready: {os.path.join(building_dir, name + '.blend')}")
     elif a.command == "library-build":
+        claim_build("the library starter builds")
         refresh = "--refresh" in a.args
         built = skipped = 0
         for template_id in BUILDING_DESIGNS:
@@ -594,9 +667,22 @@ def main():
         import threading
         import webbrowser
         import uvicorn
+        if not port_free(8765):
+            print("CastForge is already running: http://localhost:8765 (stop it with STOP_CASTFORGE.bat)")
+            webbrowser.open("http://localhost:8765")
+            sys.exit(0)
+        pid_file = os.path.join(ROOT, ".app.pid")
+        open(pid_file, "w").write(str(os.getpid()))
+
+        def forget_pid():
+            try:
+                if open(pid_file, encoding="utf-8").read().strip() == str(os.getpid()):
+                    os.remove(pid_file)
+            except OSError:
+                pass
+        atexit.register(forget_pid)
         threading.Timer(1.5, lambda: webbrowser.open("http://localhost:8765")).start()
         print("CastForge app: http://localhost:8765  (Ctrl+C to stop)")
-        open(os.path.join(ROOT, ".app.pid"), "w").write(str(os.getpid()))
         uvicorn.run("app.server:app", host="127.0.0.1", port=8765, log_level="warning", app_dir=ROOT)
     elif a.command == "status":
         st = render_status(folder_arg())

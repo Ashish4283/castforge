@@ -486,3 +486,12 @@ def test_a_set_region_is_saved_at_picture_size_with_its_box(tmp_path, monkeypatc
     _, saved = server.validate_set_blueprint("film", "cabin", {"props": [
         {"id": "door_1", "make": "door", "picture_rect": r["rect"], "picture_mask": r["mask"]}]})
     assert saved["props"][0]["picture_mask"] == "masks/door_1.png"
+
+
+def test_gpu_busy_reports_a_build_started_from_a_terminal(tmp_path, monkeypatch):
+    import os
+    monkeypatch.setattr(server.cf, "LOCK", str(tmp_path / ".render.lock"))
+    monkeypatch.setattr(server.cf, "BUILD_LOCK", str(tmp_path / ".build.lock"))
+    assert server.gpu_busy() is None
+    (tmp_path / ".build.lock").write_text(f"{os.getpid()}\na 3D set build (cabin)\n", encoding="utf-8")
+    assert server.gpu_busy() == "a 3D set build (cabin)"

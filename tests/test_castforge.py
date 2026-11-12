@@ -143,3 +143,65 @@ def test_gemini_prompt_extracts_scene_prompt():
     prompt = castforge.gemini_prompt("scene")
     assert prompt.startswith("You write scene files for CastForge")
     assert "Scene idea: <WRITE YOUR IDEA HERE>" in prompt
+
+
+def test_build_lock_names_the_build_and_clears_a_stale_lock(tmp_path, monkeypatch):
+    import os
+    monkeypatch.setattr(castforge, "BUILD_LOCK", str(tmp_path / ".build.lock"))
+    assert castforge.build_owner() is None
+    castforge.claim_build("a character build (maya)")
+    assert castforge.build_owner() == "a character build (maya)"      # held by this (alive) process
+    with pytest.raises(SystemExit) as second:
+        castforge.claim_build("a 3D set build (cabin)")
+    assert "busy with a character build (maya)" in str(second.value)
+    (tmp_path / ".build.lock").write_text("999999999\na character build (ghost)\n", encoding="utf-8")
+    assert castforge.build_owner() is None                            # dead pid: cleared
+    assert not os.path.exists(tmp_path / ".build.lock")
+
+
+def test_a_render_refuses_to_start_during_a_build(tmp_path, monkeypatch):
+    import os
+    monkeypatch.setattr(castforge, "LOCK", str(tmp_path / ".render.lock"))
+    monkeypatch.setattr(castforge, "BUILD_LOCK", str(tmp_path / ".build.lock"))
+    (tmp_path / ".build.lock").write_text(f"{os.getpid()}\na character build (maya)\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as refused:
+        castforge.start_job(str(tmp_path), [])
+    assert "a character build (maya)" in str(refused.value)
+    assert not os.path.exists(tmp_path / ".render.lock")
+
+
+def test_a_build_refuses_to_start_during_a_render(tmp_path, monkeypatch):
+    import os
+    monkeypatch.setattr(castforge, "LOCK", str(tmp_path / ".render.lock"))
+    monkeypatch.setattr(castforge, "BUILD_LOCK", str(tmp_path / ".build.lock"))
+    (tmp_path / ".render.lock").write_text(f"{os.getpid()}\nmovies/act1\n", encoding="utf-8")
+    with pytest.raises(SystemExit) as refused:
+        castforge.claim_build("a character build (maya)")
+    assert "rendering" in str(refused.value) and "act1" in str(refused.value)
+
+
+def test_a_just_ended_job_reads_as_wrapping_up_not_stopped(tmp_path, monkeypatch):
+    import os
+    import time
+    monkeypatch.setattr(castforge, "LOCK", str(tmp_path / ".render.lock"))     # no lock: not alive
+    log = tmp_path / "render.log"
+    log.write_text("CF: scene 1/2 01_cabin\n", encoding="utf-8")
+    fresh = castforge.render_status(str(tmp_path))
+    assert not fresh["alive"] and "wrapping up" in fresh["text"]
+    old = time.time() - 60
+    os.utime(log, (old, old))
+    later = castforge.render_status(str(tmp_path))
+    assert "stopped at" in later["text"] and "continue" in later["text"]
+    log.write_text("CF: scene 1/2 01_cabin\nTraceback (most recent call last):\n", encoding="utf-8")
+    failed = castforge.render_status(str(tmp_path))
+    assert "stopped at" in failed["text"] and "Traceback" in failed["text"]    # errors are never hidden
+
+
+def test_port_free_sees_a_listener():
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
+        held.bind(("127.0.0.1", 0))
+        held.listen(1)
+        port = held.getsockname()[1]
+        assert castforge.port_free(port) is False
+    assert castforge.port_free(port) is True
