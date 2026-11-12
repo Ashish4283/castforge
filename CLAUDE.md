@@ -52,6 +52,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | render settings, encode, storyboard, outputs | `scene_kit.py` anchor `# --- light, weather, render` |
 | encode/loudness/voice effects | `core/media.py` |
 | titles, transitions, grades, chapters, poster | `core/finish.py`; subtitles `core/subtitles.py` |
+| publish package, delivery checks, platform rules | `core/publish.py` (`PLATFORMS`, `fold_chapters`, `package`); CLI `publish`; route `/api/episode/publish` |
 | paths, qualities, aspects, render key | `core/config.py` |
 | CLI commands, lock, status text | `castforge.py` (`def main`, `def render_status`) |
 | scene/episode job | `episode_job.py` |
@@ -84,7 +85,7 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Blender exits 0 on script errors unless `--python-exit-code 1`.
 - Blender 5.x has no `Action.fcurves`: use `bpy_extras.anim_utils.action_get_channelbag_for_slot`.
 - Scenes render with view transform `Standard` (AgX greys the set picture; see DESIGN_V2 D12).
-- Bash tool: heredocs with apostrophes break; write edit scripts to a file.
+- Bash tool: heredocs with apostrophes or backslash escapes break; write edit scripts to a file.
 - The user's app runs on 8765; test servers use 8777.
 - One GPU at a time, two locks: `.render.lock` (renders) and `.build.lock` (character/set/prop/building builds,
   written by `castforge.claim_build`). Renders and builds refuse each other; `gpu_busy` reads both.

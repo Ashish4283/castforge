@@ -79,16 +79,17 @@ def test_finish_builds_a_deliverable_episode(tmp_path):
     assert kinds["video"]["color_space"] == kinds["video"]["color_primaries"] == "bt709"
     assert kinds["audio"]["sample_rate"] == "48000" and kinds["audio"]["channels"] == 2
     assert kinds["subtitle"]["codec_name"] == "mov_text"
+    # every segment of this tiny film is under 10 s, so they fold into one chapter (YouTube drops any
+    # list with a chapter under 10 s; the real fix for the title-card bug)
     starts = [round(float(c["start_time"]), 2) for c in info["chapters"]]
-    assert starts == [0.0, 1.4, 2.4, 4.3]
-    assert [c["tags"]["title"] for c in info["chapters"]] == ["Santa is a Lie", "Cabin", "Main Street", "Credits"]
+    assert starts == [0.0]
+    assert [c["tags"]["title"] for c in info["chapters"]] == ["Credits"]
     srt = (tmp_path / "episode.srt").read_text(encoding="utf-8")
     # the dissolve overlaps the scenes, so the first cue ends just before the second line starts (2.4 + 0.25)
     assert "00:00:01,900 --> 00:00:02,610\nForty winters." in srt
     assert "00:00:02,650 --> 00:00:04,400\n<i>Santa is a lie.</i>" in srt
     assert "<i>Santa is a lie.</i>" in srt
-    assert (tmp_path / "episode_chapters.txt").read_text(encoding="utf-8") == \
-        "0:00 Santa is a Lie\n0:01 Cabin\n0:02 Main Street\n0:04 Credits\n"
+    assert (tmp_path / "episode_chapters.txt").read_text(encoding="utf-8") == "0:00 Credits\n"
     assert (tmp_path / "episode_poster.jpg").stat().st_size > 1000
     level, _ = media.measure_loudness(out)
     assert abs(level - (-16.0)) < 0.5

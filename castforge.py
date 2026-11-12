@@ -32,7 +32,7 @@ import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
-from core import config  # noqa: E402
+from core import config, publish  # noqa: E402
 from core.buildings import BUILDING_DESIGNS, default_asset_spec  # noqa: E402
 from core.schema import check_scene  # noqa: E402,F401  (castforge.check_scene is used by the app and tests)
 
@@ -84,6 +84,9 @@ CastForge - how to make an episode
    Change them in scene.json (or the app's Publish panel), then: python castforge.py finish my_scene_folder
    You get episode.mp4, episode.srt/.vtt (subtitles), episode_chapters.txt and episode_poster.jpg.
    Each scene's Blender file is in scenes/NN_<id>/shot.blend for hand edits.
+   For streaming platforms: python castforge.py publish my_scene_folder   (default --platform youtube)
+   It checks the film (loudness, chapters, subtitles, picture) and writes publish/: the video at the
+   platform's loudness, a 1280x720 thumbnail, chapters.txt, description.txt and report.txt.
 """
 
 
@@ -684,6 +687,15 @@ def main():
         threading.Timer(1.5, lambda: webbrowser.open("http://localhost:8765")).start()
         print("CastForge app: http://localhost:8765  (Ctrl+C to stop)")
         uvicorn.run("app.server:app", host="127.0.0.1", port=8765, log_level="warning", app_dir=ROOT)
+    elif a.command == "publish":
+        p = argparse.ArgumentParser(prog="castforge.py publish")
+        p.add_argument("folder")
+        p.add_argument("--platform", default="youtube", choices=sorted(publish.PLATFORMS))
+        c = p.parse_args(a.args)
+        folder = os.path.abspath(c.folder)
+        if not os.path.isfile(os.path.join(folder, "scene.json")):
+            sys.exit(f"no scene.json in {folder}")
+        sys.exit(1 if publish.package(folder, c.platform) else 0)
     elif a.command == "status":
         st = render_status(folder_arg())
         print(st["text"] if st else "no render has been started in this folder")

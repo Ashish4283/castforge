@@ -28,7 +28,7 @@ MOVIES = os.path.join(ROOT, "movies")
 LIBRARY = os.path.join(ROOT, "library")
 sys.path.insert(0, ROOT)
 import castforge as cf  # noqa: E402
-from core import config, schema  # noqa: E402
+from core import config, publish, schema  # noqa: E402
 from core.buildings import (BUILDING_CATEGORIES, BUILDING_DESIGNS, default_asset_spec,
                             describe_buildings)  # noqa: E402
 from core import schema  # noqa: E402
@@ -340,6 +340,13 @@ def episode(movie: str, episode: str):
             glb, meta = os.path.join(sdir, s, "preview.glb"), os.path.join(sdir, s, "preview.json")
             if os.path.exists(glb) and os.path.exists(meta):
                 previews.append({"name": s, "glb": media_url(glb), "meta": media_url(meta)})
+    pub = os.path.join(d, "publish")
+    if os.path.isdir(pub):
+        for f, label in (("episode_youtube.mp4", "YouTube video"), ("thumbnail.jpg", "Thumbnail (1280x720)"),
+                         ("chapters.txt", "YouTube chapters"), ("description.txt", "YouTube description"),
+                         ("report.txt", "Publish report")):
+            if os.path.exists(os.path.join(pub, f)):
+                downloads.append({"name": label, "url": media_url(os.path.join(pub, f))})
     board = os.path.join(d, "storyboard.jpg")
     return {"scene": open(os.path.join(d, "scene.json"), encoding="utf-8").read(),
             "status": st["text"] if st else "not rendered yet", "rendering": bool(st and st["alive"]),
@@ -455,6 +462,18 @@ def storyboard_episode(body: dict):
 def preview3d_episode(body: dict):
     """The scene editor's 3D view of every scene (builds the scenes, renders nothing: under a minute each)."""
     return render_episode({**body, "preview3d": True, "quality": "blocking"})
+
+
+@app.post("/api/episode/publish")
+def publish_episode(body: dict):
+    """Check the finished film and write the platform package (publish/): fast, no video re-encode."""
+    d = episode_dir(body.get("movie"), body.get("episode"))
+    platform = body.get("platform", "youtube")
+    if platform not in publish.PLATFORMS:
+        raise HTTPException(400, f"unknown platform (use {', '.join(sorted(publish.PLATFORMS))})")
+    lines = []
+    problems = publish.package(d, platform, log=lambda *a: lines.append(" ".join(str(x) for x in a)))
+    return {"ok": problems == 0, "problems": problems, "report": "\n".join(lines)}
 
 
 @app.post("/api/episode/stop")

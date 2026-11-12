@@ -23,7 +23,7 @@ per GPU-second.
 | 3D sets for action | free CC0 kits and the city library instead of the 2.5D picture | |
 | Any humanoid character | imported rigged model (bone map like motion.py) + costume and armour props | |
 | Face capture | webcam -> MediaPipe blendshapes -> face keys | |
-| Publish kit | platform presets (YouTube -14 LUFS...), YouTube-valid chapters (bug: the 4 s title card makes a chapter under 10 s, so YouTube drops them all), 1280x720 thumbnail, upload check | small |
+| Publish kit | `castforge.py publish` + app button: delivery checks (picture, sound, loudness, subtitles, chapters), YouTube package (video at -14 LUFS, 1280x720 thumbnail, folded chapters, description); the title-card chapter bug is fixed at the source | v1 done 2026-11-12 |
 | Phase 2 bridge | rented GPU: ComfyUI + FLORA designs -> image-to-3D -> rig -> CastForge | later |
 
 Motion v1 limits: fingers stay procedural; the follow camera and gaze use the base path (approximate while a

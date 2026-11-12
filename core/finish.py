@@ -254,6 +254,8 @@ def finish(folder, scenes, spec, quality="standard", log=print):
             shot_n += 1
             name = sc.get("chapter") or sc["id"].replace("_", " ").title()
         chapters.append((st, st + seconds, name))
+    from core import publish
+    chapters = publish.fold_chapters(chapters)   # YouTube drops the whole list if any chapter is under 10 s
     meta = os.path.join(work, "chapters.txt")
     with open(meta, "w", encoding="utf-8") as f:
         f.write(";FFMETADATA1\n")
