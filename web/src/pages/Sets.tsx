@@ -1,10 +1,11 @@
 // Sets: a picture of a place, with the 3D details people use (doors, seats, tables) marked on it, built into a
 // reusable 3D set. Building never changes the movie's scenes.
-import {PointerEvent as RPE, useEffect, useRef, useState} from "react";
-import {Crop, Download, Hammer, Image as ImageIcon, Plus, Save, Trash2, X} from "lucide-react";
+import {useEffect, useState} from "react";
+import {Crop, Download, Hammer, Image as ImageIcon, PenTool, Plus, Save, Trash2, X} from "lucide-react";
 import {form, Json, post, SetInfo} from "../api";
 import {useStore} from "../app/store";
 import {Badge, Button, Card, Empty, Field, Modal, PageHead, PictureDrop, Select} from "../components/ui";
+import {SetAnnotator} from "./SetAnnotator";
 
 export function Sets() {
   const {current, movie, toast, reload} = useStore();
@@ -48,21 +49,14 @@ export function Sets() {
 function SetCard({set, all}: {set: SetInfo; all: SetInfo[]}) {
   const {schema, movie, toast} = useStore();
   const [bp, setBp] = useState<Json>(() => structuredClone(set.blueprint || {description: "", props: []}));
-  const [drawing, setDrawing] = useState<number | null>(null);
-  const [draft, setDraft] = useState<number[] | null>(null);
+  const [editing, setEditing] = useState<number | null | false>(false);   // false: closed; a number: that object
   const [newType, setNewType] = useState("door");
   const [busy, setBusy] = useState("");
-  const stage = useRef<HTMLDivElement>(null);
-  const start = useRef<{x: number; y: number} | null>(null);
   useEffect(() => { setBp(structuredClone(set.blueprint || {description: "", props: []})); }, [set.name]);   // another set
   if (!schema) return null;
   const types = Object.entries(schema.props).filter(([n]) => n !== "picture_road");
   const props: Json[] = Array.isArray(bp.props) ? bp.props : [];
   const edit = (fn: (b: Json) => void) => setBp((b: Json) => { const n = structuredClone(b); if (!Array.isArray(n.props)) n.props = []; fn(n); return n; });
-  const point = (e: RPE) => {
-    const r = stage.current!.getBoundingClientRect();
-    return {x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))};
-  };
   const save = async (build: boolean) => {
     setBusy(build ? "build" : "save");
     try {
@@ -72,35 +66,29 @@ function SetCard({set, all}: {set: SetInfo; all: SetInfo[]}) {
     } catch (e) { toast((e as Error).message, "err"); }
     finally { setBusy(""); }
   };
-  const marks = props.map((p, i) => ({p, i, r: i === drawing && draft ? draft : p.picture_rect}))
-    .filter(x => Array.isArray(x.r) && x.r.length === 4);
+  const marks = props.map((p, i) => ({p, i, r: p.picture_rect})).filter(x => Array.isArray(x.r) && x.r.length === 4);
+  const applyRegions = async (next: Json[]) => {      // the region editor saved masks: keep them in the blueprint
+    const r = await post<{blueprint: Json}>("/api/set/blueprint", {movie, set: set.name, blueprint: {...bp, props: next}});
+    setBp(r.blueprint);
+  };
   return (
     <Card title={set.name} text={<code>{set.path}</code>}
           actions={<div className="row nowrap">
             {set.asset ? <Badge kind="ok" pip>3D set built</Badge> : <Badge>Not built</Badge>}
             {set.asset && <a className="btn sm" href={set.asset} download><Download size={14} />.blend</a>}
+            <Button size="sm" icon={<PenTool size={14} />} onClick={() => setEditing(null)}>Edit regions</Button>
             <Button size="sm" icon={<Save size={14} />} busy={busy === "save"} onClick={() => save(false)}>Save details</Button>
             <Button size="sm" variant="primary" icon={<Hammer size={14} />} busy={busy === "build"} onClick={() => save(true)}>Build 3D set</Button>
           </div>}>
       <div className="grid-2" style={{alignItems: "start"}}>
         <div className="stack">
-          <div ref={stage} className={`set-stage ${drawing !== null ? "drawing" : ""}`}
-               onPointerDown={e => { if (drawing === null) return; e.preventDefault(); (e.target as Element).setPointerCapture(e.pointerId); start.current = point(e); }}
-               onPointerMove={e => { if (!start.current) return; const p = point(e), s = start.current; setDraft([Math.min(s.x, p.x), Math.min(s.y, p.y), Math.max(s.x, p.x), Math.max(s.y, p.y)]); }}
-               onPointerUp={() => {
-                 if (start.current && draft && drawing !== null && draft[2] - draft[0] >= 0.01 && draft[3] - draft[1] >= 0.01) {
-                   const rect = draft, i = drawing;
-                   edit(b => { b.props[i].picture_rect = rect; });
-                 }
-                 start.current = null; setDraft(null); setDrawing(null);
-               }}>
+          <div className="set-stage" style={{cursor: "pointer"}} onClick={() => setEditing(null)} title="Open the region editor">
             <img src={set.picture} alt={set.name} draggable={false} />
             {marks.map(({p, i, r}) => {
               const [l, t, rr, bb] = r.map((v: number) => Math.max(0, Math.min(1, v)) * 100);
               return <div key={i} className="set-mark" style={{left: `${l}%`, top: `${t}%`, width: `${rr - l}%`, height: `${bb - t}%`}}><span>{p.id || p.make}</span></div>;
             })}
           </div>
-          {drawing !== null && <span className="muted small">Drag across the picture to mark “{props[drawing]?.id}”.</span>}
           {set.preview && <figure style={{margin: 0}}><img src={set.preview} alt="3D build preview" style={{width: "100%", borderRadius: 8}} /><figcaption className="muted small">Generated 3D preview</figcaption></figure>}
         </div>
         <div className="stack">
@@ -121,8 +109,8 @@ function SetCard({set, all}: {set: SetInfo; all: SetInfo[]}) {
                       if (v !== "door") delete b.props[i].outside_set;
                     })} />
                     <div className="spacer" />
-                    <Button size="sm" icon={<Crop size={14} />} onClick={() => setDrawing(i)}>{p.picture_rect ? "Redraw" : "Mark region"}</Button>
-                    {p.picture_rect && <Button size="sm" variant="ghost" square icon={<X size={14} />} aria-label="Clear region" onClick={() => edit(b => { delete b.props[i].picture_rect; })} />}
+                    <Button size="sm" icon={<Crop size={14} />} onClick={() => setEditing(i)}>{p.picture_rect ? "Edit region" : "Mark region"}</Button>
+                    {p.picture_rect && <Button size="sm" variant="ghost" square icon={<X size={14} />} aria-label="Clear region" onClick={() => edit(b => { delete b.props[i].picture_rect; delete b.props[i].picture_mask; })} />}
                     <Button size="sm" variant="ghost" square icon={<Trash2 size={14} />} aria-label="Remove" onClick={() => edit(b => { b.props.splice(i, 1); })} />
                   </div>
                   <div className="item-body form-grid" style={{gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))"}}>
@@ -156,6 +144,10 @@ function SetCard({set, all}: {set: SetInfo; all: SetInfo[]}) {
           </div>
         </div>
       </div>
+      {editing !== false && (
+        <SetAnnotator movie={movie} setName={set.name} picture={set.picture} props={props} focus={editing}
+                      onApply={applyRegions} onClose={() => setEditing(false)} />
+      )}
     </Card>
   );
 }

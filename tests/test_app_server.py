@@ -463,3 +463,26 @@ def test_rebuilding_a_character_checks_the_design_and_keeps_the_photo_choice(tmp
 def test_the_react_app_is_served_at_the_root():
     page = Path(server.index().path).read_text(encoding="utf-8")
     assert 'id="root"' in page
+
+
+def test_a_set_region_is_saved_at_picture_size_with_its_box(tmp_path, monkeypatch):
+    set_dir = tmp_path / "film" / "sets" / "cabin"
+    set_dir.mkdir(parents=True)
+    Image.new("RGB", (200, 100), (90, 60, 30)).save(set_dir / "background.png")
+    monkeypatch.setattr(server, "MOVIES", str(tmp_path))
+    drawn = Image.new("L", (100, 50), 0)
+    drawn.paste(255, (10, 10, 30, 20))
+    drawn.paste(128, (10, 20, 30, 30))
+    buf = io.BytesIO()
+    drawn.save(buf, "PNG")
+    upload = UploadFile(file=io.BytesIO(buf.getvalue()), filename="door_1.png")
+
+    r = asyncio.run(server.set_mask(movie="film", set="cabin", id="door_1", mask=upload))
+
+    assert r["mask"] == "masks/door_1.png" and r["rect"] == [0.1, 0.2, 0.3, 0.6]
+    assert Image.open(set_dir / "masks" / "door_1.png").size == (200, 100)
+    filled = server.set_fill({"movie": "film", "set": "cabin", "id": "door_1"})
+    assert filled["hidden"] > 0 and (set_dir / "masks" / "door_1_filled.png").exists()
+    _, saved = server.validate_set_blueprint("film", "cabin", {"props": [
+        {"id": "door_1", "make": "door", "picture_rect": r["rect"], "picture_mask": r["mask"]}]})
+    assert saved["props"][0]["picture_mask"] == "masks/door_1.png"

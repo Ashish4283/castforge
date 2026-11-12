@@ -386,3 +386,34 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
 /* selects inside toolbars and item headers size to their content */
 .item-head .select, .card-head .select, .ep-bar .select, .row .select.sm { width: auto; min-width: 140px; max-width: 340px; }
 .ep-bar .select { min-width: 220px; }
+
+/* --- set region editor (full screen) ------------------------------------------------------------------- */
+.annot { position: fixed; inset: 0; z-index: 45; background: var(--bg); display: flex; flex-direction: column; }
+.annot-top { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--bg-side); }
+.annot-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 52px 1fr 300px; }
+.annot-tools { border-right: 1px solid var(--line); background: var(--bg-side); display: flex; flex-direction: column; gap: 4px; padding: 10px 7px; }
+.tool { width: 38px; height: 38px; border-radius: var(--r); border: 1px solid transparent; background: none; color: var(--text-2); display: grid; place-items: center; cursor: pointer; }
+.tool:hover { background: var(--panel-2); color: var(--text); }
+.tool.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-2); }
+.annot-stage { position: relative; overflow: hidden; background: repeating-conic-gradient(#11141a 0 25%, #0d1015 0 50%) 0 0 / 24px 24px; touch-action: none; user-select: none; }
+.annot-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+.annot-canvas canvas, .annot-canvas svg { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
+.annot-canvas .layer { pointer-events: none; }
+.annot-canvas svg .handle { pointer-events: all; }
+.sel-box { fill: none; stroke: #fff; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+.handle { fill: #fff; stroke: var(--accent); }
+.h-nw, .h-se { cursor: nwse-resize; } .h-ne, .h-sw { cursor: nesw-resize; } .h-n, .h-s { cursor: ns-resize; } .h-e, .h-w { cursor: ew-resize; }
+.lasso { fill: rgba(124,108,255,.15); stroke: var(--accent-2); }
+.lasso-start { fill: var(--accent-2); }
+.annot-side { border-left: 1px solid var(--line); background: var(--bg-side); display: flex; flex-direction: column; min-height: 0; }
+.annot-section { padding: 14px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; align-content: start; }
+.annot-section h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); }
+.slider { display: grid; grid-template-columns: 80px 1fr 34px; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); }
+.slider input { accent-color: var(--accent); }
+.obj { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border-radius: var(--r); border: 1px solid transparent; background: none; color: var(--text-2); font: inherit; cursor: pointer; text-align: left; }
+.obj:hover { background: var(--panel); }
+.obj.on { background: var(--panel); border-color: var(--line-2); color: var(--text); }
+.obj i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.obj span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obj small { display: block; color: var(--text-3); font-size: 11px; }
+.filled { width: 100%; border-radius: var(--r); background: repeating-conic-gradient(#1b2029 0 25%, #12161d 0 50%) 0 0 / 16px 16px; }

@@ -612,6 +612,10 @@ def validate_set_blueprint(movie, set_name, blueprint):
             rect = prop.get(field)
             if rect is not None and not schema._is_rect(rect):
                 raise HTTPException(400, f"{object_id}: {field} must be [left, top, right, bottom] fractions")
+        mask = prop.get("picture_mask")
+        if mask is not None and (mask != f"masks/{object_id}.png"
+                                 or not os.path.isfile(os.path.join(set_dir, "masks", f"{object_id}.png"))):
+            raise HTTPException(400, f"{object_id}: picture_mask must be masks/{object_id}.png, saved with the region editor")
         if prop.get("outside_set") is not None:
             target = prop["outside_set"]
             if (kind != "door" or not isinstance(target, str) or target not in names
@@ -659,6 +663,50 @@ def save_set(body: dict):
     set_dir, saved = validate_set_blueprint(movie, set_name, body.get("blueprint"))
     save_set_blueprint(set_dir, saved)
     return {"ok": True, "blueprint": saved}
+
+
+def set_picture(set_dir):
+    pics = sorted(p for p in os.listdir(set_dir)
+                  if p.lower().endswith((".png", ".jpg", ".jpeg")) and p.lower() != "set_preview.png")
+    if not pics:
+        raise HTTPException(400, "this set has no picture")
+    return os.path.join(set_dir, pics[0])
+
+
+@app.post("/api/set/mask")
+async def set_mask(movie: str = Form(...), set: str = Form(...), id: str = Form(...), mask: UploadFile = File(...)):
+    """Save one object's region (drawn in the region editor) at the set picture's size; returns its box."""
+    import numpy as np
+    from core import set_masks
+    set_dir = os.path.join(movie_dir(movie), "sets", safe(set, "set"))
+    object_id = safe(id, "object id")
+    size = Image.open(set_picture(set_dir)).size
+    try:
+        drawn = Image.open(io.BytesIO(await mask.read())).convert("L").resize(size, Image.NEAREST)
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(400, "the region must be a PNG picture")
+    m = set_masks.quantize(np.array(drawn))
+    os.makedirs(os.path.join(set_dir, "masks"), exist_ok=True)
+    path = os.path.join(set_dir, "masks", f"{object_id}.png")
+    Image.fromarray(m).save(path)
+    return {"mask": f"masks/{object_id}.png", "url": media_url(path), "rect": set_masks.bbox(m)}
+
+
+@app.post("/api/set/fill")
+def set_fill(body: dict):
+    """The object cut out with its hidden parts filled from its own colours (masks/<id>_filled.png)."""
+    import numpy as np
+    from core import set_masks
+    set_dir = os.path.join(movie_dir(body.get("movie")), "sets", safe(body.get("set"), "set"))
+    object_id = safe(body.get("id"), "object id")
+    path = os.path.join(set_dir, "masks", f"{object_id}.png")
+    if not os.path.isfile(path):
+        raise HTTPException(400, "save this object's region first")
+    m = set_masks.quantize(np.array(Image.open(path).convert("L")))
+    rgb = np.array(Image.open(set_picture(set_dir)).convert("RGB").resize(m.shape[::-1]))
+    out = os.path.join(set_dir, "masks", f"{object_id}_filled.png")
+    Image.fromarray(set_masks.fill_hidden(rgb, m)).save(out)
+    return {"url": media_url(out), "hidden": int((m == set_masks.HIDDEN).sum())}
 
 
 @app.post("/api/set/build")
