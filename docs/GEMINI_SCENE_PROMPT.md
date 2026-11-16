@@ -73,6 +73,10 @@ Rules:
    (picks the prop up and carries it: walks and motion clips keep it in hand. Small props only)
   {"who": "<name>", "do": "release", "to": [x, y]}   (sets the held prop down; no "to": lets go in place)
   {"who": "<name>", "do": "duck", "seconds": 1.0}   (ducks down fast and comes back up; a dodge)
+  {"who": "<name>", "do": "strike", "target": "<name>", "clip": "<attack clip>", "react": "stagger"}
+   (one fight beat: closes to striking distance, lands the attack with an impact sound and a tiny freeze
+   on contact; "react" is stagger, dodge, block or none. Write a fight as a few strikes in a row,
+   alternating who attacks, not one long clip)
 - Acting (use it: it makes the scene alive):
   add "expression" to a say/think line: neutral, smile, happy, sad, angry, surprised, scared,
   disgusted, worried, thinking, skeptical, determined, tired, smug.

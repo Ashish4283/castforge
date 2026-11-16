@@ -97,3 +97,24 @@ def test_a_planted_foot_is_found_with_its_anchor():
     assert ta == 0.0 and tb == 2.0
     assert abs(ax - 1.2) < 0.06 and ay == 0.0           # the anchor sits mid-stay
     assert motion.stance_windows(_planted_meta(), "R", 0.0, 2.0) == []   # the swinging foot never plants
+
+
+def test_hit_stop_pushes_later_frames_and_time_stands_still_in_the_hold():
+    holds = ((1.0, 3),)        # 3 frames of hang 1 s into the clip window
+    assert motion.to_scene(0.5, 24, 1.0, holds) == 12.0            # before the hit: unchanged
+    assert motion.to_scene(2.0, 24, 1.0, holds) == 48.0 + 3        # after it: pushed by the hold
+    assert motion.scene_frames(0.0, 2.0, 24, 1.0, holds) == 51
+    assert motion.scene_frames(0.0, 2.0, 24) == 48                 # no holds: as before
+    # the inverse: inside the hold the clip does not advance
+    assert motion.to_clip(12.0, 24, 1.0, holds) == 0.5
+    assert motion.to_clip(25.0, 24, 1.0, holds) == 1.0             # mid-hold
+    assert abs(motion.to_clip(51.0, 24, 1.0, holds) - 2.0) < 1e-9
+    for f in (0.0, 10.0, 24.0, 30.0, 51.0):                        # round trip
+        assert abs(motion.to_scene(motion.to_clip(f, 24, 1.0, holds), 24, 1.0, holds) - f) < 1e-6 or f == 30.0
+
+
+def test_a_clips_own_frames_map_through_a_hit_stop():
+    meta = {"fps": 30, "frames": [1, 61]}
+    holds = ((1.0, 4),)
+    assert motion.clip_to_scene(1, meta, 0.0, 100, 24, 1.0, holds) == 100.0
+    assert motion.clip_to_scene(61, meta, 0.0, 100, 24, 1.0, holds) == 100 + 48 + 4

@@ -23,7 +23,7 @@ def _collection():
     return coll
 
 
-def play(act, meta, t0, start, fps, speed, keys, travel=True, plant=None):
+def play(act, meta, t0, start, fps, speed, keys, travel=True, plant=None, holds=()):
     """Make `act` perform a clip from clip time t0, starting at scene frame `start`; keys: (frame, weight)
     blends (motion.fades). Call with the character's position and heading as they are when the clip starts."""
     coll = _collection()
@@ -42,7 +42,7 @@ def play(act, meta, t0, start, fps, speed, keys, travel=True, plant=None):
         for prop in ("co", "handle_left", "handle_right"):
             buf = [0.0] * (2 * count)
             fc.keyframe_points.foreach_get(prop, buf)
-            buf[0::2] = [motion.clip_to_scene(x, meta, t0, start, fps, speed) for x in buf[0::2]]
+            buf[0::2] = [motion.clip_to_scene(x, meta, t0, start, fps, speed, holds) for x in buf[0::2]]
             fc.keyframe_points.foreach_set(prop, buf)
         fc.update()
 
@@ -105,7 +105,7 @@ def play(act, meta, t0, start, fps, speed, keys, travel=True, plant=None):
             for f, w in keys:
                 c.influence = w
                 c.keyframe_insert("influence", frame=f)
-    anchors = _anchors(act, start, fps, speed, keys, plant) if travel and plant else {}
+    anchors = _anchors(act, start, fps, speed, keys, plant, holds) if travel and plant else {}
     for side in ("L", "R"):
         p = act.pb[f"thigh_parent.{side}"]
         wins = anchors.get(side, [])
@@ -134,7 +134,7 @@ def play(act, meta, t0, start, fps, speed, keys, travel=True, plant=None):
     return anchors
 
 
-def _anchors(act, start, fps, speed, keys, plant):
+def _anchors(act, start, fps, speed, keys, plant, holds=()):
     """Where each planted stretch of the clip puts the character's own foot: {side: [(frame a, frame b,
     (x, y))]} in scene frames and world metres. The clip says when a foot is planted (motion.stance_windows);
     the anchor is the measured position at the start of the stretch, and the foot is pinned there by IK."""
@@ -143,8 +143,8 @@ def _anchors(act, start, fps, speed, keys, plant):
     for side, wins in plant.items():
         rows = []
         for wa, wb, _ in wins:
-            fa = max(f0, int(round(start + wa * fps / speed)))
-            fb = min(f1, int(round(start + wb * fps / speed)))
+            fa = max(f0, int(round(start + motion.to_scene(wa, fps, speed, holds))))
+            fb = min(f1, int(round(start + motion.to_scene(wb, fps, speed, holds))))
             if fb - fa < 5:
                 continue
             bpy.context.scene.frame_set(fa)

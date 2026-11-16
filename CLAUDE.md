@@ -44,7 +44,8 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | hold/carry a prop, duck, crouch | `scene_kit.py` `elif do == "hold"`/`"release"`/`"duck"`; grips `acting.carry_grip`; crouch = posture `"drop"` (`Actor.pdrop`); foot planting `motion.stance_windows` + `motion_rig._plant` (measures the character's own feet) |
 | motion clips: bone maps, placement maths | `blender/motion.py` (pure, tested); import `import_motion.py`; playback `motion_rig.py` (`def play`); step `elif do == "perform"`; CLI `motion add/cmu/list` |
 | per-frame life: blinks, nods, gaze, gestures applied | `scene_kit.py` anchor `# --- life` |
-| which shot when | `blender/director.py` (pure, tested); cameras: `scene_kit.py` `def close_up`/`two_shot` |
+| which shot when | `blender/director.py` (pure, tested; fights: `_fight`, `beats=`); cameras: `scene_kit.py` `def close_up`/`two_shot` |
+| a fight beat (strike), hit-stop timing | `scene_kit.py` `elif do == "strike"` (reuses `run_perform`/`run_duck`); hit-stop maths `motion.to_scene`/`to_clip`/`hold_shift` |
 | 2.5D set from the picture, floor map, A* walks | `generate/depth_set.py`; `scene_kit.py` anchor `# --- 3D set` |
 | set picture shading, sun/world light | `scene_kit.py` anchor `# --- set:` (`def image_material`) |
 | lighting moods, weather, flicker | `blender/world.py` |

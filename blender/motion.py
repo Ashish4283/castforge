@@ -92,14 +92,38 @@ def floor(meta):
     return zs[len(zs) // 50]
 
 
-def scene_frames(t0, t1, fps, speed=1.0):
-    """How many scene frames a clip window lasts at a speed (at least 2)."""
-    return max(2, int(round((t1 - t0) / max(speed, 0.05) * fps)))
+def hold_shift(t_rel, holds):
+    """Scene frames inserted before clip-relative time t_rel by hit-stop holds [(time, frames)]."""
+    return sum(n for th, n in holds if th < t_rel)
 
 
-def clip_to_scene(frame, meta, t0, start, fps, speed=1.0):
+def to_scene(t_rel, fps, speed=1.0, holds=()):
+    """Scene frames from the window start for clip-relative seconds t_rel (hit-stops push later times out)."""
+    return t_rel * fps / max(speed, 0.05) + hold_shift(t_rel, holds)
+
+
+def to_clip(frames, fps, speed=1.0, holds=()):
+    """The inverse of to_scene: clip-relative seconds at a scene-frame offset (time stands still in a hold)."""
+    k = fps / max(speed, 0.05)
+    acc = 0
+    for th, n in sorted(holds):
+        edge = th * k + acc
+        if frames < edge:
+            return (frames - acc) / k
+        if frames <= edge + n:
+            return th
+        acc += n
+    return (frames - acc) / k
+
+
+def scene_frames(t0, t1, fps, speed=1.0, holds=()):
+    """How many scene frames a clip window lasts at a speed (at least 2), hit-stop holds included."""
+    return max(2, int(round(to_scene(t1 - t0 + 1e-9, fps, speed, holds))))
+
+
+def clip_to_scene(frame, meta, t0, start, fps, speed=1.0, holds=()):
     """The scene frame where a clip's own frame plays, when clip time t0 plays at scene frame `start`."""
-    return start + ((frame - meta["frames"][0]) / meta["fps"] - t0) * fps / max(speed, 0.05)
+    return start + to_scene((frame - meta["frames"][0]) / meta["fps"] - t0, fps, speed, holds)
 
 
 def fades(start, end, blend):

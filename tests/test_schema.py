@@ -224,3 +224,16 @@ def test_hold_needs_a_real_prop_and_warns_when_it_is_too_big(tmp_path, capsys):
     out = capsys.readouterr().out
     assert '"prop" must be the id of a prop in this scene' in out
     assert "looks too big to carry" in out and "1.0 x 0.9 x 0.9" in out
+
+
+def test_strike_needs_a_cast_target_and_a_known_clip(tmp_path, capsys):
+    scene = {"background": "bg.png", "floor": "wood",
+             "cast": {"Arthur": {"character": "a.blend", "position": [0, 0]},
+                      "Thief": {"character": "a.blend", "position": [1.2, 0]}},
+             "props": [], "script": [{"who": "Arthur", "do": "strike", "target": "Ghost", "clip": "punch"}]}
+    (tmp_path / "bg.png").write_bytes(b"x")
+    (tmp_path / "a.blend").write_bytes(b"x")
+    (tmp_path / "scene.json").write_text(json.dumps(scene), encoding="utf-8")
+    assert schema.check_scene(str(tmp_path)) >= 1
+    out = capsys.readouterr().out
+    assert '"target" must be a cast member' in out

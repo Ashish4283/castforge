@@ -250,6 +250,11 @@ def _thumbs_up(u, t, p):
     return {"arm": {"swing": -0.80, "raise": 0.20, "bend": 1.45, "twist": 1.40, "hand": "thumbs", "grip": 1.0}}
 
 
+def _block(u, t, p):
+    return {"arm": {"swing": -0.70, "raise": 0.35, "bend": 1.55, "twist": 1.10, "hand": "fist", "grip": 1.0},
+            "head": {"pitch": 0.10}, "shoulders": 0.5, "chest": 0.06}
+
+
 def _clap(u, t, p):
     beat = math.sin(2 * math.pi * 2.6 * t)
     return {"arm": {"swing": -0.95, "raise": 0.10, "bend": 1.15 + 0.14 * beat, "twist": 0.90, "open": 0.75},
@@ -275,6 +280,7 @@ GESTURES = {
     "thumbs_up": (1.8, "one", _thumbs_up),
     "cheer": (1.6, "both", _cheer),
     "clap": (1.9, "both", _clap),
+    "block": (1.2, "both", _block),
 }
 
 

@@ -13,7 +13,7 @@ per GPU-second.
 |---|---|---|
 | Motion library | Mixamo FBX / CMU BVH -> `motions/clips/<name>.blend` + `.json`; scene step `perform` | v1 done 2026-11-10 |
 | Hands and weapons | `hold`/`release` steps: carry grips (stick/palm, `acting.carry_grip`), props ride the hand through walks and clips (a held crowbar swings with a punch clip); `clap`; `duck` step; `crouch` posture | v1 done 2026-11-14 |
-| Fight choreography | `fight` step: beats (attack/defend), clips synced on contact frames, spacing by reach, impact sound, hit-stop, shake; director action rules (180° line, faster cuts) | after hands |
+| Fight choreography | `strike` step: one beat = close to reach, attack clip, impact sound on the contact frame, hit-stop freeze, reaction (stagger/dodge/block); director covers a fight as two-shot -> push-in -> tight on contact -> reaction, with faster cuts | v1 done 2026-11-16 |
 | Editor 1: 3D scene editor | app: the scene in 3D (preview.glb), play/scrub, timeline of steps, drag start spots and walk targets, undo, save history | v1 done 2026-11-10 |
 | Editor 2: pose fixes | grab a body part at a moment and rotate it; stored as fixes in scene.json, re-applied on every render (animation layer) | next |
 | Editor 3: character design | design editor over `<name>.design.json` (body, face, hair, outfit, costume), ready-made looks, previews, rebuild; costume kit: long coat, fabric, fur trim, belt+buckle, gloves, boots | v1 done 2026-11-11 |
@@ -42,6 +42,5 @@ weather, 40 props, titles/credits/transitions/grades/subtitles/chapters/poster, 
 (Copilot), schema-driven app forms. Motion library v1 (2026-11-10).
 
 ## Film needs (movies/santa_is_a_lie/STORY.md)
-Missing: crowd queue, sounds (door slam,
-lock bolt, crowbar, crash, crowd murmur, truck driving: add prompts in `generate/make_sfx_library.py`, run
-`--missing`).
+Missing: crowd queue. (Sounds done 2026-11-16: door_slam, lock_bolt, crowbar, crash, crowd_murmur,
+truck_driving, plus the fight set hit/hit_hard/block/whoosh/body_fall.)

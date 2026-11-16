@@ -78,3 +78,38 @@ def test_classic_mode_is_a_close_up_per_line():
 
 def test_none_mode_stays_wide():
     assert kinds(director.plan([line("maya", 3, 5)], fps=FPS, end=200, mode="none")) == [("wide", [])]
+
+
+def _beat(who="Arthur", target="Thief", f0=100, f1=160, contact=130):
+    return {"who": who, "target": target, "f0": f0, "f1": f1, "contact": contact}
+
+
+def test_a_fight_beat_gets_wind_up_contact_and_reaction():
+    shots = director.plan([], fps=24, end=300, beats=[_beat()])
+    inside = [s for s in shots if 90 <= s["frame"] <= 200]
+    kinds = [s["kind"] for s in inside]
+    assert "two_shot" in kinds and "close" in kinds
+    contact = next(s for s in inside if s["kind"] == "close")
+    assert contact["frame"] == 130 and contact["on"] == ["Thief"]     # the blow lands on the one hit
+    push = next(s for s in inside if s["move"] == "push_in")
+    assert push["frame"] < contact["frame"]                           # the wind-up leads the blow
+    after = [s for s in inside if s["frame"] > contact["frame"]]
+    assert after and after[0]["kind"] == "two_shot"                   # back out to read the reaction
+
+
+def test_fight_cuts_may_run_faster_than_dialogue_cuts():
+    beats = [_beat(f0=100, f1=140, contact=120), _beat(who="Thief", target="Arthur", f0=140, f1=180, contact=160)]
+    shots = director.plan([], fps=24, end=300, beats=beats)
+    frames = [s["frame"] for s in shots if 100 <= s["frame"] <= 190]
+    gaps = [b - a for a, b in zip(frames, frames[1:])]
+    assert gaps and min(gaps) < director.MIN_SHOT * 24               # tighter than the dialogue floor
+    assert min(gaps) >= director.FIGHT_MIN_SHOT * 24 - 1             # but never a flicker
+
+
+def test_a_fight_overrides_a_walk_follow_and_dialogue_holds_elsewhere():
+    lines = [{"f0": 10, "f1": 60, "who": "Arthur", "kind": "say", "expression": None, "listener": "Thief"}]
+    moves = [{"who": "Arthur", "f0": 100, "f1": 160}]
+    shots = director.plan(lines, moves=moves, fps=24, end=300, beats=[_beat()])
+    during = [s for s in shots if 100 <= s["frame"] <= 160]
+    assert during and not any(s["kind"] == "follow" for s in during)
+    assert any(s["frame"] < 100 for s in shots)                       # the dialogue shots survive

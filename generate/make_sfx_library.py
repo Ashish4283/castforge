@@ -33,6 +33,17 @@ ONESHOTS = {
     "truck_door_open": ("a pickup truck door opening with a metal click, outdoor, close, no music", 1.5),
     "truck_door_close": ("a pickup truck door slamming shut, outdoor, close, no music", 1.5),
     "engine_start": ("an old pickup truck engine cranking and starting, then idling, outdoor, no music", 5.0),
+    # fights: one dry impact per blow, plus the swing and a body going down
+    "hit": ("a bare fist punching a body, dull dry thud, close, no music, no voices", 1.0),
+    "hit_hard": ("a heavy punch landing on a body, deep dull impact with a short slap, close, no music", 1.2),
+    "block": ("a forearm blocking a punch, dull slap of arm on arm, close, no music, no voices", 1.0),
+    "whoosh": ("a fast arm swinging through the air, short air whoosh, close, no music, no voices", 0.8),
+    "body_fall": ("a person falling onto a wooden floor, heavy body thud, close, no music, no voices", 1.5),
+    # the film's missing cues (docs/ROADMAP.md)
+    "door_slam": ("a heavy wooden door slamming shut hard, loud bang and frame rattle, close, no music", 2.0),
+    "lock_bolt": ("a metal door bolt sliding and locking, single solid clack, close, no music, no voices", 1.2),
+    "crowbar": ("a steel crowbar prying wood, metal scrape and sharp wood crack, close, no music", 2.0),
+    "crash": ("a wooden shelf collapsing, glass jars and tins crashing onto a floor, close, no music", 3.0),
 }
 
 # beds: long sounds under a whole scene (ambience, music); 2 takes each, faded to loop
@@ -44,6 +55,9 @@ BEDS = {
                   "no music, no voices", 30.0),
     "radio_christmas": ("cheerful festive christmas instrumental with sleigh bells, glockenspiel and warm "
                         "piano, nostalgic, 120 bpm", 45.0),
+    "crowd_murmur": ("a small indoor crowd murmuring and shuffling in a queue, no clear words, no music", 30.0),
+    "truck_driving": ("an old pickup truck driving steadily on a snowy country road, engine hum and tyre "
+                      "crunch, heard from outside, no music, no voices", 30.0),
 }
 
 

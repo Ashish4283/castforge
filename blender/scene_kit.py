@@ -1115,6 +1115,85 @@ sounds = []                         # (path, frame, channel, world position or N
 sfx_events = []                     # (name, frame, volume, world position or None): one-shot effects
 lines = []                          # spoken lines: f0, f1, who, kind, text, expression (director, subtitles)
 moves = []                          # (actor, start_frame, end_frame) of walks, for the follow camera
+beats = []                          # (attacker, defender, start, end, contact frame) of strike steps
+
+
+def run_perform(who, step, start):
+    """Play a motion clip on `who` from scene frame `start` (the perform step, also used by strike);
+    step may carry "_holds" [(clip seconds, frames)] hit-stops. Returns the end frame."""
+    clip = motion.load(config.MOTIONS_DIR, step["clip"])
+    if clip is None:
+        raise ValueError(f"no motion clip {step['clip']!r} (python castforge.py motion list)")
+    t0, t1 = motion.window(clip, step.get("from", 0.0), step.get("to"))
+    speed, travel = float(step.get("speed", 1.0)), step.get("travel", True)
+    holds = tuple(step.get("_holds") or ())
+    end = start + motion.scene_frames(t0, t1, FPS, speed, holds)
+    keys = motion.fades(start, end, round(float(step.get("blend", 0.3)) * FPS))
+    who.key_pose(start)
+    who.key_pose(keys[1][0])
+    plant = {s: motion.stance_windows(clip, s, t0, t1) for s in ("L", "R")} if travel else None
+    anchors = motion_rig.play(who, clip, t0, start, FPS, speed, keys, travel, plant=plant, holds=holds)
+    move, turn, feet = motion.ending(clip, t0, t1)
+    size, pos0, heading0 = motion_rig.hip_height(who), (who.pos.x, who.pos.y), who.heading
+    track = clip["track"]
+    i0 = motion.sample(track, t0)
+    spin = Matrix.Rotation(heading0 - track["facing"][i0], 3, "Z")
+    ratio = size / clip["hip_height"]
+    if travel:
+        # bake the clip's real path into the root (for the follow camera and everyone's gaze), and
+        # pin whichever foot the clip says is planted at its measured spot (no slide)
+        hx0, hy0 = track["hips"][i0][0], track["hips"][i0][1]
+        for f in range(keys[1][0], keys[2][0] - 1, 2):
+            t = min(t1, t0 + motion.to_clip(f - start, FPS, speed, holds))
+            j = motion.sample(track, t)
+            d = spin @ Vector(((track["hips"][j][0] - hx0) * ratio,
+                               (track["hips"][j][1] - hy0) * ratio, 0.0))
+            who.pos = Vector((pos0[0] + d.x, pos0[1] + d.y, 0.0))
+            who.heading = heading0 + motion.wrap(track["facing"][j] - track["facing"][i0])
+            who.key_root(f)
+            pinned = False
+            for side, wins in anchors.items():
+                hit = next((w_ for w_ in wins if w_[0] <= f <= w_[1]), None)
+                if hit:
+                    who.feet[side] = Vector((hit[2][0], hit[2][1], 0.0))
+                    who.foot_heading[side] = who.heading
+                    pinned = True
+            if pinned:
+                who.key_feet(f)
+        who.pos = Vector((*motion.to_world(pos0, heading0, size, move), 0.0))
+        moves.append((who, start, end))
+    for side, (x, y, yaw) in feet.items():          # the base pose takes over where the clip's feet ended
+        last = anchors.get(side, []) if travel else []
+        if last and last[-1][1] >= keys[2][0] - 3:
+            who.feet[side] = Vector((last[-1][2][0], last[-1][2][1], 0.0))   # still pinned at the end
+        else:
+            local = (x, y) if travel else (x - move[0], y - move[1])
+            who.feet[side] = Vector((*motion.to_world(pos0, heading0, size, local), 0.0))
+        who.foot_heading[side] = heading0 + yaw
+    who.heading = heading0 + turn
+    who.key_pose(keys[2][0])
+    who.key_pose(end)
+    return end
+
+
+def run_duck(who, start, seconds=1.0, depth=0.32):
+    """Duck down fast and come back up (the duck step, and the dodge reaction of strike)."""
+    seconds = max(0.4, seconds)
+    n = max(6, int(seconds * FPS))
+    who.posture.overlay(start / FPS, (start + n) / FPS, {"head": 0.30, "chest": 0.18, "shoulders": 0.5})
+    for i in range(n + 1):
+        u = i / n
+        prof = smooth01(u / 0.3) * smooth01((1 - u) / 0.35)
+        who.key_offset("torso", Vector((0.0, 0.02 * prof,
+                                        -0.015 - depth * prof - who.pdrop(start + i))), start + i)
+        who.walk_frames.add(start + i)
+    brace_f = start + int(0.3 * n)
+    who.key_arms(start, 0.0, 0.0, 0.12, 0.12)
+    who.key_arms(brace_f, 0.18, -0.18, 0.55, 0.55, 0.10, 0.10)
+    who.key_arms(start + n, 0.0, 0.0, 0.12, 0.12)
+    return start + n
+
+
 music_cues = []                     # (frame, bed or None to stop, volume, fade seconds)
 forced = []                         # camera steps: {"f0", "seconds", "shot", "on", "move", "lens"}
 
@@ -1370,57 +1449,7 @@ for step in spec["script"]:
         sounds.append((heard(wav, step.get("fx", who.voice_fx)), start, 2 + len(sounds) % 4, who.pos.copy()))
         end = start + int(math.ceil((dur + step.get("pause", 0.3)) * FPS))
     elif do == "perform":
-        clip = motion.load(config.MOTIONS_DIR, step["clip"])
-        if clip is None:
-            raise ValueError(f"no motion clip {step['clip']!r} (python castforge.py motion list)")
-        t0, t1 = motion.window(clip, step.get("from", 0.0), step.get("to"))
-        speed, travel = float(step.get("speed", 1.0)), step.get("travel", True)
-        end = start + motion.scene_frames(t0, t1, FPS, speed)
-        keys = motion.fades(start, end, round(float(step.get("blend", 0.3)) * FPS))
-        who.key_pose(start)
-        who.key_pose(keys[1][0])
-        plant = {s: motion.stance_windows(clip, s, t0, t1) for s in ("L", "R")} if travel else None
-        anchors = motion_rig.play(who, clip, t0, start, FPS, speed, keys, travel, plant=plant)
-        move, turn, feet = motion.ending(clip, t0, t1)
-        size, pos0, heading0 = motion_rig.hip_height(who), (who.pos.x, who.pos.y), who.heading
-        track = clip["track"]
-        i0 = motion.sample(track, t0)
-        spin = Matrix.Rotation(heading0 - track["facing"][i0], 3, "Z")
-        ratio = size / clip["hip_height"]
-        if travel:
-            # bake the clip's real path into the root (for the follow camera and everyone's gaze), and
-            # pin whichever foot the clip says is planted at its measured spot (no slide)
-            hx0, hy0 = track["hips"][i0][0], track["hips"][i0][1]
-            for f in range(keys[1][0], keys[2][0] - 1, 2):
-                t = min(t1, t0 + (f - start) * speed / FPS)
-                j = motion.sample(track, t)
-                d = spin @ Vector(((track["hips"][j][0] - hx0) * ratio,
-                                   (track["hips"][j][1] - hy0) * ratio, 0.0))
-                who.pos = Vector((pos0[0] + d.x, pos0[1] + d.y, 0.0))
-                who.heading = heading0 + motion.wrap(track["facing"][j] - track["facing"][i0])
-                who.key_root(f)
-                pinned = False
-                for side, wins in anchors.items():
-                    hit = next((w_ for w_ in wins if w_[0] <= f <= w_[1]), None)
-                    if hit:
-                        who.feet[side] = Vector((hit[2][0], hit[2][1], 0.0))
-                        who.foot_heading[side] = who.heading
-                        pinned = True
-                if pinned:
-                    who.key_feet(f)
-            who.pos = Vector((*motion.to_world(pos0, heading0, size, move), 0.0))
-            moves.append((who, start, end))
-        for side, (x, y, yaw) in feet.items():          # the base pose takes over where the clip's feet ended
-            last = anchors.get(side, []) if travel else []
-            if last and last[-1][1] >= keys[2][0] - 3:
-                who.feet[side] = Vector((last[-1][2][0], last[-1][2][1], 0.0))   # still pinned at the end
-            else:
-                local = (x, y) if travel else (x - move[0], y - move[1])
-                who.feet[side] = Vector((*motion.to_world(pos0, heading0, size, local), 0.0))
-            who.foot_heading[side] = heading0 + yaw
-        who.heading = heading0 + turn
-        who.key_pose(keys[2][0])
-        who.key_pose(end)
+        end = run_perform(who, step, start)
     elif do == "hold":
         pid = step["prop"]
         if pid not in PROP_ROOTS:
@@ -1503,21 +1532,59 @@ for step in spec["script"]:
         who.key_arms(put_f + int(0.2 * FPS), 0.0, 0.0, 0.12, 0.12, sides=(side,))
         end = put_f + int(0.25 * FPS)
     elif do == "duck":
-        seconds = max(0.4, float(step.get("seconds", 1.0)))
-        depth = float(step.get("depth", 0.32))
-        n = max(6, int(seconds * FPS))
-        who.posture.overlay(start / FPS, (start + n) / FPS, {"head": 0.30, "chest": 0.18, "shoulders": 0.5})
-        for i in range(n + 1):
-            u = i / n
-            prof = smooth01(u / 0.3) * smooth01((1 - u) / 0.35)
-            who.key_offset("torso", Vector((0.0, 0.02 * prof,
-                                            -0.015 - depth * prof - who.pdrop(start + i))), start + i)
-            who.walk_frames.add(start + i)
-        brace_f = start + int(0.3 * n)
-        who.key_arms(start, 0.0, 0.0, 0.12, 0.12)
-        who.key_arms(brace_f, 0.18, -0.18, 0.55, 0.55, 0.10, 0.10)
-        who.key_arms(start + n, 0.0, 0.0, 0.12, 0.12)
-        end = start + n
+        end = run_duck(who, start, float(step.get("seconds", 1.0)), float(step.get("depth", 0.32)))
+    elif do == "strike":
+        target = step["target"]
+        if not isinstance(target, str) or target not in cast:
+            raise ValueError(f"strike target {target!r} is not in the cast")
+        defender = cast[target]
+        clip = motion.load(config.MOTIONS_DIR, step["clip"])
+        if clip is None:
+            raise ValueError(f"no motion clip {step['clip']!r} (python castforge.py motion list)")
+        t0, t1 = motion.window(clip, step.get("from", 0.0), step.get("to"))
+        speed = float(step.get("speed", 1.0))
+        spacing = float(step.get("distance", 0.9))
+        d_pos = Vector((defender.pos.x, defender.pos.y, 0.0))
+        a_pos = Vector((who.pos.x, who.pos.y, 0.0))
+        gap = (a_pos - d_pos).length
+        end = start
+        if gap > 0.05 and abs(gap - spacing) > 0.25:        # close in (or back off) to striking distance
+            stand = d_pos + (a_pos - d_pos).normalized() * spacing
+            end = who.walk(stand, start, plan(who.pos, stand))
+        end = who.face(heading_towards(who.pos, d_pos), end)
+        if step.get("square_up", True) and not defender.seated:
+            defender.face(heading_towards(defender.pos, Vector((who.pos.x, who.pos.y, 0.0))), max(start, end - 8))
+        hit_stop = max(0, int(step.get("hit_stop", 2)))
+        contact = float(step.get("contact", 0.4 * (t1 - t0)))
+        contact = max(0.05, min(contact, t1 - t0 - 0.05))
+        clip_start = end
+        end = run_perform(who, {"clip": step["clip"], "from": step.get("from", 0.0), "to": step.get("to"),
+                                "speed": speed, "blend": float(step.get("blend", 0.25)),
+                                "_holds": ((contact, hit_stop),) if hit_stop else ()}, clip_start)
+        contact_f = clip_start + int(round(motion.to_scene(contact, FPS, speed)))
+        react = step.get("react", "stagger")
+        # the swing is heard before the blow; what the blow sounds like depends on how it is taken
+        add_sfx(step.get("swing_sound", "whoosh"), max(start, contact_f - int(0.18 * FPS)),
+                volume=0.5, where=a_pos)
+        if react != "dodge":
+            landed = {"block": "block", "stagger": "hit_hard"}.get(react, "hit")
+            add_sfx(step.get("sound", landed), contact_f, where=(d_pos + a_pos) / 2)
+        beats.append((who, defender, start, end, contact_f))
+        r_end = contact_f
+        if react == "stagger":
+            away = d_pos - a_pos
+            away = away.normalized() if away.length > 0.05 else Vector((0.0, 1.0, 0.0))
+            defender.posture.overlay(contact_f / FPS, (contact_f + 20) / FPS,
+                                     {"chest": -0.14, "head": -0.22, "shoulders": 0.6})
+            defender.turn_blinks.append(contact_f + 1)
+            r_end = defender.walk(free_near(d_pos + away * 0.55), contact_f + 2, pace="hurry")
+        elif react == "dodge":
+            r_end = run_duck(defender, max(start, contact_f - int(0.3 * FPS)), 0.9, 0.36)
+        elif react == "block":
+            defender.gestures.append(((contact_f - int(0.3 * FPS)) / FPS, 1.2, "block", {}, "R"))
+            r_end = contact_f + int(0.9 * FPS)
+        end = max(end, r_end)
+        beats[-1] = (who, defender, start, end, contact_f)
     elif do == "wait":
         end = start + int(step.get("seconds", 1.0) * FPS)
     else:
@@ -2345,7 +2412,8 @@ mode = mode if mode in ("auto", "classic") else "none"
 plan = director.plan(
     [{k: ln[k] for k in ("f0", "f1", "who", "kind", "expression", "listener")} for ln in lines],
     [{"who": a.id, "f0": f0, "f1": f1} for a, f0, f1 in moves], forced, FPS, scene.frame_end, mode,
-    follow=bool(SET), strong=acting.STRONG)
+    follow=bool(SET), strong=acting.STRONG,
+    beats=[{"who": a.id, "target": d.id, "f0": f0, "f1": f1, "contact": c} for a, d, f0, f1, c in beats])
 shot_list = []                      # (frame, kind, on) for the timeline and the storyboard
 for n, sh in enumerate(plan):
     f0 = sh["frame"]
