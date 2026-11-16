@@ -171,6 +171,15 @@ ACTIONS = {
                            "seconds": p("number", "how long")}},
     "posture": {"who": True, "help": "change how someone stands or sits (stays until changed)",
                 "params": {"posture": p("enum", "the posture", True, values=POSTURES)}},
+    "hold": {"who": True, "help": "pick up a prop and carry it (walks and motion clips keep it in hand)",
+             "params": {"prop": p("prop", "id of a small prop in this scene", True),
+                        "hand": p("enum", "which hand", default="right", values=["right", "left"])}},
+    "release": {"who": True, "help": "let go of the held prop",
+                "params": {"to": p("point", "where to set it down [x, y]; leave out to let go in place"),
+                           "hand": p("enum", "which hand lets go", values=["right", "left"])}},
+    "duck": {"who": True, "help": "duck down quickly and come back up (a dodge)",
+             "params": {"seconds": p("number", "how long", default=1.0),
+                        "depth": p("number", "how far down in metres", default=0.32)}},
     "enter": {"who": True, "help": "come in through a door and walk to a spot",
               "params": {"door": p("door", "id of a door prop", True), "to": p("point", "where to walk to")}},
     "exit": {"who": True, "help": "walk out through a door",
@@ -552,6 +561,14 @@ def check_parsed(folder, sc):
                                 "(or motion cmu SEARCH)")
             elif par["type"] in ("text", "audio", "bed", "door", "seat") and not isinstance(value, str):
                 problems.append(f'"{key}" must be text')
+            elif par["type"] == "prop":
+                if not isinstance(value, str) or value not in props:
+                    problems.append(f'"{key}" must be the id of a prop in this scene')
+                else:
+                    size = props[value].get("size") or (PROP_TYPES.get(props[value].get("make"), [None])[0])
+                    if size and not acting.can_carry(list(size)):
+                        warnings.append(f"step {n}: prop {value!r} looks too big to carry "
+                                        f"({' x '.join(str(round(v, 2)) for v in size)} m)")
             elif par["type"] == "bool" and not isinstance(value, bool):
                 problems.append(f'"{key}" must be true or false')
             elif par["type"] in ("target", "look") and not (

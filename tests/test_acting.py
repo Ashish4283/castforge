@@ -109,3 +109,31 @@ def test_whip_lags_overshoots_and_settles():
 def test_faces_are_not_mirror_perfect():
     w = acting.asymmetric({"mouthSmileLeft": 0.5, "mouthSmileRight": 0.5, "browInnerUp": 0.3}, 0.08)
     assert w["mouthSmileLeft"] > w["mouthSmileRight"] and w["browInnerUp"] == 0.3
+
+
+def test_crouch_lowers_the_hips_and_mix_blends_the_drop():
+    crouch = acting.POSTURES["crouch"]
+    assert "drop" in acting.BODY_CHANNELS and crouch["drop"] > 0.3
+    half = acting.mix(acting.POSTURES["neutral"], crouch, 0.5)
+    assert abs(half["drop"] - crouch["drop"] / 2) < 1e-9
+    assert abs(half["stance"] - (1.0 + crouch["stance"]) / 2) < 1e-9     # stance rests at 1, not 0
+
+
+def test_clap_uses_both_hands_and_beats():
+    seconds, hands, pose = acting.GESTURES["clap"]
+    assert hands == "both" and seconds > 1.0
+    open_palms = pose(0.5, 0.4, {})
+    assert open_palms["arm"]["open"] > 0.5
+    bends = {round(pose(u, u * seconds, {})["arm"]["bend"], 3) for u in (0.1, 0.2, 0.3, 0.4, 0.5)}
+    assert len(bends) > 1                                                # the hands meet and part
+
+
+def test_carry_grips_tell_sticks_from_handfuls():
+    crowbar = acting.carry_grip([0.08, 0.08, 0.9])
+    assert crowbar["kind"] == "stick" and crowbar["axis"] == 2 and 0.2 < crowbar["along"] < 0.35
+    lantern = acting.carry_grip([0.25, 0.25, 0.42])
+    assert lantern["kind"] == "palm" and abs(lantern["along"] - 0.231) < 1e-9
+    plank = acting.carry_grip([1.2, 0.2, 0.04])
+    assert plank["kind"] == "stick" and plank["axis"] == 0 and plank["lift"] == 0.02
+    assert acting.can_carry([0.08, 0.08, 0.9]) and not acting.can_carry([1.5, 0.4, 0.4])
+    assert not acting.can_carry([0.8, 0.7, 0.4])                         # too wide for one hand

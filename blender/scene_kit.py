@@ -131,6 +131,7 @@ class Actor:
         self.stresses = []               # times (s) of stressed syllables, for nods and brows
         self.seated = None               # the seat (props.SEATS entry) while sitting
         self.driving = []                # (start, end) frames with hands on a steering wheel
+        self.holding = []                # [start frame, end frame or None, "L"/"R", prop root] held props
         self.thinking = []               # (start_s, end_s) of inner-voice thoughts (head lowers a little)
         self.seated_ranges = []          # [start, end] frames spent sitting (end None = to the end)
         self.sit_torso = Vector((0, 0, 0))
@@ -322,11 +323,15 @@ class Actor:
         self.key_root(frame)
         self.key_feet(frame)
         self.key_roll(frame)
-        self.key_offset("torso", Vector((sway, 0, -0.015 + bob)), frame)
+        self.key_offset("torso", Vector((sway, 0, -0.015 + bob - self.pdrop(frame))), frame)
         self.key_rot("torso", Matrix.Identity(3), frame)
         self.key_arms(frame, swing, -swing, 0.12, 0.12)
         self.key_muscle("thigh.L", 0.0, frame)
         self.key_muscle("thigh.R", 0.0, frame)
+
+    def pdrop(self, frame):
+        """How far the posture sinks the hips at this frame (crouch), in metres."""
+        return self.posture.at(frame / FPS).get("drop", 0.0)
 
     # actions ----------------------------------------------------------------------------------------
     def face(self, target_heading, f0, dur=0.45):
@@ -374,7 +379,7 @@ class Actor:
             stepping = lead if u < 0.5 else trail
             sx = 1 if stepping == "L" else -1
             self.key_offset("torso", Vector((-0.015 * sx * math.sin(math.pi * u * 2) ** 2, 0,
-                                              -0.025 - 0.01 * math.sin(math.pi * u))), f)
+                                              -0.025 - 0.01 * math.sin(math.pi * u) - self.pdrop(f))), f)
             self.key_rot("torso", Matrix.Identity(3), f)
             self.key_arms(f, 0.0, 0.0, 0.12, 0.12)
             self.walk_frames.add(f)
@@ -557,7 +562,7 @@ class Actor:
             self.key_roll(f, roll["L"], roll["R"])
             # body: rides over the standing leg (sway), lowest at heel strike, knees never locked
             self.key_offset("torso", Vector((-0.022 * sw * math.sin(math.pi * u) * ramp, 0,
-                                              -0.045 + 0.022 * math.sin(math.pi * u) * ramp)), f)
+                                              -0.045 + 0.022 * math.sin(math.pi * u) * ramp - self.pdrop(f))), f)
             # lean a little forward; pelvis turns with the swinging leg and drops on the swinging side
             self.key_rot("torso", Matrix.Rotation((0.07 + lean) * ramp, 3, "X")
                          @ Matrix.Rotation(0.08 * phase * ramp, 3, "Z")
@@ -729,6 +734,7 @@ prop_tops = {}
 
 
 SEATS_ = prop_factory.SEATS
+PROP_ROOTS = {}                     # prop id -> (root object, its scene entry), for hold and carry
 
 
 def find_part(objects, name, pid, key):
@@ -860,6 +866,7 @@ for n, prop in enumerate(spec.get("props", [])):
     if prop.get("picture_rect"):
         corners = None
     prop_tops[prop.get("id", root.name)] = top
+    PROP_ROOTS[prop.get("id", root.name)] = (root, prop)
     block_footprint(corners)
     log("prop", prop.get("make") or os.path.basename(prop["file"]), prop.get("position"),
         "on " + prop["on"] if prop.get("on") else "")
@@ -1372,19 +1379,145 @@ for step in spec["script"]:
         keys = motion.fades(start, end, round(float(step.get("blend", 0.3)) * FPS))
         who.key_pose(start)
         who.key_pose(keys[1][0])
-        motion_rig.play(who, clip, t0, start, FPS, speed, keys, travel)
+        plant = {s: motion.stance_windows(clip, s, t0, t1) for s in ("L", "R")} if travel else None
+        anchors = motion_rig.play(who, clip, t0, start, FPS, speed, keys, travel, plant=plant)
         move, turn, feet = motion.ending(clip, t0, t1)
         size, pos0, heading0 = motion_rig.hip_height(who), (who.pos.x, who.pos.y), who.heading
+        track = clip["track"]
+        i0 = motion.sample(track, t0)
+        spin = Matrix.Rotation(heading0 - track["facing"][i0], 3, "Z")
+        ratio = size / clip["hip_height"]
         if travel:
+            # bake the clip's real path into the root (for the follow camera and everyone's gaze), and
+            # pin whichever foot the clip says is planted at its measured spot (no slide)
+            hx0, hy0 = track["hips"][i0][0], track["hips"][i0][1]
+            for f in range(keys[1][0], keys[2][0] - 1, 2):
+                t = min(t1, t0 + (f - start) * speed / FPS)
+                j = motion.sample(track, t)
+                d = spin @ Vector(((track["hips"][j][0] - hx0) * ratio,
+                                   (track["hips"][j][1] - hy0) * ratio, 0.0))
+                who.pos = Vector((pos0[0] + d.x, pos0[1] + d.y, 0.0))
+                who.heading = heading0 + motion.wrap(track["facing"][j] - track["facing"][i0])
+                who.key_root(f)
+                pinned = False
+                for side, wins in anchors.items():
+                    hit = next((w_ for w_ in wins if w_[0] <= f <= w_[1]), None)
+                    if hit:
+                        who.feet[side] = Vector((hit[2][0], hit[2][1], 0.0))
+                        who.foot_heading[side] = who.heading
+                        pinned = True
+                if pinned:
+                    who.key_feet(f)
             who.pos = Vector((*motion.to_world(pos0, heading0, size, move), 0.0))
             moves.append((who, start, end))
         for side, (x, y, yaw) in feet.items():          # the base pose takes over where the clip's feet ended
-            local = (x, y) if travel else (x - move[0], y - move[1])
-            who.feet[side] = Vector((*motion.to_world(pos0, heading0, size, local), 0.0))
+            last = anchors.get(side, []) if travel else []
+            if last and last[-1][1] >= keys[2][0] - 3:
+                who.feet[side] = Vector((last[-1][2][0], last[-1][2][1], 0.0))   # still pinned at the end
+            else:
+                local = (x, y) if travel else (x - move[0], y - move[1])
+                who.feet[side] = Vector((*motion.to_world(pos0, heading0, size, local), 0.0))
             who.foot_heading[side] = heading0 + yaw
         who.heading = heading0 + turn
         who.key_pose(keys[2][0])
         who.key_pose(end)
+    elif do == "hold":
+        pid = step["prop"]
+        if pid not in PROP_ROOTS:
+            raise ValueError(f"hold refers to unknown prop {pid!r}")
+        prop_root, prop_data = PROP_ROOTS[pid]
+        size_p = prop_data.get("size") or [0.3, 0.3, 0.3]
+        grip = acting.carry_grip(size_p)
+        side = "L" if step.get("hand") == "left" else "R"
+        loc = prop_root.matrix_world.to_translation()
+        flat = Vector((loc.x, loc.y, 0.0))
+        end = start
+        if (Vector((who.pos.x, who.pos.y, 0.0)) - flat).length > 0.75:
+            stand = flat + (Vector((who.pos.x, who.pos.y, 0.0)) - flat).normalized() * 0.5
+            end = who.walk(stand, start, plan(who.pos, stand))
+        end = who.face(heading_towards(who.pos, flat), end)
+        reach_f = end + int(0.3 * FPS)
+        grab_f = reach_f + int(0.25 * FPS)
+        sw, bd = (-0.95, 0.5)
+        who.key_arms(end, 0.0, 0.0, 0.12, 0.12, sides=(side,))
+        who.key_arms(reach_f, sw if side == "L" else 0.0, sw if side == "R" else 0.0,
+                     bd if side == "L" else 0.12, bd if side == "R" else 0.12, sides=(side,))
+        who.key_arms(grab_f + int(0.2 * FPS), -0.30 if side == "L" else 0.0, -0.30 if side == "R" else 0.0,
+                     0.85 if side == "L" else 0.12, 0.85 if side == "R" else 0.12, sides=(side,))
+        # a grip empty rides the hand bone; the prop's own axes line up with it (a stick lies across the palm)
+        B = {0: Matrix.Identity(3), 1: Matrix.Rotation(-math.pi / 2, 3, "Z"),
+             2: Matrix.Rotation(math.pi / 2, 3, "Y")}[grip["axis"]]
+        axis_v = Vector((0.0, 0.0, 0.0))
+        axis_v[grip["axis"]] = grip["along"]
+        p_grab = axis_v + Vector((0.0, 0.0, grip["lift"]))
+        e = bpy.data.objects.new(f"CF_grip_{who.id}_{pid}", None)
+        e.empty_display_size = 0.05
+        scene.collection.objects.link(e)
+        e.parent = who.rig
+        e.parent_type = "BONE"
+        e.parent_bone = f"hand_fk.{side}"
+        e.matrix_basis = Matrix.Translation(Vector((0.0, -0.04, -0.02)) - B @ p_grab) @ B.to_4x4()
+        for kind_c, name_c in (("COPY_LOCATION", "CF_hold_loc"), ("COPY_ROTATION", "CF_hold_rot")):
+            con = prop_root.constraints.new(kind_c)
+            con.name = name_c
+            con.target = e
+            con.influence = 0.0
+            con.keyframe_insert("influence", frame=reach_f)
+            con.influence = 1.0
+            con.keyframe_insert("influence", frame=grab_f)
+        who.holding.append([grab_f, None, side, prop_root])
+        end = grab_f + int(0.25 * FPS)
+    elif do == "release":
+        want = {"left": "L", "right": "R"}.get(step.get("hand"))
+        held = next((h for h in reversed(who.holding) if h[1] is None and (want is None or h[2] == want)), None)
+        if held is None:
+            raise ValueError(f"{step.get('who')} is not holding anything to release")
+        prop_root, side = held[3], held[2]
+        scene.frame_set(start)
+        world = prop_root.evaluated_get(bpy.context.evaluated_depsgraph_get()).matrix_world.copy()
+        held[1] = start
+        loc_w, rot_w, _ = world.decompose()
+        prop_root.rotation_mode = "XYZ"
+        put_f = start + int(0.45 * FPS)
+        prop_root.location = loc_w
+        prop_root.rotation_euler = rot_w.to_euler("XYZ")
+        prop_root.keyframe_insert("location", frame=start)
+        prop_root.keyframe_insert("rotation_euler", frame=start)
+        if step.get("to"):
+            target = to_world(tuple(step["to"]))
+            prop_root.location = Vector((loc_w.x + (target.x - loc_w.x) * 0.5,
+                                         loc_w.y + (target.y - loc_w.y) * 0.5, max(loc_w.z * 0.7, 0.1)))
+            prop_root.keyframe_insert("location", frame=(start + put_f) // 2)
+            prop_root.location = Vector((target.x, target.y, 0.0))
+            prop_root.rotation_euler = (0.0, 0.0, rot_w.to_euler("XYZ").z)
+            prop_root.keyframe_insert("location", frame=put_f)
+            prop_root.keyframe_insert("rotation_euler", frame=put_f)
+        for con in prop_root.constraints:
+            if con.name.startswith("CF_hold"):
+                con.influence = 1.0
+                con.keyframe_insert("influence", frame=start)
+                con.influence = 0.0
+                con.keyframe_insert("influence", frame=start + int(0.2 * FPS))
+        who.key_arms(start, -0.30 if side == "L" else 0.0, -0.30 if side == "R" else 0.0,
+                     0.85 if side == "L" else 0.12, 0.85 if side == "R" else 0.12, sides=(side,))
+        who.key_arms(put_f + int(0.2 * FPS), 0.0, 0.0, 0.12, 0.12, sides=(side,))
+        end = put_f + int(0.25 * FPS)
+    elif do == "duck":
+        seconds = max(0.4, float(step.get("seconds", 1.0)))
+        depth = float(step.get("depth", 0.32))
+        n = max(6, int(seconds * FPS))
+        who.posture.overlay(start / FPS, (start + n) / FPS, {"head": 0.30, "chest": 0.18, "shoulders": 0.5})
+        for i in range(n + 1):
+            u = i / n
+            prof = smooth01(u / 0.3) * smooth01((1 - u) / 0.35)
+            who.key_offset("torso", Vector((0.0, 0.02 * prof,
+                                            -0.015 - depth * prof - who.pdrop(start + i))), start + i)
+            who.walk_frames.add(start + i)
+        brace_f = start + int(0.3 * n)
+        who.key_arms(start, 0.0, 0.0, 0.12, 0.12)
+        who.key_arms(brace_f, 0.18, -0.18, 0.55, 0.55, 0.10, 0.10)
+        who.key_arms(start + n, 0.0, 0.0, 0.12, 0.12)
+        end = start + n
     elif do == "wait":
         end = start + int(step.get("seconds", 1.0) * FPS)
     else:
@@ -1514,6 +1647,9 @@ for act in cast.values():
         for side in arm_sides:
             fingers[side] = (g[side] + w_hand * (arm.get("open", 0.0) - g[side]), arm.get("hand"),
                              max(0.0, w_hand * arm.get("grip", 0.0)))
+        for h0, h1, h_side, _ in act.holding:
+            if h0 <= f and (h1 is None or f < h1):
+                fingers[h_side] = (0.15, "fist", 0.9)
         act.key_fingers(f, fingers["L"][0], fingers["R"][0], fingers["L"][1], fingers["R"][1],
                         fingers["L"][2], fingers["R"][2])
         seated_now = any(r[0] <= f and (r[1] is None or f < r[1]) for r in act.seated_ranges)
@@ -1527,6 +1663,9 @@ for act in cast.values():
             else:
                 sway = 0.015 * math.sin(2 * math.pi * t / 6.5 + seed)
                 idle = {"L": (sway - 0.35 * g["L"], 0.12 + 0.8 * g["L"]), "R": (-sway - 0.35 * g["R"], 0.12 + 0.8 * g["R"])}
+            for h0, h1, h_side, _ in act.holding:
+                if h0 <= f and (h1 is None or f < h1):
+                    idle[h_side] = (-0.30, 0.85)
             v = {}
             for side in "LR":
                 swing, bend = idle[side]
@@ -1607,7 +1746,8 @@ for act in cast.values():
         elif not any(abs(f - w) <= 4 for w in (f - 4, f + 4) if w in act.walk_frames) and f not in act.walk_frames:
             # standing: slow weight shift from foot to foot (feet stay planted by IK)
             act.key_offset("torso", Vector((0.011 * math.sin(2 * math.pi * t / 6.5 + seed), 0,
-                                            -0.015 - 0.004 * abs(math.sin(2 * math.pi * t / 6.5 + seed)))), f)
+                                            -0.015 - 0.004 * abs(math.sin(2 * math.pi * t / 6.5 + seed))
+                                            - stance.get("drop", 0.0))), f)
         if any(b0 - 2 / FPS <= t <= b1 + 2 / FPS for b0, b1 in bows) and f not in act.walk_frames:
             base = Matrix.Rotation(-0.05, 3, "X") if seated else Matrix.Identity(3)
             act.key_rot("torso", base @ Matrix.Rotation(weight * pose.get("torso", 0.0), 3, "X"), f)

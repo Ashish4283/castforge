@@ -108,6 +108,39 @@ def fades(start, end, blend):
     return [(start, 0.0), (start + b, 1.0), (end - b, 1.0), (end, 0.0)]
 
 
+# --- foot planting -------------------------------------------------------------------------------------
+def stance_windows(meta, side, t0, t1, min_samples=4):
+    """When the clip's foot is planted between t0 and t1: [(ta, tb, (x, y))] in the clip's own units.
+    Planted means near the floor and nearly still; the anchor is the mean position of the middle of the
+    stay, so heel-strike and push-off wobble do not move it."""
+    track, hip = meta["track"], meta["hip_height"]
+    feet, fps, floor_z = track["feet"][side], track["fps"], floor(meta)
+    i0, i1 = sample(track, t0), sample(track, t1)
+    runs, run = [], []
+    for i in range(i0, i1 + 1):
+        x, y, z = feet[i][:3]
+        speed = 0.0
+        if i > i0:
+            px, py = feet[i - 1][:2]
+            speed = math.hypot(x - px, y - py) * fps
+        if (z - floor_z) < 0.09 * hip and speed < 0.6 * hip:
+            run.append(i)
+        elif run:
+            runs.append(run)
+            run = []
+    if run:
+        runs.append(run)
+    out = []
+    for run in runs:
+        if len(run) < min_samples:
+            continue
+        mid = run[len(run) // 4: len(run) - len(run) // 4] or run
+        ax = sum(feet[i][0] for i in mid) / len(mid)
+        ay = sum(feet[i][1] for i in mid) / len(mid)
+        out.append(((run[0] - i0) / fps, (run[-1] - i0) / fps, (ax, ay)))
+    return out
+
+
 def ending(meta, t0, t1):
     """What a clip window does to the body, in the body's own frame at t0 (it faces -Y there) and in hip
     heights: the hips' move (dx, dy), the turn (radians), and each foot's (x, y, heading) at t1."""

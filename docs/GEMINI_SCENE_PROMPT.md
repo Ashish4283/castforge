@@ -69,15 +69,19 @@ Rules:
   {"who": "<name>", "do": "perform", "clip": "<motion clip name>", "from": 0, "to": 2.5}
    (a motion-capture move: punch, sword swing, dance. Only use clip names the user lists for you;
    "from"/"to" pick seconds of the clip; "travel": false keeps the character on the spot)
+  {"who": "<name>", "do": "hold", "prop": "<prop id>", "hand": "right"}
+   (picks the prop up and carries it: walks and motion clips keep it in hand. Small props only)
+  {"who": "<name>", "do": "release", "to": [x, y]}   (sets the held prop down; no "to": lets go in place)
+  {"who": "<name>", "do": "duck", "seconds": 1.0}   (ducks down fast and comes back up; a dodge)
 - Acting (use it: it makes the scene alive):
   add "expression" to a say/think line: neutral, smile, happy, sad, angry, surprised, scared,
   disgusted, worried, thinking, skeptical, determined, tired, smug.
   {"who": "<name>", "do": "emote", "expression": "<expression>", "seconds": 2}   (without seconds it stays)
   {"who": "<name>", "do": "gesture", "type": "<gesture>"}   gesture is one of: wave, raise_hand, point (add
    "target": "<name>" or [x, y]), shrug, nod, shake_head, hands_on_hips, beckon, bow, look_around,
-   thumbs_up, cheer
+   thumbs_up, cheer, clap
   {"who": "<name>", "do": "posture", "posture": "<posture>"}   neutral, confident, proud, relaxed, slumped,
-   tense, tired (a cast member can also start with "expression" and "posture")
+   tense, tired, crouch (a cast member can also start with "expression" and "posture")
   {"who": "<name>", "do": "look", "target": "<name>" | "camera" | [x, y] | "left" | "right" | "up" | "down",
    "seconds": 1.5}   (head and eyes only)
   walk can have "pace": "stroll" | "normal" | "brisk" | "hurry".

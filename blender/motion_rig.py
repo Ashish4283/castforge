@@ -23,7 +23,7 @@ def _collection():
     return coll
 
 
-def play(act, meta, t0, start, fps, speed, keys, travel=True):
+def play(act, meta, t0, start, fps, speed, keys, travel=True, plant=None):
     """Make `act` perform a clip from clip time t0, starting at scene frame `start`; keys: (frame, weight)
     blends (motion.fades). Call with the character's position and heading as they are when the clip starts."""
     coll = _collection()
@@ -105,9 +105,55 @@ def play(act, meta, t0, start, fps, speed, keys, travel=True):
             for f, w in keys:
                 c.influence = w
                 c.keyframe_insert("influence", frame=f)
-    for side in ("L", "R"):                                  # legs follow the clip (FK), then plant again (IK)
+    anchors = _anchors(act, start, fps, speed, keys, plant) if travel and plant else {}
+    for side in ("L", "R"):
         p = act.pb[f"thigh_parent.{side}"]
-        for f, w in keys:
+        wins = anchors.get(side, [])
+        if not wins:
+            for f, w in keys:                   # legs follow the clip (FK), then plant again (IK)
+                p["IK_FK"] = w
+                p.keyframe_insert('["IK_FK"]', frame=f)
+            continue
+        # this foot has planted stretches: IK (pinned) during them, the clip's FK between them
+        def key_ikfk(f, w):
             p["IK_FK"] = w
             p.keyframe_insert('["IK_FK"]', frame=f)
-    return arm
+        key_ikfk(keys[0][0], 0.0)
+        pointer = keys[1][0]
+        for fa, fb, _ in wins:
+            if fa - pointer > 4:
+                key_ikfk(pointer, 1.0)
+                key_ikfk(fa - 2, 1.0)
+            key_ikfk(fa, 0.0)
+            key_ikfk(fb, 0.0)
+            pointer = fb + 2
+        if keys[2][0] - pointer > 4:
+            key_ikfk(pointer, 1.0)
+            key_ikfk(keys[2][0], 1.0)
+        key_ikfk(keys[3][0], 0.0)
+    return anchors
+
+
+def _anchors(act, start, fps, speed, keys, plant):
+    """Where each planted stretch of the clip puts the character's own foot: {side: [(frame a, frame b,
+    (x, y))]} in scene frames and world metres. The clip says when a foot is planted (motion.stance_windows);
+    the anchor is the measured position at the start of the stretch, and the foot is pinned there by IK."""
+    out = {}
+    f0, f1 = keys[1][0], keys[2][0]
+    for side, wins in plant.items():
+        rows = []
+        for wa, wb, _ in wins:
+            fa = max(f0, int(round(start + wa * fps / speed)))
+            fb = min(f1, int(round(start + wb * fps / speed)))
+            if fb - fa < 5:
+                continue
+            bpy.context.scene.frame_set(fa)
+            ev = act.rig.evaluated_get(bpy.context.evaluated_depsgraph_get())
+            bone = ev.pose.bones.get(f"DEF-foot.{side}")
+            if bone is None:
+                continue
+            w = ev.matrix_world @ bone.head
+            rows.append((fa, fb, (w.x, w.y)))
+        if rows:
+            out[side] = rows
+    return out

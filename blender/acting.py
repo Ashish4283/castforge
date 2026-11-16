@@ -101,8 +101,10 @@ POSTURES = {
     "slumped": {"chest": 0.16, "head": 0.14, "shoulders": 0.10, "stance": 0.90},
     "tense": {"chest": 0.02, "head": 0.03, "shoulders": 0.55, "stance": 1.00},
     "tired": {"chest": 0.10, "head": 0.10, "shoulders": 0.05, "stance": 0.95},
+    # drop: metres the hips sink straight down; the IK feet stay planted, so the knees bend by themselves
+    "crouch": {"drop": 0.40, "chest": 0.14, "head": -0.12, "shoulders": 0.12, "stance": 1.30},
 }
-BODY_CHANNELS = ("chest", "head", "shoulders", "stance")
+BODY_CHANNELS = ("chest", "head", "shoulders", "stance", "drop")
 
 
 def mix(a, b, w):
@@ -248,6 +250,12 @@ def _thumbs_up(u, t, p):
     return {"arm": {"swing": -0.80, "raise": 0.20, "bend": 1.45, "twist": 1.40, "hand": "thumbs", "grip": 1.0}}
 
 
+def _clap(u, t, p):
+    beat = math.sin(2 * math.pi * 2.6 * t)
+    return {"arm": {"swing": -0.95, "raise": 0.10, "bend": 1.15 + 0.14 * beat, "twist": 0.90, "open": 0.75},
+            "head": {"pitch": 0.03 * max(0.0, beat)}, "chest": -0.02}
+
+
 def _cheer(u, t, p):
     return {"arm": {"swing": -2.55, "raise": 0.55, "bend": 0.30 + 0.25 * math.sin(2 * math.pi * 2.0 * t),
                     "hand": "fist", "grip": 1.0}, "head": {"pitch": -0.08}, "chest": -0.04}
@@ -266,7 +274,34 @@ GESTURES = {
     "look_around": (2.6, "none", _look_around),
     "thumbs_up": (1.8, "one", _thumbs_up),
     "cheer": (1.6, "both", _cheer),
+    "clap": (1.9, "both", _clap),
 }
+
+
+# --- holding and carrying props ----------------------------------------------------------------------------
+CARRY_MAX = 1.3          # the longest side (m) a character can pick up with one hand
+
+
+def can_carry(size):
+    """True when a prop of this size [w, d, h] fits in a hand (long tools are fine; wide crates are not)."""
+    return bool(size) and len(size) == 3 and max(size) <= CARRY_MAX and sorted(size)[1] <= 0.6
+
+
+def carry_grip(size):
+    """How a prop sits in the hand. kind "stick": long and thin (a crowbar, a torch), gripped like a tool
+    about a third of the way up; "palm": held at its middle in the fist. axis is the prop's long local axis
+    (0 x, 1 y, 2 z); along is metres from the prop's origin to the hand along that axis; lift is metres up
+    from the origin for props that lie flat (their origin sits at the base)."""
+    w, d, h = size
+    dims = [w, d, h]
+    axis = max(range(3), key=lambda i: dims[i])
+    long_side, mid = dims[axis], sorted(dims)[1]
+    stick = mid > 0 and long_side / mid >= 2.2
+    if axis == 2:
+        return {"kind": "stick" if stick else "palm", "axis": 2,
+                "along": (0.30 if stick else 0.55) * h, "lift": 0.0}
+    return {"kind": "stick" if stick else "palm", "axis": axis,
+            "along": (0.25 if stick else 0.0) * long_side, "lift": 0.5 * h}
 
 
 def gesture_weight(t, seconds):

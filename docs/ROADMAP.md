@@ -12,7 +12,7 @@ per GPU-second.
 | Project | Contract | State |
 |---|---|---|
 | Motion library | Mixamo FBX / CMU BVH -> `motions/clips/<name>.blend` + `.json`; scene step `perform` | v1 done 2026-11-10 |
-| Hands and weapons | props attached to hand bones; IK hold, carry, clap | |
+| Hands and weapons | `hold`/`release` steps: carry grips (stick/palm, `acting.carry_grip`), props ride the hand through walks and clips (a held crowbar swings with a punch clip); `clap`; `duck` step; `crouch` posture | v1 done 2026-11-14 |
 | Fight choreography | `fight` step: beats (attack/defend), clips synced on contact frames, spacing by reach, impact sound, hit-stop, shake; director action rules (180° line, faster cuts) | after hands |
 | Editor 1: 3D scene editor | app: the scene in 3D (preview.glb), play/scrub, timeline of steps, drag start spots and walk targets, undo, save history | v1 done 2026-11-10 |
 | Editor 2: pose fixes | grab a body part at a moment and rotate it; stored as fixes in scene.json, re-applied on every render (animation layer) | next |
@@ -26,8 +26,8 @@ per GPU-second.
 | Publish kit | `castforge.py publish` + app button: delivery checks (picture, sound, loudness, subtitles, chapters), YouTube package (video at -14 LUFS, 1280x720 thumbnail, folded chapters, description); the title-card chapter bug is fixed at the source | v1 done 2026-11-12 |
 | Phase 2 bridge | rented GPU: ComfyUI + FLORA designs -> image-to-3D -> rig -> CastForge | later |
 
-Motion v1 limits: fingers stay procedural; the follow camera and gaze use the base path (approximate while a
-clip travels); feet can slide a little when a clip's proportions differ. Mixamo files are downloaded by the
+Motion limits: fingers stay procedural. Since 2026-11-14 the root rides the clip's true hip path (follow
+camera and gaze track it) and a measured counter-shift holds the grounded foot still (the clip says when a foot is planted; the character's own foot is measured and the drift keyed away). Mixamo files are downloaded by the
 user (free Adobe account) and must not be redistributed: `motions/` is git-ignored.
 
 ## Maintenance
@@ -42,6 +42,6 @@ weather, 40 props, titles/credits/transitions/grades/subtitles/chapters/poster, 
 (Copilot), schema-driven app forms. Motion library v1 (2026-11-10).
 
 ## Film needs (movies/santa_is_a_lie/STORY.md)
-Missing: hold/carry, crouch/duck (now possible with a clip), crowd queue, Santa suit prop, sounds (door slam,
+Missing: crowd queue, sounds (door slam,
 lock bolt, crowbar, crash, crowd murmur, truck driving: add prompts in `generate/make_sfx_library.py`, run
 `--missing`).

@@ -36,9 +36,11 @@ export function ParamInput({name, def, value, onChange, onError}: {
         </select>
       );
     case "door":
-    case "seat": {
-      const types = def.type === "door" ? ["door"] : schema.seats;
-      const ids = (Array.isArray(scene?.props) ? scene.props : []).filter((p: Json) => types.includes(p?.make)).map((p: Json) => p.id);
+    case "seat":
+    case "prop": {
+      const types = def.type === "door" ? ["door"] : def.type === "seat" ? schema.seats : null;
+      const ids = (Array.isArray(scene?.props) ? scene.props : [])
+        .filter((p: Json) => p?.id && (types === null || types.includes(p?.make))).map((p: Json) => p.id);
       return <Select value={value || ""} onChange={v => onChange(v || null)} options={ids} placeholder="Choose prop" />;
     }
     case "weather": {

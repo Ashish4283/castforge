@@ -6,7 +6,7 @@ import pytest
 from core import schema
 
 TYPES = {"point", "number", "text", "audio", "enum", "target", "look", "voice", "door", "seat", "sfx", "bed", "bool",
-         "clip", "cast_list"}
+         "clip", "cast_list", "prop"}
 
 
 def test_every_parameter_has_a_known_type_and_help():
@@ -205,3 +205,22 @@ def test_finishing_settings_never_change_the_render_key(tmp_path):
         config.render_key(finished, "draft", str(tmp_path), schema.FINISH_KEYS)
     assert config.render_key(dict(base, lighting="night"), "draft", str(tmp_path), schema.FINISH_KEYS) != \
         config.render_key(base, "draft", str(tmp_path), schema.FINISH_KEYS)
+
+
+def test_hold_needs_a_real_prop_and_warns_when_it_is_too_big(tmp_path, capsys):
+    scene = {"background": "bg.png", "floor": "wood",
+             "cast": {"Arthur": {"character": "arthur.blend", "position": [0, 0]}},
+             "props": [{"id": "lantern", "make": "box", "position": [1, 0], "size": [0.2, 0.2, 0.4]},
+                       {"id": "crate", "make": "box", "position": [2, 0], "size": [1.0, 0.9, 0.9]}],
+             "script": [{"who": "Arthur", "do": "hold", "prop": "lantern"},
+                        {"who": "Arthur", "do": "release", "to": [1.5, 0.5]},
+                        {"who": "Arthur", "do": "duck", "seconds": 0.8},
+                        {"who": "Arthur", "do": "hold", "prop": "crate"},
+                        {"who": "Arthur", "do": "hold", "prop": "ghost"}]}
+    (tmp_path / "bg.png").write_bytes(b"x")
+    (tmp_path / "arthur.blend").write_bytes(b"x")
+    (tmp_path / "scene.json").write_text(json.dumps(scene), encoding="utf-8")
+    assert schema.check_scene(str(tmp_path)) == 1
+    out = capsys.readouterr().out
+    assert '"prop" must be the id of a prop in this scene' in out
+    assert "looks too big to carry" in out and "1.0 x 0.9 x 0.9" in out

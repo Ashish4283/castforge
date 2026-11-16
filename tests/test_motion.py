@@ -77,3 +77,23 @@ def test_perform_needs_a_clip_from_the_library(tmp_path, capsys, monkeypatch):
     assert schema.check_scene(bad) == 1
     assert "no motion clip 'uppercut'" in capsys.readouterr().out
     assert config.scene_files({"script": [{"do": "perform", "clip": "jab"}]})[-1].endswith("jab.json")
+
+
+def _planted_meta():
+    """A 2-second clip at 10 fps: the left foot planted at (1, 0) the whole time but drifting +x by
+    0.02/sample (proportion slide), the right foot swinging in the air."""
+    n = 21
+    feet_l = [[1.0 + 0.02 * i, 0.0, 0.01, 0.0] for i in range(n)]
+    feet_r = [[0.5 + 0.1 * i, 0.0, 0.5, 0.0] for i in range(n)]
+    track = {"fps": 10, "hips": [[0.0, 0.0, 1.0]] * n, "facing": [0.0] * n,
+             "feet": {"L": feet_l, "R": feet_r}, "floor": [0.0] * n}
+    return {"hip_height": 1.0, "track": track}
+
+
+def test_a_planted_foot_is_found_with_its_anchor():
+    wins = motion.stance_windows(_planted_meta(), "L", 0.0, 2.0)
+    assert len(wins) == 1
+    ta, tb, (ax, ay) = wins[0]
+    assert ta == 0.0 and tb == 2.0
+    assert abs(ax - 1.2) < 0.06 and ay == 0.0           # the anchor sits mid-stay
+    assert motion.stance_windows(_planted_meta(), "R", 0.0, 2.0) == []   # the swinging foot never plants
