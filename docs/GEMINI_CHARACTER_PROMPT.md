@@ -18,12 +18,14 @@ no explanation. Format:
   "skin": "#rrggbb",
   "hair": {"length": "none" | "short" | "medium" | "long", "style": "auto", "color": "#rrggbb"},
   "beard": "none" | "scruffy" | "full" | "long" | "faun" | "moustache" | "santa",
-  "hat": "none" | "santa" | "newsboy",
+  "hat": "none" | "santa" | "newsboy" | "fedora" | "cloche" | "flat_cap",
   "eyes": "brown" | "brownlight" | "green" | "grey" | "blue" | "bluegreen" | "deepblue" | "lightblue" | "ice",
   "outfit": {"garment": "trousers" | "shorts" | "skirt" | "dress", "sleeves": "short" | "long",
              "top": "#rrggbb", "bottom": "#rrggbb", "shoes": "#rrggbb"},
+  "outfit.style": "casual" | "suit" | "formal" | "work" | "robe" | "tunic",
   "costume": {"coat": "none" | "long", "fabric": "garment" | "velvet" | "leather" | "cotton",
-              "trim": "#rrggbb", "belt": "#rrggbb", "buckle": "#rrggbb", "gloves": "#rrggbb", "boots": "#rrggbb"}
+              "trim": "#rrggbb", "belt": "#rrggbb", "buckle": "#rrggbb", "gloves": "#rrggbb",
+              "boots": "#rrggbb", "cape": "#rrggbb", "armour": "#rrggbb"}
 }
 
 Rules:

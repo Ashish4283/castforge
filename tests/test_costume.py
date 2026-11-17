@@ -86,3 +86,60 @@ def test_design_problems_are_plain_language():
     assert any("age" in p and "number" in p for p in problems)
     assert any("hat" in p and "santa" in p for p in problems)
     assert any("costume.belt" in p and "colour" in p for p in problems)
+
+
+def test_the_back_arc_of_a_collar_is_where_a_cape_hangs():
+    # a ring of 8 points around the neck; the body faces -y, so the back is +y
+    co = {i: (math.cos(2 * math.pi * i / 8) * 0.1, math.sin(2 * math.pi * i / 8) * 0.1, 1.4) for i in range(8)}
+    arc = kit.back_arc(co, list(range(8)), (0.0, 0.0), face=-1.0)
+    assert arc and all(co[v][1] > 0 for v in arc)           # the face points -y, so a cape hangs off +y
+    assert arc == [2, 3, 4] or arc == [1, 2, 3]             # the middle of the back run, not its edges
+    assert kit.back_arc(co, [0], (0.0, 0.0), face=-1.0) == []
+
+
+def test_cape_rings_fall_flare_and_drift_backwards():
+    top = [(-0.2, 0.08, 1.4), (0.0, 0.1, 1.4), (0.2, 0.08, 1.4)]
+    rings = kit.cape_rings(top, (0.0, 0.0), length=0.8, rings=4, flare=0.5, sway=0.1)
+    assert len(rings) == 4 and len(rings[0]) == 3
+    assert [round(r[1][2], 3) for r in rings] == [1.2, 1.0, 0.8, 0.6]        # falls evenly
+    assert abs(rings[-1][0][0]) > abs(top[0][0])                             # spreads out at the hem
+    assert rings[-1][1][1] > rings[0][1][1]                                  # drifts away from the body
+    faces = kit.ring_faces([0, 1, 2], [[3, 4, 5]], closed=False)
+    assert len(faces) == 2                                                   # an open strip, not a tube
+
+
+def test_a_hood_covers_the_head_but_leaves_the_face_open():
+    co = {"back": (0.0, 0.12, 1.6), "top": (0.0, 0.0, 1.7), "face": (0.0, -0.1, 1.6),
+          "side": (0.11, -0.08, 1.6), "chest": (0.0, 0.0, 1.2)}
+    covered = kit.hood_cut(co, list(co), (0.0, 0.0), face=-1.0, chin_z=1.45)
+    assert "back" in covered and "top" in covered
+    assert "face" not in covered                      # the opening
+    assert "side" in covered                          # wide of the face: still covered
+    assert "chest" not in covered                     # below the chin
+
+
+def test_the_shoulder_line_runs_across_the_back_at_shoulder_height():
+    # a slab of points: front and back, at shoulder height and below
+    co = {}
+    n = 0
+    for x in (-0.2, -0.1, 0.0, 0.1, 0.2):
+        for y in (-0.12, 0.12):
+            for z in (1.45, 1.20):
+                co[n] = (x, y, z)
+                n += 1
+    line = kit.shoulder_line(co, list(co), (0.0, 0.0), face=-1.0, z=1.45, band=0.06, count=5)
+    assert len(line) == 5
+    assert all(p[1] > 0 for p in line)                     # the back, not the chest
+    assert all(abs(p[2] - 1.45) < 0.07 for p in line)      # shoulder height, not the waist
+    assert [round(p[0], 2) for p in line] == [-0.2, -0.1, 0.0, 0.1, 0.2]   # left to right across the body
+    assert kit.shoulder_line(co, list(co), (0.0, 0.0), face=-1.0, z=0.3) == []
+
+
+def test_a_plate_keeps_a_solid_edge_instead_of_a_torn_one():
+    faces = [(0, 1, 2, 3), (1, 4, 5, 2), (4, 6, 7, 5)]
+    verts = {0, 1, 2, 3, 4, 5}                       # the third face has only half its corners
+    assert kit.faces_inside(faces, verts) == [0, 1]
+    assert kit.faces_mostly(faces, verts) == [0, 1, 2]
+    assert kit.faces_mostly(faces, {0, 1}) == [0]          # two of four corners is enough, one is not
+    assert kit.faces_mostly(faces, {6}) == []
+    assert kit.faces_mostly(faces, set()) == []

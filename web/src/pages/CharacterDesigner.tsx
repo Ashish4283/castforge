@@ -9,9 +9,11 @@ import {Badge, Button, ColorField, Field, Notice, PageHead, Segmented, Select, S
 const SECTIONS: {title: string; text: string; keys: string[]}[] = [
   {title: "Body", text: "Who they are. Age and build shape the whole body.", keys: ["gender", "age", "height_cm", "build"]},
   {title: "Face and hair", text: "A hat hides the hair; a beard takes the hair colour.", keys: ["skin", "eyes", "hair.length", "hair.color", "beard", "hat"]},
-  {title: "Outfit", text: "The base clothes, coloured to your choice.", keys: ["outfit.garment", "outfit.sleeves", "outfit.top", "outfit.bottom", "outfit.shoes"]},
+  {title: "Outfit", text: "The base clothes, coloured to your choice. A style other than casual is one whole-body outfit.",
+   keys: ["outfit.style", "outfit.garment", "outfit.sleeves", "outfit.top", "outfit.bottom", "outfit.shoes"]},
   {title: "Costume", text: "Pieces over the outfit: a long coat, fur trim, a belt, gloves and boots. Leave a colour empty to leave the piece out.",
-   keys: ["costume.coat", "costume.fabric", "costume.trim", "costume.belt", "costume.buckle", "costume.gloves", "costume.boots"]},
+   keys: ["costume.coat", "costume.fabric", "costume.trim", "costume.belt", "costume.buckle", "costume.gloves",
+          "costume.boots", "costume.cape", "costume.cape_length", "costume.armour"]},
 ];
 const BLANK: Json = {gender: "female", age: 30, height_cm: 168, build: "average", skin: "#e0b89a", eyes: "brown",
   hair: {length: "medium", color: "#3b2a20"}, beard: "none", hat: "none",

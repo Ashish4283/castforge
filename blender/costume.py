@@ -122,6 +122,17 @@ def faces_inside(faces, verts):
     return [i for i, f in enumerate(faces) if all(v in verts for v in f)]
 
 
+def faces_mostly(faces, verts, fraction=0.5):
+    """Indices of faces with at least `fraction` of their corners in `verts`. A plate selected this way has
+    a solid edge: picking only whole faces leaves a torn, moth-eaten boundary."""
+    out = []
+    for i, f in enumerate(faces):
+        hit = sum(1 for v in f if v in verts)
+        if f and hit >= max(1, int(round(len(f) * fraction))):
+            out.append(i)
+    return out
+
+
 def hem_rings(hem, centre, length, rings, flare):
     """New vertex rings that continue a hem downward: ring k (1..rings) lies length*k/rings lower and
     flares out from the centre line by (1 + flare * k/rings). `hem` is a list of (x, y, z)."""
@@ -144,6 +155,86 @@ def ring_faces(first, rings, closed=True):
             j = (i + 1) % n
             faces.append((upper[i], upper[j], lower[j], lower[i]))
     return faces
+
+
+def back_arc(co, loop, centre, face=-1.0, span=0.62):
+    """The back part of a neck loop, in walk order from one shoulder round to the other: where a cape hangs
+    from. `face` is the sign of y the face points along (-1 in CastForge, so the back is +y)."""
+    cx, cy = centre
+    picked = [v for v in loop if (co[v][1] - cy) * face < 0]
+    if not picked:
+        return []
+    # keep the widest run: a loop can cross the centre line more than once
+    runs, run = [], []
+    for v in loop + loop[:1]:
+        if v in picked:
+            run.append(v)
+        elif run:
+            runs.append(run)
+            run = []
+    if run:
+        runs.append(run)
+    best = max(runs, key=len) if runs else []
+    keep = max(3, int(round(len(best) * span)))
+    drop = max(0, (len(best) - keep) // 2)
+    return best[drop:drop + keep]
+
+
+def shoulder_line(co, verts, centre, face=-1.0, z=0.0, band=0.07, count=13):
+    """A line of points straight across the back at height z, left shoulder to right: where a cape hangs
+    from. Picks the backmost vertex in each of `count` columns, so the line follows the body's shape."""
+    cx, cy = centre
+    picked = [v for v in verts if abs(co[v][2] - z) <= band and (co[v][1] - cy) * face < 0]
+    if not picked:
+        return []
+    xs = [co[v][0] for v in picked]
+    lo, hi = min(xs), max(xs)
+    if hi - lo < 1e-6:
+        return [co[picked[0]]]
+    out = []
+    for k in range(count):
+        a_x = lo + (hi - lo) * k / (count - 1)
+        column = [v for v in picked if abs(co[v][0] - a_x) <= (hi - lo) / (count - 1)]
+        if not column:
+            continue
+        # the nearest column, and of those the vertex furthest round the back
+        v = min(column, key=lambda v_: (round(abs(co[v_][0] - a_x), 4), (co[v_][1] - cy) * face))
+        if not out or co[v] != out[-1]:
+            out.append(co[v])
+    return out
+
+
+def cape_rings(top, centre, length, rings, flare=0.55, sway=0.10, lift=0.0):
+    """Rings for a cape hanging from `top` (a strip of points across the shoulders): each ring falls lower,
+    spreads out from the centre line (flare) and drifts backwards (sway, along the cape's own side of the
+    body), so it hangs clear of the legs instead of through them."""
+    cx, cy = centre
+    out = []
+    back = 1.0 if (sum(p[1] for p in top) / len(top)) >= cy else -1.0
+    for k in range(1, rings + 1):
+        t = k / rings
+        s = 1.0 + flare * t
+        drift = sway * t * t * back            # the hem swings out further than the shoulders
+        ring = []
+        for x, y, z in top:
+            ring.append((cx + (x - cx) * s, cy + (y - cy) * s + drift, z - length * t + lift * t))
+        out.append(ring)
+    return out
+
+
+def hood_cut(co, verts, centre, face=-1.0, chin_z=0.0, open_at=0.03, half_width=0.085):
+    """The head vertices a hood covers: everything above the chin except the face itself. `face` is the sign
+    of y the face points along; `open_at` is how far forward the opening starts (bigger: more face showing)."""
+    cx, cy = centre
+    out = set()
+    for v in verts:
+        x, y, z = co[v]
+        if z < chin_z:
+            continue
+        if (y - cy) * face > open_at and abs(x - cx) < half_width:     # the face opening
+            continue
+        out.add(v)
+    return out
 
 
 def mix_weights(a, b, t, keep=4):

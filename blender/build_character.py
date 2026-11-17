@@ -520,7 +520,7 @@ HAIR = {("male", "short"): "short01", ("male", "medium"): "culturalibre_hair_05"
 hair_obj = None
 h_name = args.hair or (HAIR[(args.gender, spec["hair_length"])] if spec.get("hair_length", "none") != "none"
                        else "none")
-if (DESIGN or {}).get("hat", "none") != "none":
+if (DESIGN or {}).get("hat", "none") != "none":     # a hat covers the hair: leave the hair off
     h_name = "none"
 if h_name != "none":
     hair_obj = asset(f"{h_name}/{h_name}.mhclo", "hair", "Hair")
@@ -531,7 +531,8 @@ BEARDS = {"scruffy": ["wdg_scruffy_beard"], "long": ["rehmanpolanski_beard_vikin
           "full": ["grinsegold_beard_sigmund_wip"], "faun": ["culturalibre_faun_beard"],
           "moustache": ["rehmanpolanski_moustache_viking"],
           "santa": ["rehmanpolanski_beard_viking", "rehmanpolanski_moustache_viking"]}
-HATS = {"santa": "joepal_xmas_cap", "newsboy": "jujube_newsboy_cap"}
+HATS = {"santa": "joepal_xmas_cap", "newsboy": "jujube_newsboy_cap", "fedora": "fedora01",
+        "cloche": "aethelraed_unraed_cloche_hat", "flat_cap": "grinsegold_uncle_joshis_hat"}
 beard_objs, hat_obj = [], None
 beard = (DESIGN or {}).get("beard", "none")
 if beard in BEARDS:
@@ -545,6 +546,15 @@ COSTUME = (DESIGN or {}).get("costume") or {}     # coat, trim, belt, buckle, gl
 
 # plain garments (CC0 packs) whose textures recolour cleanly; picked from what the photo shows
 clothing = spec.get("clothing", {"garment": "trousers", "sleeves": "long"})
+# whole-body outfits: one mesh instead of a top and trousers (uniforms, suits, robes)
+STYLES = {
+    "suit": {"male": "male_casualsuit01", "female": "female_casualsuit01"},
+    "formal": {"male": "male_elegantsuit01", "female": "female_elegantsuit01"},
+    "work": {"male": "male_worksuit01", "female": "female_sportsuit01"},
+    "robe": {"male": "mindfront_kimono", "female": "mindfront_kimono"},
+    "tunic": {"male": "wdg_mycenaean_tunic", "female": "wdg_mycenaean_tunic"},
+}
+style = (DESIGN or {}).get("outfit", {}).get("style", "casual")
 TOP = {("male", "short"): "elvs_crude_t-shirt_male", ("female", "short"): "joepal_crude_t-shirt_female",
        ("male", "long"): "toigo_fisherman_sweater", ("female", "long"): "toigo_fisherman_sweater"}
 BOTTOM = {"trousers": "toigo_wool_pants", "shorts": "cortu_jeans_shorts", "skirt": "toigo_tiered_mini_skirt"}
@@ -555,7 +565,11 @@ def cloth(name):
 
 
 top_obj = bottom_obj = dress_obj = None
-if clothing["garment"] == "dress":
+if style in STYLES:
+    one_piece = STYLES[style][args.gender]
+    dress_obj = cloth(one_piece)
+    worn = [one_piece]
+elif clothing["garment"] == "dress":
     dress_obj = cloth("toigo_shift_dress")
     worn = ["toigo_shift_dress"]
 else:
@@ -1042,6 +1056,109 @@ if COSTUME:
             cut(k, [(2, belt_z - 0.05, belt_z + 0.05), (0, centre_x - 0.055, centre_x + 0.055),
                     (1, front_y - 0.05, front_y + 0.08)])
         made.append(f"belt at {belt_z:.2f} m")
+
+    # armour: plates lifted off the body and the garment, in metal
+    armour = lin(COSTUME.get("armour"))
+    if armour:
+        plate = material("cf_armour", armour, 0.28, metal=1.0, coat=0.2)
+        belt_z2 = head("DEF-spine.001").z
+        shoulder_z2 = head("DEF-upper_arm.L").z
+        if garment:
+            _, co = rest(garment)
+            fs = faces_of(garment)
+            dom = dominant(garment)
+            torso_f = [i for i, f_ in enumerate(fs)
+                       if sum(any(t in dom[v] for t in TORSO) for v in f_) * 2 > len(f_)]
+            breast = piece(garment, "cf_breastplate", torso_f, plate, 0.012, 0.011)
+            cut(breast, [(2, belt_z2 + 0.02, shoulder_z2 + 0.05)])     # waist to the top of the shoulders
+            made.append("breastplate")
+        for side in ("L", "R"):
+            shoulder = head(f"DEF-upper_arm.{side}")
+            elbow = head(f"DEF-forearm.{side}")
+            ankle = head(f"DEF-foot.{side}")
+            knee = head(f"DEF-shin.{side}")
+            names = {g.index: g.name.lower() for g in human.vertex_groups}
+            low = side.lower()
+            for tag, bones, lift_p in ((f"pauldron.{side}", (f"upper_arm.{low}",), 0.016),
+                                       (f"bracer.{side}", (f"forearm.{low}",), 0.01),
+                                       (f"greave.{side}", (f"shin.{low}",), 0.012)):
+                verts = {v.index for v in human.data.vertices if v.index in in_body and
+                         sum(g.weight for g in v.groups if any(b in names[g.group] for b in bones)) >= 0.35}
+                if not verts:
+                    continue
+                p_obj = piece(human, f"cf_{tag}", kit.faces_mostly(faces_of(human), verts), plate, lift_p, 0.009)
+                if tag.startswith("pauldron") and shoulder is not None and elbow is not None:
+                    cut(p_obj, [(2, shoulder.z - 0.14, shoulder.z + 0.09)])      # the cap of the shoulder only
+                elif tag.startswith("greave") and ankle is not None and knee is not None:
+                    cut(p_obj, [(2, ankle.z + 0.04, knee.z - 0.03)])             # the shin, not the knee or foot
+            made.append(f"armour {side}")
+
+    # a cape: a sheet hanging from the back of the collar to the knees, weighted to the chest so it swings
+    cape = lin(COSTUME.get("cape"))
+    if cape and garment:
+        _, co = rest(garment)
+        shoulder_z = head("DEF-upper_arm.L").z
+        centre_y = head("DEF-spine.003").y
+        line = kit.shoulder_line(co, range(len(co)), (centre_x, centre_y), face=-1.0,
+                                 z=shoulder_z - 0.02, band=0.07, count=13)
+        if len(line) >= 3:
+            # the vertices the line came from carry the weights the cape's top edge inherits
+            arc = [min(range(len(co)), key=lambda v, p=p: (co[v][0] - p[0]) ** 2 + (co[v][1] - p[1]) ** 2
+                       + (co[v][2] - p[2]) ** 2) for p in line]
+            c = (centre_x, centre_y, shoulder_z)
+            drop = float(COSTUME.get("cape_length", 0.75)) * (c[2] - knee_z)
+            n_rings = max(4, round(drop / 0.07))
+            rows = kit.cape_rings(line, c[:2], drop, n_rings, flare=0.35, sway=0.14)
+            rows = [[clear_of_body(p) for p in row] for row in rows]
+            names = {g.index: g.name for g in garment.vertex_groups}
+            top_w = [{names[g.group]: g.weight for g in garment.data.vertices[v].groups} for v in arc]
+            bm = bmesh.new()
+            bm.from_mesh(garment.data)
+            bm.verts.ensure_lookup_table()
+            uv = bm.loops.layers.uv.active
+            deform = bm.verts.layers.deform.verify()
+            inv = np.linalg.inv(np.array(garment.matrix_world))
+            made_rows = []
+            for k, row in enumerate(rows, 1):
+                row_verts = []
+                for i, p in enumerate(row):
+                    nv = bm.verts.new((inv @ np.array([*p, 1.0]))[:3])
+                    _, near, _ = body_kd.find(p)
+                    # near the collar the cape follows the chest; lower down it hangs from the spine
+                    w = kit.mix_weights(top_w[i], body_weights(near), 0.15 * k / len(rows))
+                    for g, wt in w.items():
+                        gi = garment.vertex_groups.get(g) or garment.vertex_groups.new(name=g)
+                        nv[deform][gi.index] = wt
+                    row_verts.append(nv)
+                made_rows.append(row_verts)
+            bm.verts.index_update()
+            bm.verts.ensure_lookup_table()
+            new_faces = []
+            for f in kit.ring_faces(arc, [[v.index for v in r] for r in made_rows], closed=False):
+                try:
+                    nf = bm.faces.new([bm.verts[i] for i in f])
+                except ValueError:
+                    continue
+                nf.smooth = True
+                for loop in nf.loops:
+                    loop[uv].uv = (0.5, 0.5)
+                new_faces.append(nf)
+            bmesh.ops.recalc_face_normals(bm, faces=new_faces)
+            keep = {v.index for f_ in new_faces for v in f_.verts}
+            bm.to_mesh(garment.data)
+            bm.free()
+            piece(garment, "cf_cape", kit.faces_inside(faces_of(garment), keep),
+                  material("cf_cape", cape, 0.75, sheen=0.5), 0.0, 0.006)
+            # the cape lives as its own object: take the faces back off the garment
+            cut_faces = kit.faces_inside(faces_of(garment), keep)
+            bm = bmesh.new()
+            bm.from_mesh(garment.data)
+            bm.faces.ensure_lookup_table()
+            bmesh.ops.delete(bm, geom=[bm.faces[i] for i in cut_faces], context="FACES")
+            bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+            bm.to_mesh(garment.data)
+            bm.free()
+            made.append(f"cape {drop:.2f} m")
 
     gloves = lin(COSTUME.get("gloves"))
     if gloves:

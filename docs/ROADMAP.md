@@ -17,7 +17,8 @@ per GPU-second.
 | Editor 1: 3D scene editor | app: the scene in 3D (preview.glb), play/scrub, timeline of steps, drag start spots and walk targets, undo, save history | v1 done 2026-11-10 |
 | Editor 2: pose fixes | pick a character in the 3D view, scrub to the moment, turn a body part with X/Y/Z dials; stored in scene.json `fixes` and re-applied as the last layer of every render, fading in and out | v1 done 2026-11-17 |
 | Editor 3: character design | design editor over `<name>.design.json` (body, face, hair, outfit, costume), ready-made looks, previews, rebuild; costume kit: long coat, fabric, fur trim, belt+buckle, gloves, boots | v1 done 2026-11-11 |
-| Costume kit v2 | more looks (uniforms, armour, robes); capes/hoods as real garments; fur with hair strands | |
+| Costume kit v2 | whole-body styles (suit, formal, work, robe, tunic), cape, metal armour (breastplate, pauldrons, bracers, greaves), 5 hats, 6 ready-made looks | v1 done 2026-11-18 |
+| Costume kit v3 | hoods (three tries from the body and collar meshes all read as bands, not hoods: needs a draped garment built from a neck ring with its own silhouette); fur with hair strands; cloth simulation on capes and robes; cleaner armour plate edges (weight boundaries look torn); accessories | |
 | Editor 4: art | light, weather, grade, props per scene, previewed in the 3D view; move seats and props by dragging | |
 | Motion library page | app: search CMU, import Mixamo files, preview a clip, pick from/to visually | with canvas |
 | 3D sets for action | free CC0 kits and the city library instead of the 2.5D picture | |

@@ -270,7 +270,7 @@ FINISH_SETTINGS = {
 # keys with a dot are nested: "hair.color" is design["hair"]["color"]
 BODY_BUILDS = ["slim", "average", "athletic", "heavy", "muscular"]
 BEARDS = ["none", "scruffy", "full", "long", "faun", "moustache", "santa"]
-HATS = ["none", "santa", "newsboy"]
+HATS = ["none", "santa", "newsboy", "fedora", "cloche", "flat_cap"]
 EYES = ["brown", "brownlight", "green", "grey", "blue", "bluegreen", "deepblue", "lightblue", "ice"]
 CHARACTER = {
     "gender": p("enum", "body type", required=True, values=["male", "female"]),
@@ -283,7 +283,10 @@ CHARACTER = {
     "hair.color": p("color", "hair colour (a beard takes it too)"),
     "beard": p("enum", "beard", default="none", values=BEARDS),
     "hat": p("enum", "hat (hides the hair)", default="none", values=HATS),
-    "outfit.garment": p("enum", "below the waist", default="trousers", values=["trousers", "shorts", "skirt", "dress"]),
+    "outfit.style": p("enum", "whole-body outfit (a uniform, suit or robe) instead of a top and trousers",
+                      default="casual", values=["casual", "suit", "formal", "work", "robe", "tunic"]),
+    "outfit.garment": p("enum", "below the waist (when the style is casual)", default="trousers",
+                        values=["trousers", "shorts", "skirt", "dress"]),
     "outfit.sleeves": p("enum", "sleeves", default="long", values=["short", "long"]),
     "outfit.top": p("color", "top colour"),
     "outfit.bottom": p("color", "trousers / skirt colour"),
@@ -296,9 +299,28 @@ CHARACTER = {
     "costume.buckle": p("color", "belt buckle"),
     "costume.gloves": p("color", "gloves (empty: bare hands)"),
     "costume.boots": p("color", "boots instead of shoes (empty: shoes)"),
+    "costume.cape": p("color", "a cape hanging from the shoulders (empty: none)"),
+    "costume.cape_length": p("number", "how far the cape falls, 0.3 short to 1.2 past the knees", default=0.75),
+    "costume.armour": p("color", "metal plates: breastplate, shoulders, forearms, shins (empty: none)"),
 }
 # ready-made looks the app offers; each is a set of design keys (dotted, as above)
 COSTUMES = {
+    "knight": {"outfit.style": "work", "outfit.top": "#3b4150", "outfit.bottom": "#3b4150",
+               "costume.armour": "#9aa3ad", "costume.cape": "#7c2230", "costume.cape_length": 0.9,
+               "costume.belt": "#4a3524", "costume.buckle": "#c9a227", "costume.gloves": "#4a3524",
+               "costume.boots": "#3a2a1c", "build": "muscular"},
+    "wizard": {"outfit.style": "robe", "outfit.top": "#2f3566", "outfit.bottom": "#2f3566",
+               "costume.cape": "#232a52", "costume.cape_length": 1.1,
+               "costume.belt": "#6b5230", "beard": "long", "hair.color": "#d8d4cc",
+               "costume.fabric": "cotton"},
+    "soldier": {"outfit.style": "work", "outfit.top": "#4a5240", "outfit.bottom": "#4a5240",
+                "costume.belt": "#2b2b2b", "costume.buckle": "#8a8f98", "costume.boots": "#241c14",
+                "costume.gloves": "#2f2a22", "hat": "flat_cap", "build": "athletic"},
+    "detective": {"outfit.style": "formal", "outfit.top": "#2a2b30", "outfit.bottom": "#2a2b30",
+                  "costume.coat": "long", "costume.fabric": "leather", "hat": "fedora",
+                  "costume.belt": "#1c1c1c", "outfit.shoes": "#1a1a1a"},
+    "villager": {"outfit.style": "tunic", "outfit.top": "#7a6a4e", "outfit.bottom": "#5a4a36",
+                 "costume.belt": "#4a3524", "costume.boots": "#3a2a1c"},
     "santa": {"hat": "santa", "beard": "santa", "build": "heavy", "hair.color": "#eeeae4", "outfit.garment": "trousers",
               "outfit.sleeves": "long", "outfit.top": "#8c1018", "outfit.bottom": "#8c1018",
               "costume.coat": "long", "costume.fabric": "velvet", "costume.trim": "#f3efe8", "costume.belt": "#141414",
