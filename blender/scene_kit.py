@@ -131,7 +131,9 @@ class Actor:
         self.stresses = []               # times (s) of stressed syllables, for nods and brows
         self.seated = None               # the seat (props.SEATS entry) while sitting
         self.driving = []                # (start, end) frames with hands on a steering wheel
-        self.holding = []                # [start frame, end frame or None, "L"/"R", prop root] held props
+        self.holding = []                # [start frame, end frame or None, "L"/"R", prop root, shape, curl]
+        self.clip_hands = []             # [start, end, shape, grip] hand shapes a motion clip needs
+        self.wrist_keyed = {}            # side -> the wrist is away from neutral, so key it back on the way out
         self.thinking = []               # (start_s, end_s) of inner-voice thoughts (head lowers a little)
         self.seated_ranges = []          # [start, end] frames spent sitting (end None = to the end)
         self.sit_torso = Vector((0, 0, 0))
@@ -232,14 +234,23 @@ class Actor:
         return out
 
     def key_arms(self, frame, swing_l=0.0, swing_r=0.0, bend_l=0.0, bend_r=0.0, raise_l=0.0, raise_r=0.0,
-                 twist_l=0.0, twist_r=0.0, sides=("L", "R")):
+                 twist_l=0.0, twist_r=0.0, sides=("L", "R"), wrist_l=0.0, wrist_r=0.0):
         """Arms down and relaxed; swing forward(-)/back(+) at the shoulder, raise out to the side, twist the
         upper arm (+ turns the palm forward), extra elbow bend. The elbow hinge turns with the upper arm, so a
         raised, twisted arm bends upwards (a wave). Only the arms in `sides` are keyed."""
-        for side, swing, bend, lift, twist in (("L", swing_l, bend_l, raise_l, twist_l),
-                                               ("R", swing_r, bend_r, raise_r, twist_r)):
+        for side, swing, bend, lift, twist, wrist in (("L", swing_l, bend_l, raise_l, twist_l, wrist_l),
+                                                      ("R", swing_r, bend_r, raise_r, twist_r, wrist_r)):
             if side not in sides:
                 continue
+            # the wrist: + tips the fingers back and up, as when the palms meet in a clap. Only keyed when
+            # a gesture asks for it (and once more at 0 on the way out), so motion clips keep their own hands.
+            if wrist or self.wrist_keyed.get(side):
+                p_h = self.pb.get(f"hand_fk.{side}")
+                if p_h:
+                    p_h.rotation_mode = "QUATERNION"
+                    p_h.rotation_quaternion = Matrix.Rotation(wrist, 3, "X").to_quaternion()
+                    p_h.keyframe_insert("rotation_quaternion", frame=frame)
+                    self.wrist_keyed[side] = bool(wrist)
             ua_rest, r_ua, fa_rest, r_fix, d_ua = self.arm_q[side]
             sx = 1 if side == "L" else -1
             delta = Matrix.Rotation(swing, 3, "X") @ Matrix.Rotation(-sx * lift, 3, "Y")
@@ -255,11 +266,17 @@ class Actor:
                 p.keyframe_insert("rotation_quaternion", frame=frame)
             self.key_muscle(f"upper_arm.{side}", max(0.0, bend - 0.12) * 0.7, frame)
 
-    def key_fingers(self, frame, open_l=0.0, open_r=0.0, shape_l=None, shape_r=None, grip_l=0.0, grip_r=0.0):
+    def key_fingers(self, frame, open_l=0.0, open_r=0.0, shape_l=None, shape_r=None, grip_l=0.0, grip_r=0.0,
+                    curl_l=1.0, curl_r=1.0):
         """Relaxed fingers; open_* (0..1) straightens them for an open, gesturing hand; shape_* (point, fist,
-        thumbs) curls them into a hand shape by grip_* (0..1)."""
-        for side, op, shape, grip in (("L", open_l, shape_l, grip_l), ("R", open_r, shape_r, grip_r)):
+        thumbs, flat, grip) curls them into a hand shape by grip_* (0..1). curl_* scales the closed shape, so
+        a hand round a thick prop stops where the prop is instead of closing through it."""
+        for side, op, shape, grip, cs in (("L", open_l, shape_l, grip_l, curl_l),
+                                          ("R", open_r, shape_r, grip_r, curl_r)):
             curls, thumb = acting.finger_curls(op, shape, grip)
+            if cs != 1.0:
+                curls = {f: c * cs for f, c in curls.items()}
+                thumb *= cs
             for finger, curl in curls.items():
                 for seg, w in acting.SEGMENT.items():
                     p = self.pb.get(f"f_{finger}.{seg}.{side}")
@@ -850,6 +867,18 @@ def block_footprint(corners):
     FREE[max(i0 - pad, 0):max(i1 + pad + 1, 0), max(j0 - pad, 0):max(j1 + pad + 1, 0)] = False
 
 
+def measure_prop(root):
+    """How big a built prop really is [w, d, h] in metres, from its own meshes. A prop made by `make` carries
+    no size in the scene file, and guessing one (a 30 cm cube) puts the hand through the middle of it."""
+    meshes = [o for o in [root, *root.children_recursive] if o.type == "MESH" and len(o.data.vertices)]
+    if not meshes:
+        return [0.3, 0.3, 0.3]
+    # in the prop's own frame, because the grip talks about the prop's local axes
+    inv = root.matrix_world.inverted()
+    pts = [inv @ o.matrix_world @ Vector(c) for o in meshes for c in o.bound_box]
+    return [max(p_[i] for p_ in pts) - min(p_[i] for p_ in pts) for i in range(3)]
+
+
 picture_props = []
 for n, prop in enumerate(spec.get("props", [])):
     if prop.get("make") == "picture_road":
@@ -1131,6 +1160,9 @@ def run_perform(who, step, start):
     keys = motion.fades(start, end, round(float(step.get("blend", 0.3)) * FPS))
     who.key_pose(start)
     who.key_pose(keys[1][0])
+    shape_c, grip_c = acting.clip_hands(step.get("hands") or step["clip"])
+    if shape_c:
+        who.clip_hands.append((start, end, shape_c, grip_c))
     plant = {s: motion.stance_windows(clip, s, t0, t1) for s in ("L", "R")} if travel else None
     anchors = motion_rig.play(who, clip, t0, start, FPS, speed, keys, travel, plant=plant, holds=holds)
     move, turn, feet = motion.ending(clip, t0, t1)
@@ -1455,7 +1487,7 @@ for step in spec["script"]:
         if pid not in PROP_ROOTS:
             raise ValueError(f"hold refers to unknown prop {pid!r}")
         prop_root, prop_data = PROP_ROOTS[pid]
-        size_p = prop_data.get("size") or [0.3, 0.3, 0.3]
+        size_p = prop_data.get("size") or measure_prop(prop_root)
         grip = acting.carry_grip(size_p)
         side = "L" if step.get("hand") == "left" else "R"
         loc = prop_root.matrix_world.to_translation()
@@ -1485,7 +1517,12 @@ for step in spec["script"]:
         e.parent = who.rig
         e.parent_type = "BONE"
         e.parent_bone = f"hand_fk.{side}"
-        e.matrix_basis = Matrix.Translation(Vector((0.0, -0.04, -0.02)) - B @ p_grab) @ B.to_4x4()
+        # A bone-parented child sits at the bone's tail (the knuckles), with +Y running out along the bone.
+        # The palm is half a hand back from there, and the prop has to sit clear of the palm by half its own
+        # thickness or it passes through the hand and into the wrist.
+        palm = 0.45 * who.pb[f"hand_fk.{side}"].bone.length
+        clear = grip.get("clear", 0.02)
+        e.matrix_basis = Matrix.Translation(Vector((0.0, -palm, -clear)) - B @ p_grab) @ B.to_4x4()
         for kind_c, name_c in (("COPY_LOCATION", "CF_hold_loc"), ("COPY_ROTATION", "CF_hold_rot")):
             con = prop_root.constraints.new(kind_c)
             con.name = name_c
@@ -1494,7 +1531,10 @@ for step in spec["script"]:
             con.keyframe_insert("influence", frame=reach_f)
             con.influence = 1.0
             con.keyframe_insert("influence", frame=grab_f)
-        who.holding.append([grab_f, None, side, prop_root])
+        # hands close as far as the prop lets them: a handle is wrapped, a fat lantern is only held
+        who.holding.append([grab_f, None, side, prop_root,
+                            "grip" if grip["kind"] in ("stick", "hang") else "fist",
+                            float(grip.get("curl", 1.0))])
         end = grab_f + int(0.25 * FPS)
     elif do == "release":
         want = {"left": "L", "right": "R"}.get(step.get("hand"))
@@ -1560,6 +1600,7 @@ for step in spec["script"]:
         clip_start = end
         end = run_perform(who, {"clip": step["clip"], "from": step.get("from", 0.0), "to": step.get("to"),
                                 "speed": speed, "blend": float(step.get("blend", 0.25)),
+                                "hands": step.get("hands") or "fist",   # a blow lands with a closed hand
                                 "_holds": ((contact, hit_stop),) if hit_stop else ()}, clip_start)
         contact_f = clip_start + int(round(motion.to_scene(contact, FPS, speed)))
         react = step.get("react", "stagger")
@@ -1710,15 +1751,21 @@ for act in cast.values():
         moving = weight > 0 or abs(w_elbow) > 1e-3 or abs(w_hand) > 1e-3
         arm_sides = {"one": (gside,), "both": ("L", "R")}.get(hands, ()) if moving else ()
         arm = pose.get("arm", {})
-        fingers = {"L": (g["L"], None, 0.0), "R": (g["R"], None, 0.0)}
+        fingers = {"L": (g["L"], None, 0.0, 1.0), "R": (g["R"], None, 0.0, 1.0)}
         for side in arm_sides:
-            fingers[side] = (g[side] + w_hand * (arm.get("open", 0.0) - g[side]), arm.get("hand"),
-                             max(0.0, w_hand * arm.get("grip", 0.0)))
-        for h0, h1, h_side, _ in act.holding:
-            if h0 <= f and (h1 is None or f < h1):
-                fingers[h_side] = (0.15, "fist", 0.9)
+            side_arm = pose.get(f"arm_{side}", arm)
+            fingers[side] = (g[side] + w_hand * (side_arm.get("open", 0.0) - g[side]), side_arm.get("hand"),
+                             max(0.0, w_hand * side_arm.get("grip", 0.0)), 1.0)
+        # a motion clip carries no finger movement, so a punch needs its fist made here
+        for c0, c1, c_shape, c_grip in act.clip_hands:
+            if c0 <= f <= c1:
+                for s_ in "LR":
+                    fingers[s_] = (0.0, c_shape, c_grip, 1.0)
+        for h in act.holding:          # holding wins: the hand keeps its grip through a swing
+            if h[0] <= f and (h[1] is None or f < h[1]):
+                fingers[h[2]] = (0.0, h[4], 0.95, h[5])
         act.key_fingers(f, fingers["L"][0], fingers["R"][0], fingers["L"][1], fingers["R"][1],
-                        fingers["L"][2], fingers["R"][2])
+                        fingers["L"][2], fingers["R"][2], fingers["L"][3], fingers["R"][3])
         seated_now = any(r[0] <= f and (r[1] is None or f < r[1]) for r in act.seated_ranges)
         if f not in act.walk_frames or arm_sides:
             if any(a0 <= f <= a1 for a0, a1 in act.driving):
@@ -1730,18 +1777,20 @@ for act in cast.values():
             else:
                 sway = 0.015 * math.sin(2 * math.pi * t / 6.5 + seed)
                 idle = {"L": (sway - 0.35 * g["L"], 0.12 + 0.8 * g["L"]), "R": (-sway - 0.35 * g["R"], 0.12 + 0.8 * g["R"])}
-            for h0, h1, h_side, _ in act.holding:
-                if h0 <= f and (h1 is None or f < h1):
-                    idle[h_side] = (-0.30, 0.85)
+            for h in act.holding:
+                if h[0] <= f and (h[1] is None or f < h[1]):
+                    idle[h[2]] = (-0.30, 0.85)
             v = {}
             for side in "LR":
                 swing, bend = idle[side]
+                arm = pose.get(f"arm_{side}", pose.get("arm", {}))     # a gesture may pose each hand apart
                 w, we = (weight, w_elbow) if side in arm_sides else (0.0, 0.0)
                 v[side] = (swing + w * (arm.get("swing", swing) - swing), bend + we * (arm.get("bend", bend) - bend),
-                           w * arm.get("raise", 0.0), w * arm.get("twist", 0.0))
+                           w * arm.get("raise", 0.0), w * arm.get("twist", 0.0),
+                           w_hand * arm.get("wrist", 0.0) if side in arm_sides else 0.0)
             walking = f in act.walk_frames
             act.key_arms(f, v["L"][0], v["R"][0], v["L"][1], v["R"][1], v["L"][2], v["R"][2], v["L"][3], v["R"][3],
-                         sides=arm_sides if walking else ("L", "R"))
+                         sides=arm_sides if walking else ("L", "R"), wrist_l=v["L"][4], wrist_r=v["R"][4])
         lift = stance.get("shoulders", 0.0) + feel.get("_shoulders", 0.0) + weight * pose.get("shoulders", 0.0)
         act.key_shoulders(f, lift, lift)
         # head and eyes: an explicit look (or a point) turns the head; eyes find whoever matters

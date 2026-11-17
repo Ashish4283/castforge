@@ -178,7 +178,13 @@ HAND_SHAPES = {     # per-finger curl (radians at the middle segment) and thumb 
     "point": ({"index": 0.02, "middle": 1.35, "ring": 1.40, "pinky": 1.45}, 0.6),
     "fist": ({"index": 1.35, "middle": 1.40, "ring": 1.45, "pinky": 1.50}, 1.6),
     "thumbs": ({"index": 1.35, "middle": 1.40, "ring": 1.45, "pinky": 1.50}, 0.0),
+    # a flat hand for clapping and pressing: fingers together and straight, thumb tucked alongside
+    "flat": ({"index": 0.02, "middle": 0.02, "ring": 0.04, "pinky": 0.06}, 0.15),
+    # a hand closed round something: as a fist, but the thumb comes over the fingers to hold it there
+    "grip": ({"index": 1.20, "middle": 1.25, "ring": 1.30, "pinky": 1.35}, 1.9),
 }
+# the widest thing the fingers can close right round; past this the hand only rests against it
+GRASP = 0.075
 
 
 def finger_curls(open_=0.0, shape=None, grip=0.0):
@@ -256,9 +262,24 @@ def _block(u, t, p):
 
 
 def _clap(u, t, p):
-    beat = math.sin(2 * math.pi * 2.6 * t)
-    return {"arm": {"swing": -0.95, "raise": 0.10, "bend": 1.15 + 0.14 * beat, "twist": 0.90, "open": 0.75},
-            "head": {"pitch": 0.03 * max(0.0, beat)}, "chest": -0.02}
+    # The hands must meet, not pass through each other: they come together to a measured stop, and one hand
+    # sits a little ahead of and above the other (as in a real clap) so the palms stack instead of the
+    # fingers interleaving. Flat hands, fingers straight and together.
+    apart = 0.5 * (1.0 + math.cos(2 * math.pi * 2.6 * t))      # 1 = hands apart, 0 = palms together
+    # clapping happens in front of the chest, not down at the belly: the upper arms come well forward
+    # Clapping happens in front of the chest with the elbows out, so the forearms make a V and the hands
+    # meet pointing forward. Elbows tucked in instead lays the forearms across the body: folded arms.
+    # These numbers were measured on the rig (hands at chest height, palms square on to each other and
+    # fingers pointing forward): the wrist is what makes a clap read, not the arm.
+    base = {"swing": -1.18, "raise": 0.06, "twist": 1.50, "wrist": -0.32,
+            "hand": "flat", "grip": 1.0, "open": 0.0}
+    hit = 1.0 - apart
+    # the right hand leads by a hair, so the palms stack rather than interleave; more than a hair and the
+    # hands sit one above the other, which reads as folded arms
+    return {"arm": {**base, "bend": 0.95 - 0.22 * apart},
+            "arm_R": {**base, "swing": -1.21, "raise": 0.08, "bend": 0.98 - 0.22 * apart},
+            "arm_L": {**base, "swing": -1.15, "raise": 0.04, "bend": 0.92 - 0.22 * apart},
+            "head": {"pitch": 0.03 * hit}, "chest": -0.02}
 
 
 def _cheer(u, t, p):
@@ -293,21 +314,68 @@ def can_carry(size):
     return bool(size) and len(size) == 3 and max(size) <= CARRY_MAX and sorted(size)[1] <= 0.6
 
 
+def grip_curl(across):
+    """How far the fingers close round something `across` metres thick: 1.0 wraps a thin handle right round,
+    falling towards 0.25 for something too fat to get the fingers round (they rest on it instead)."""
+    if across <= 0:
+        return 1.0
+    return max(0.25, min(1.0, 1.0 - 0.75 * (across - GRASP) / (3 * GRASP)))
+
+
 def carry_grip(size):
-    """How a prop sits in the hand. kind "stick": long and thin (a crowbar, a torch), gripped like a tool
-    about a third of the way up; "palm": held at its middle in the fist. axis is the prop's long local axis
-    (0 x, 1 y, 2 z); along is metres from the prop's origin to the hand along that axis; lift is metres up
-    from the origin for props that lie flat (their origin sits at the base)."""
+    """How a prop sits in the hand:
+      kind "stick" long and thin (a crowbar, a torch): gripped like a tool about a third of the way along;
+      kind "hang" upright and too fat to get a fist round (a lantern, a bucket): hangs from the hand, held
+        near its top, so the hand is above the body of the prop rather than buried in it;
+      kind "palm" small enough to sit in the hand (a cup, a book).
+    axis is the prop's long local axis (0 x, 1 y, 2 z); along is metres from the prop's origin to the hand
+    along that axis; lift is metres up from the origin for props that lie flat (origin at the base);
+    across is how thick the prop is where it is held, clear keeps it outside the palm instead of through it,
+    and curl is how far the fingers close on it."""
     w, d, h = size
     dims = [w, d, h]
     axis = max(range(3), key=lambda i: dims[i])
     long_side, mid = dims[axis], sorted(dims)[1]
     stick = mid > 0 and long_side / mid >= 2.2
+    # how thick the prop is across the hand: for a stick or a hanging prop, its two short sides
+    short = sorted(dims)[:2]
+    if axis == 2 and not stick:
+        # upright: a fat one hangs from the top (grip just below the lid), a slim one sits in the palm
+        # only something tall enough to dangle clear of the hand hangs; a cup or a mug sits in it
+        hang = mid > GRASP and h >= 0.20
+        across = mid if hang else min(short[1], GRASP)
+        return {"kind": "hang" if hang else "palm", "axis": 2,
+                "along": (0.92 if hang else 0.55) * h, "lift": 0.0,
+                "across": across, "clear": 0.5 * across + 0.012, "curl": grip_curl(across)}
     if axis == 2:
-        return {"kind": "stick" if stick else "palm", "axis": 2,
-                "along": (0.30 if stick else 0.55) * h, "lift": 0.0}
+        return {"kind": "stick", "axis": 2, "along": 0.30 * h, "lift": 0.0,
+                "across": short[1], "clear": 0.5 * short[1] + 0.012, "curl": grip_curl(short[1])}
+    across = min(h, mid) if stick else h
     return {"kind": "stick" if stick else "palm", "axis": axis,
-            "along": (0.25 if stick else 0.0) * long_side, "lift": 0.5 * h}
+            "along": (0.25 if stick else 0.0) * long_side, "lift": 0.5 * h,
+            "across": across, "clear": 0.5 * across + 0.012, "curl": grip_curl(across)}
+
+
+# clips whose name says the hands are closed: a punch with open, limp fingers reads as a broken hand
+FIST_CLIPS = ("punch", "jab", "hook", "uppercut", "cross", "swing", "strike", "fight", "box", "hit",
+              "block", "guard", "brawl", "throw")
+OPEN_CLIPS = ("slap", "push", "shove", "grab", "catch", "wave", "clap")
+
+
+def clip_hands(name):
+    """The hand shape a motion clip needs, from its name: ("fist", grip) for fighting clips, (None, 0.0)
+    when the clip's own hands are fine. Motion-capture clips carry no finger movement at all, so the hands
+    have to be closed here or they stay limp through a punch."""
+    low = (name or "").lower()
+    if low == "fist":                    # asked for outright, rather than read off a clip name
+        return "fist", 0.95
+    if low == "open":
+        return None, 0.0
+    if any(w in low for w in OPEN_CLIPS):
+        return None, 0.0
+    if any(w in low for w in FIST_CLIPS):
+        return "fist", 0.95
+    return None, 0.0
 
 
 def gesture_weight(t, seconds):

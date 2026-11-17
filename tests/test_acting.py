@@ -122,17 +122,74 @@ def test_crouch_lowers_the_hips_and_mix_blends_the_drop():
 def test_clap_uses_both_hands_and_beats():
     seconds, hands, pose = acting.GESTURES["clap"]
     assert hands == "both" and seconds > 1.0
-    open_palms = pose(0.5, 0.4, {})
-    assert open_palms["arm"]["open"] > 0.5
+    flat = pose(0.5, 0.4, {})
+    assert flat["arm"]["hand"] == "flat" and flat["arm"]["grip"] == 1.0  # fingers straight, not splayed
     bends = {round(pose(u, u * seconds, {})["arm"]["bend"], 3) for u in (0.1, 0.2, 0.3, 0.4, 0.5)}
     assert len(bends) > 1                                                # the hands meet and part
+
+
+def test_clapping_hands_never_mirror_each_other_exactly():
+    """Perfectly symmetric hands meet at the midline and interleave; one hand has to lead."""
+    pose = acting.GESTURES["clap"][2]
+    for t in (0.0, 0.19, 0.4):
+        p = pose(t / 1.9, t, {})
+        left, right = p["arm_L"], p["arm_R"]
+        assert right["bend"] > left["bend"] and right["swing"] < left["swing"]
+        assert right["raise"] > left["raise"]
+        assert left["hand"] == right["hand"] == "flat"
+
+
+def test_clap_closes_to_a_stop_without_crossing():
+    pose = acting.GESTURES["clap"][2]
+    bends = [pose(t / 1.9, t, {})["arm_R"]["bend"] for t in [i / 60 for i in range(60)]]
+    assert max(bends) - min(bends) < 0.3                 # a bounded travel, so the palms cannot pass through
+    assert min(bends) > 0.5                              # and the elbows never straighten out
+
+
+def test_clap_bends_the_wrist():
+    """Measured on the rig: without a wrist the fingers point across the chest, whatever the arm does."""
+    p = acting.GESTURES["clap"][2](0.5, 0.4, {})
+    assert abs(p["arm"]["wrist"]) > 0.2
+    assert p["arm_L"]["wrist"] == p["arm_R"]["wrist"] == p["arm"]["wrist"]
+
+
+def test_fingers_can_stop_short_of_a_closed_fist():
+    tight, loose = acting.grip_curl(0.03), acting.grip_curl(0.22)
+    assert tight == 1.0 and 0.25 <= loose < 0.6           # a thin handle is wrapped, a fat body only held
+    assert acting.grip_curl(0.0) == 1.0
+    assert "flat" in acting.HAND_SHAPES and "grip" in acting.HAND_SHAPES
+    curls, thumb = acting.finger_curls(0.0, "grip", 1.0)
+    assert thumb > acting.HAND_SHAPES["fist"][1]          # the thumb comes over the fingers to hold it
+
+
+def test_clips_say_whether_the_hands_are_closed():
+    assert acting.clip_hands("boxing_punch_right") == ("fist", 0.95)
+    assert acting.clip_hands("sword_swing")[0] == "fist"
+    assert acting.clip_hands("walk_forward") == (None, 0.0)
+    assert acting.clip_hands("open_palm_slap") == (None, 0.0)            # a slap is not a punch
+    assert acting.clip_hands("fist")[0] == "fist" and acting.clip_hands("open") == (None, 0.0)
+    assert acting.clip_hands(None) == (None, 0.0)
+
+
+def test_a_lantern_hangs_from_the_hand_instead_of_swallowing_it():
+    """A lantern is too fat to close a fist round: the hand holds it near the top and stays clear of it."""
+    lantern = acting.carry_grip([0.18, 0.18, 0.32])
+    assert lantern["kind"] == "hang"
+    assert lantern["along"] > 0.9 * 0.32 - 1e-9           # held at the top, not buried at mid-height
+    assert lantern["clear"] > 0.5 * 0.18                  # outside the palm, so it cannot reach the wrist
+    assert lantern["curl"] < 1.0                          # fingers stop on it
+    cup = acting.carry_grip([0.08, 0.08, 0.1])
+    assert cup["kind"] == "palm" and cup["clear"] < 0.06
+    for size in ([0.18, 0.18, 0.32], [0.08, 0.08, 0.9], [1.2, 0.2, 0.04], [0.17, 0.24, 0.04]):
+        g = acting.carry_grip(size)
+        assert g["clear"] >= 0.012 and 0.25 <= g["curl"] <= 1.0          # every grip stays off the palm
 
 
 def test_carry_grips_tell_sticks_from_handfuls():
     crowbar = acting.carry_grip([0.08, 0.08, 0.9])
     assert crowbar["kind"] == "stick" and crowbar["axis"] == 2 and 0.2 < crowbar["along"] < 0.35
     lantern = acting.carry_grip([0.25, 0.25, 0.42])
-    assert lantern["kind"] == "palm" and abs(lantern["along"] - 0.231) < 1e-9
+    assert lantern["kind"] == "hang" and abs(lantern["along"] - 0.92 * 0.42) < 1e-9
     plank = acting.carry_grip([1.2, 0.2, 0.04])
     assert plank["kind"] == "stick" and plank["axis"] == 0 and plank["lift"] == 0.02
     assert acting.can_carry([0.08, 0.08, 0.9]) and not acting.can_carry([1.5, 0.4, 0.4])

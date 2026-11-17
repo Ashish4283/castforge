@@ -42,7 +42,8 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | walking, sitting, turning, arms, fingers | `scene_kit.py` `class Actor` (`def walk`, `def key_arms`...) |
 | expressions, gestures, postures, gaze maths | `blender/acting.py` (pure, tested) |
 | pose fixes (fix it in the shot) | scene.json `"fixes"`; parts `acting.FIX_PARTS`, timing `acting.fix_frames`; applied last in `scene_kit.py` `def apply_fixes`; UI panel in `Editor3D.tsx` + `viewer.previewFix` |
-| hold/carry a prop, duck, crouch | `scene_kit.py` `elif do == "hold"`/`"release"`/`"duck"`; grips `acting.carry_grip`; crouch = posture `"drop"` (`Actor.pdrop`); foot planting `motion.stance_windows` + `motion_rig._plant` (measures the character's own feet) |
+| hands: fingers, wrist, grip, fists in a clip | `acting.HAND_SHAPES`/`finger_curls`/`grip_curl`/`clip_hands`; `scene_kit.py` `def key_fingers` (curl_* scales the close), `def key_arms` wrist_*; per-frame choice in the `# --- life` loop (`act.clip_hands`, `act.holding`) |
+| hold/carry a prop, duck, crouch | `scene_kit.py` `elif do == "hold"`/`"release"`/`"duck"`; grips `acting.carry_grip` on `measure_prop`; crouch = posture `"drop"` (`Actor.pdrop`); foot planting `motion.stance_windows` + `motion_rig._plant` (measures the character's own feet) |
 | motion clips: bone maps, placement maths | `blender/motion.py` (pure, tested); import `import_motion.py`; playback `motion_rig.py` (`def play`); step `elif do == "perform"`; CLI `motion add/cmu/list` |
 | per-frame life: blinks, nods, gaze, gestures applied | `scene_kit.py` anchor `# --- life` |
 | which shot when | `blender/director.py` (pure, tested; fights: `_fight`, `beats=`); cameras: `scene_kit.py` `def close_up`/`two_shot` |
@@ -103,6 +104,14 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   what it states. `<name>.design.json` `use_photo` records how the character was last built.
 - Mixamo FBX imports with x0.01 scale and a 90° axis turn on the armature object; CMU BVH (cgspeed) at 120 fps.
 - Picture-fitted prop roots carry a scale: hold constrains with COPY_LOCATION + COPY_ROTATION, never COPY_TRANSFORMS.
+- A prop made by `make` has no "size" in scene.json: measure the built object (`measure_prop`), never assume one,
+  or every grip is computed for a 30 cm cube and the prop ends up through the palm and into the wrist.
+- Motion clips carry no finger movement (the bone map stops at `hand`): a punch keeps whatever the life loop
+  keyed, so fighting clips need their fists made here (`acting.clip_hands`, `Actor.clip_hands`).
+- A bone-parented child sits at the bone's TAIL with +Y along the bone, so the palm is about half a hand back.
+- Gesture poses may carry `arm_L`/`arm_R` beside `arm` when the two hands must differ (a clap).
+- Hand-to-hand gestures can't be eyeballed: pose the rig headlessly and score the result (palm gap, height,
+  which way the palms and fingers point). The clap needed a negative twist and a wrist; no arm-only pose works.
 
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).

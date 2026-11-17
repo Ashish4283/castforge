@@ -188,6 +188,8 @@ ACTIONS = {
                                      values=["stagger", "dodge", "block", "none"]),
                           "distance": p("number", "striking distance in metres", default=0.9),
                           "hit_stop": p("number", "frames the impact hangs (0: none)", default=2),
+                          "hands": p("enum", "what the attacking hands do (default: a closed fist)",
+                                     values=["fist", "open"]),
                           "sound": p("sfx", "impact sound (default: by reaction - hit_hard, block, hit)"),
                           "swing_sound": p("sfx", "the swing through the air", default="whoosh")}},
     "duck": {"who": True, "help": "duck down quickly and come back up (a dodge)",
@@ -230,7 +232,10 @@ ACTIONS = {
                            "speed": p("number", "playback speed", default=1.0),
                            "blend": p("number", "seconds to blend into and out of the clip", default=0.3),
                            "travel": p("bool", "move across the floor with the clip (off: on the spot)",
-                                       default=True)}},
+                                       default=True),
+                           "hands": p("enum", "what the hands do (clips carry no finger movement; guessed "
+                                               "from the clip name when empty)",
+                                      values=["fist", "open"])}},
     "wait": {"who": False, "help": "nothing happens for a while",
              "params": {"seconds": p("number", "how long", default=1.0)}},
 }

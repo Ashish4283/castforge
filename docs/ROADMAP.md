@@ -13,6 +13,7 @@ per GPU-second.
 |---|---|---|
 | Motion library | Mixamo FBX / CMU BVH -> `motions/clips/<name>.blend` + `.json`; scene step `perform` | v1 done 2026-11-10 |
 | Hands and weapons | `hold`/`release` steps: carry grips (stick/palm, `acting.carry_grip`), props ride the hand through walks and clips (a held crowbar swings with a punch clip); `clap`; `duck` step; `crouch` posture | v1 done 2026-11-14 |
+| Hands v2 | grips measured off the built prop instead of a guessed cube, so a lantern hangs from the hand clear of the palm and the fingers close only as far as the prop allows; fists during fighting clips (clips carry no finger data); a wrist channel in `key_arms`; the clap rebuilt from rig measurements (palms meeting, fingers forward) | v2 done 2026-11-17 |
 | Fight choreography | `strike` step: one beat = close to reach, attack clip, impact sound on the contact frame, hit-stop freeze, reaction (stagger/dodge/block); director covers a fight as two-shot -> push-in -> tight on contact -> reaction, with faster cuts | v1 done 2026-11-16 |
 | Editor 1: 3D scene editor | app: the scene in 3D (preview.glb), play/scrub, timeline of steps, drag start spots and walk targets, undo, save history | v1 done 2026-11-10 |
 | Editor 2: pose fixes | pick a character in the 3D view, scrub to the moment, turn a body part with X/Y/Z dials; stored in scene.json `fixes` and re-applied as the last layer of every render, fading in and out | v1 done 2026-11-17 |
@@ -27,7 +28,8 @@ per GPU-second.
 | Publish kit | `castforge.py publish` + app button: delivery checks (picture, sound, loudness, subtitles, chapters), YouTube package (video at -14 LUFS, 1280x720 thumbnail, folded chapters, description); the title-card chapter bug is fixed at the source | v1 done 2026-11-12 |
 | Phase 2 bridge | rented GPU: ComfyUI + FLORA designs -> image-to-3D -> rig -> CastForge | later |
 
-Motion limits: fingers stay procedural. Since 2026-11-14 the root rides the clip's true hip path (follow
+Motion limits: fingers stay procedural (clips carry none; since 2026-11-17 a fighting clip's hands are closed
+from the clip name, or the `hands` parameter). Since 2026-11-14 the root rides the clip's true hip path (follow
 camera and gaze track it) and a measured counter-shift holds the grounded foot still (the clip says when a foot is planted; the character's own foot is measured and the drift keyed away). Mixamo files are downloaded by the
 user (free Adobe account) and must not be redistributed: `motions/` is git-ignored.
 
