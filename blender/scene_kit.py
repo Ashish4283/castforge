@@ -2556,6 +2556,46 @@ for wav, frame, ch, where in sounds:
     s = strips.new_sound(os.path.basename(wav), wav, ch, frame)
     s.pan = pan_of(where, 0.25)                     # dialogue stays near the centre, as in film mixes
 
+# --- pose fixes: the last word on a bone (scene.json "fixes"), applied over everything above ----------
+def apply_fixes(entries):
+    """Turn body parts a little at given moments, on top of the finished animation: the user's hand-made
+    corrections from the app's 3D editor. Each entry: who, at (seconds), part, rotate [x, y, z] degrees,
+    optional seconds (hold) and fade."""
+    done = 0
+    for fix in entries:
+        who = cast.get(fix.get("who"))
+        part = acting.FIX_PARTS.get(fix.get("part"))
+        if who is None or part is None or part not in who.pb:
+            log(f"WARNING pose fix skipped (unknown character or body part): {fix}")
+            continue
+        turn = [math.radians(float(v)) for v in (fix.get("rotate") or [0, 0, 0])]
+        if not any(turn):
+            continue
+        pb = who.pb[part]
+        pb.rotation_mode = "QUATERNION"
+        extra = (Matrix.Rotation(turn[0], 3, "X") @ Matrix.Rotation(turn[1], 3, "Y")
+                 @ Matrix.Rotation(turn[2], 3, "Z"))
+        keys = acting.fix_frames(fix, FPS, scene.frame_end)
+        # read every base pose first: writing a key would otherwise change what the next frame reads back,
+        # and the fix would pile onto itself
+        base = []
+        for f, w in keys:
+            scene.frame_set(f)
+            base.append((f, w, pb.rotation_quaternion.copy()))
+        for f, w, q in base:
+            turned = (q.to_matrix() @ extra).to_quaternion()
+            pb.rotation_quaternion = q.slerp(turned, w)
+            pb.keyframe_insert("rotation_quaternion", frame=f)
+        if keys:
+            done += 1
+            log(f"pose fix: {fix.get('who')} {fix.get('part')} at {fix.get('at', 0)}s "
+                f"({', '.join(str(round(v, 1)) for v in fix.get('rotate') or [])} deg, {len(keys)} keys)")
+    if entries:
+        log(f"pose fixes: {done} of {len(entries)} applied")
+
+
+apply_fixes(spec.get("fixes") or [])
+
 # footsteps: a different recorded step for every landing, on the scene's floor type, placed and faded by distance
 steps_lib = LIBRARY.get("footsteps", {}).get(spec.get("floor", "wood"), [])
 n = 0

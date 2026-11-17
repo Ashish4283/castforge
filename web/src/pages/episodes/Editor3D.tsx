@@ -1,17 +1,17 @@
 // The 3D scene editor: see the scene, scrub or play, click a step on the timeline, drag where people start and
 // walk to. Edits go straight into the open scene (Save, then Build 3D preview to see the new movement).
 import {useEffect, useRef, useState} from "react";
-import {Box, Camera, Hammer, Pause, Play, Save, Undo2, View} from "lucide-react";
+import {Box, Camera, Hammer, Pause, Play, Plus, RotateCcw, Save, Trash2, Undo2, View} from "lucide-react";
 import {Json, post} from "../../api";
 import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
-import {Button, Card, Notice} from "../../components/ui";
+import {Badge, Button, Card, Notice, Select} from "../../components/ui";
 import {Meta, SceneViewer} from "./viewer";
 
 type Edit = {kind: "start" | "to"; who: string; n?: number; prev: Json};
 
 export function Editor3D() {
-  const {movie, toast} = useStore();
+  const {movie, toast, schema} = useStore();
   const ep = useEpisode();
   const host = useRef<HTMLDivElement>(null);
   const viewer = useRef<SceneViewer | null>(null);
@@ -27,6 +27,9 @@ export function Editor3D() {
   const [sel, setSel] = useState<{who: string | null; n?: number}>({who: null});
   const [undoCount, setUndoCount] = useState(0);
   const [building, setBuilding] = useState(false);
+  const [part, setPart] = useState("head");
+  const [turn, setTurn] = useState<[number, number, number]>([0, 0, 0]);
+  const [hold, setHold] = useState(0.6);
 
   const preview = ep.info?.previews?.[ep.part] || ep.info?.previews?.[0] || null;
 
@@ -72,6 +75,7 @@ export function Editor3D() {
   }, [preview?.glb]);      // reload only when the preview file itself changes
 
   useEffect(() => { viewer.current?.redraw(); }, [ep.rev]);
+  useEffect(() => { viewer.current?.previewFix(sel.who, part, turn); }, [sel.who, part, turn]);
 
   const doUndo = () => {
     const u = undo.current.pop();
@@ -94,6 +98,23 @@ export function Editor3D() {
     addEventListener("keydown", key);
     return () => removeEventListener("keydown", key);
   });
+
+  const fixes: Json[] = Array.isArray(ep.model?.fixes) ? ep.model.fixes : [];
+  const at = () => Math.round(((viewer.current?.frame ?? 1) - 1) / (meta?.fps || 24) * 100) / 100;
+  const addFix = () => {
+    if (!sel.who) return toast("Click the character you want to fix first.", "err");
+    if (!turn.some(v => v)) return toast("Turn one of the three dials before adding the fix.", "err");
+    ep.update(m => {
+      if (!Array.isArray(m.fixes)) m.fixes = [];
+      m.fixes.push({who: sel.who, part, at: at(), seconds: hold, rotate: turn.map(v => Math.round(v))});
+    });
+    setTurn([0, 0, 0]);
+    setNote(`Fix added: ${sel.who}'s ${part.replace(/_/g, " ")} at ${at()} s. Save, then Build 3D preview (or render) to see it.`);
+  };
+  const removeFix = (i: number) => {
+    ep.update(m => { m.fixes.splice(i, 1); if (!m.fixes.length) delete m.fixes; });
+    setNote("Fix removed.");
+  };
 
   const build = async () => {
     setBuilding(true);
@@ -177,6 +198,50 @@ export function Editor3D() {
           <div className="heads"><div className="playhead" ref={head} /></div>
         </div>
       )}
+      <div className="fixes">
+        <div className="row nowrap" style={{marginBottom: 10}}>
+          <h4 className="section-title" style={{margin: 0}}>Pose fixes</h4>
+          <Badge>{fixes.length}</Badge>
+          <span className="muted small" style={{flex: 1, minWidth: 0}}>
+            Click a character in the view, scrub to the moment, turn a body part. The fix is stored in the
+            scene and re-applied on every render.
+          </span>
+        </div>
+        <div className="row nowrap" style={{flexWrap: "wrap"}}>
+          <Badge kind={sel.who ? "accent" : undefined}>{sel.who || "no one selected"}</Badge>
+          <Select className="sm" value={part} onChange={setPart} options={schema?.fix_parts || ["head"]} aria-label="Body part" />
+          <span className="muted small">at {at()} s</span>
+          {(["x", "y", "z"] as const).map((axis, i) => (
+            <label key={axis} className="slider" style={{width: 190}}>
+              {axis.toUpperCase()}
+              <input type="range" min={-60} max={60} step={1} value={turn[i]}
+                     onChange={e => setTurn(t => t.map((v, k) => (k === i ? Number(e.target.value) : v)) as [number, number, number])} />
+              <span>{turn[i]}°</span>
+            </label>
+          ))}
+          <label className="slider" style={{width: 150}}>hold
+            <input type="range" min={0} max={3} step={0.1} value={hold} onChange={e => setHold(Number(e.target.value))} />
+            <span>{hold.toFixed(1)}s</span>
+          </label>
+          <Button size="sm" variant="ghost" square icon={<RotateCcw size={14} />} aria-label="Reset dials"
+                  disabled={!turn.some(v => v)} onClick={() => setTurn([0, 0, 0])} />
+          <Button size="sm" variant="primary" icon={<Plus size={14} />} onClick={addFix}>Add fix</Button>
+        </div>
+        {fixes.length > 0 && (
+          <div className="fix-list">
+            {fixes.map((f, i) => (
+              <div key={i} className="fix-row">
+                <button className="fix-go" onClick={() => viewer.current?.seek(1 + Number(f.at || 0) * (meta?.fps || 24))}>
+                  <b>{f.who}</b> {String(f.part).replace(/_/g, " ")}
+                  <span className="muted"> at {f.at}s · {(f.rotate || []).join(", ")}°</span>
+                </button>
+                <Button size="sm" variant="ghost" square icon={<Trash2 size={14} />} aria-label="Remove fix"
+                        onClick={() => removeFix(i)} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       {note && <div style={{marginTop: 12}}><Notice>{note}</Notice></div>}
     </Card>
   );

@@ -352,7 +352,8 @@ def describe():
             "gestures": GESTURES, "postures": POSTURES, "paces": PACES, "voice_fx": VOICE_FX, "grades": GRADES,
             "transitions": TRANSITIONS, "lighting": list(LIGHTING), "weather": WEATHER, "shots": SHOT_KINDS,
             "moves": CAMERA_MOVES, "qualities": QUALITIES, "aspects": ASPECTS, "seats": SEAT_TYPES,
-            "character": CHARACTER, "costumes": COSTUMES, "library": library()}
+            "character": CHARACTER, "costumes": COSTUMES, "fix_parts": sorted(acting.FIX_PARTS),
+            "library": library()}
 
 
 # --- checking ----------------------------------------------------------------------------------------------
@@ -429,6 +430,38 @@ def _is_rect(v):
 def _enum(value, values, what, problems):
     if value is not None and value not in values:
         problems.append(f"unknown {what} {value!r} (use {', '.join(map(str, values))})")
+
+
+def check_fixes(sc, cast, problems, warnings):
+    """Validate scene.json "fixes": hand-made pose corrections from the 3D editor."""
+    entries = sc.get("fixes")
+    if entries is None:
+        return
+    if not isinstance(entries, list):
+        problems.append('"fixes" must be a list of pose fixes')
+        return
+    for n, fix in enumerate(entries, 1):
+        if not isinstance(fix, dict):
+            problems.append(f"pose fix {n} must be an object")
+            continue
+        if fix.get("who") not in cast:
+            problems.append(f"pose fix {n}: {fix.get('who')!r} is not in the cast")
+        if fix.get("part") not in acting.FIX_PARTS:
+            problems.append(f"pose fix {n}: unknown body part {fix.get('part')!r} "
+                            f"(use {', '.join(sorted(acting.FIX_PARTS))})")
+        at = fix.get("at")
+        if not isinstance(at, (int, float)) or isinstance(at, bool) or at < 0:
+            problems.append(f'pose fix {n}: "at" must be a time in seconds')
+        turn = fix.get("rotate")
+        if (not isinstance(turn, list) or len(turn) != 3
+                or any(not isinstance(v, (int, float)) or isinstance(v, bool) for v in turn)):
+            problems.append(f'pose fix {n}: "rotate" must be [x, y, z] in degrees')
+        elif max(abs(v) for v in turn) > 90:
+            warnings.append(f"pose fix {n}: turning {fix.get('part')} by more than 90 degrees will look broken")
+        for key in ("seconds", "fade"):
+            if fix.get(key) is not None and (not isinstance(fix[key], (int, float)) or isinstance(fix[key], bool)
+                                             or fix[key] < 0):
+                problems.append(f'pose fix {n}: "{key}" must be a number of seconds')
 
 
 def check_parsed(folder, sc):
@@ -534,6 +567,7 @@ def check_parsed(folder, sc):
     for prop in sc.get("props", []):
         if isinstance(prop, dict) and prop.get("make") == "pickup_truck" and isinstance(prop.get("door_id"), str):
             door_ids.add(prop["door_id"])
+    check_fixes(sc, cast, errors, warnings)
     narrator = sc.get("narrator")
     narrator = narrator.get("voice") if isinstance(narrator, dict) else None
     facing = {n: c.get("facing", "camera") for n, c in cast.items()}

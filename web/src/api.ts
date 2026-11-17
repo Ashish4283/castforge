@@ -26,6 +26,7 @@ export interface Schema {
   voice_fx: string[];
   seats: string[];
   character: Record<string, ParamDef>;
+  fix_parts: string[];
   costumes: Record<string, Record<string, string>>;
   library: {footsteps: string[]; sfx: string[]; beds: string[]; clips: string[]};
 }

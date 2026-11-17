@@ -43,6 +43,8 @@ export class SceneViewer {
   private dragging: {marker: THREE.Object3D; from: THREE.Vector3} | null = null;
   private selected: string | null = null;
   private observer: ResizeObserver;
+  private fixed = new Map<THREE.Bone, THREE.Quaternion>();   // bones held by a pose-fix preview
+  private fixTurn = new THREE.Quaternion();                  // the turn that preview applies
 
   constructor(private host: HTMLElement, private hooks: Hooks) {
     this.renderer = new THREE.WebGLRenderer({antialias: true});
@@ -94,6 +96,12 @@ export class SceneViewer {
       this.seek(this.frame, false);
     }
     this.last = now;
+    if (this.fixed.size) {                         // the clip drives the bones; the fix sits on top
+      for (const [bone, rest] of this.fixed) {
+        rest.copy(bone.quaternion);
+        bone.quaternion.multiply(this.fixTurn);
+      }
+    }
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   };
@@ -218,6 +226,39 @@ export class SceneViewer {
   select(who: string | null) {
     this.selected = who;
     this.redraw();
+  }
+
+  // --- pose-fix preview: turn one bone of one character, so a fix can be seen while it is dialled in ------
+  /** The deform bone a plain part name drives in the exported preview ("upper_arm.L" -> "DEF-upper_arm.L"). */
+  private boneOf(who: string, part: string): THREE.Bone | null {
+    const rig = this.meta?.cast[who]?.rig;
+    const root = (rig && this.model?.getObjectByName(rig)) || this.model;
+    if (!root) return null;
+    const want = part === "hips" ? "spine" : part;
+    const names = [`DEF-${want}`, want, `DEF-${want}.001`];
+    for (const n of names) {
+      const found = root.getObjectByName(n);
+      if (found && (found as THREE.Bone).isBone) return found as THREE.Bone;
+    }
+    return null;
+  }
+
+  /** Show a fix on the preview model: `degrees` [x, y, z], or null to put the bone back. */
+  previewFix(who: string | null, part: string | null, degrees: [number, number, number] | null) {
+    for (const [bone, rest] of this.fixed) bone.quaternion.copy(rest);
+    this.fixed.clear();
+    if (!who || !part || !degrees || !degrees.some(d => d)) return;
+    const bone = this.boneOf(who, part);
+    if (!bone) return;
+    const e = new THREE.Euler(...degrees.map(d => d * Math.PI / 180) as [number, number, number]);
+    this.fixTurn.setFromEuler(e);
+    this.fixed.set(bone, bone.quaternion.clone());
+    bone.quaternion.multiply(this.fixTurn);
+  }
+
+  /** True when this character's body part exists in the preview (so the panel can say when it cannot show it). */
+  canPreview(who: string, part: string) {
+    return !!this.boneOf(who, part);
   }
 
   private pointer(e: PointerEvent) {

@@ -41,6 +41,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | what a step does in Blender | `scene_kit.py` anchor `# --- script` then `elif do == "<name>"` |
 | walking, sitting, turning, arms, fingers | `scene_kit.py` `class Actor` (`def walk`, `def key_arms`...) |
 | expressions, gestures, postures, gaze maths | `blender/acting.py` (pure, tested) |
+| pose fixes (fix it in the shot) | scene.json `"fixes"`; parts `acting.FIX_PARTS`, timing `acting.fix_frames`; applied last in `scene_kit.py` `def apply_fixes`; UI panel in `Editor3D.tsx` + `viewer.previewFix` |
 | hold/carry a prop, duck, crouch | `scene_kit.py` `elif do == "hold"`/`"release"`/`"duck"`; grips `acting.carry_grip`; crouch = posture `"drop"` (`Actor.pdrop`); foot planting `motion.stance_windows` + `motion_rig._plant` (measures the character's own feet) |
 | motion clips: bone maps, placement maths | `blender/motion.py` (pure, tested); import `import_motion.py`; playback `motion_rig.py` (`def play`); step `elif do == "perform"`; CLI `motion add/cmu/list` |
 | per-frame life: blinks, nods, gaze, gestures applied | `scene_kit.py` anchor `# --- life` |
@@ -88,6 +89,7 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Blender 5.x has no `Action.fcurves`: use `bpy_extras.anim_utils.action_get_channelbag_for_slot`.
 - Scenes render with view transform `Standard` (AgX greys the set picture; see DESIGN_V2 D12).
 - Bash tool: heredocs with apostrophes or backslash escapes break; write edit scripts to a file.
+- A pose layer that reads the pose back must read every frame before writing any key, or it compounds onto itself.
 - The user's app runs on 8765; test servers use 8777.
 - One GPU at a time, two locks: `.render.lock` (renders) and `.build.lock` (character/set/prop/building builds,
   written by `castforge.claim_build`). Renders and builds refuse each other; `gpu_busy` reads both.

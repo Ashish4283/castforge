@@ -338,6 +338,40 @@ def asymmetric(weights, tilt):
             for k, v in weights.items()}
 
 
+# --- pose fixes --------------------------------------------------------------------------------------------
+# A fix turns one body part a little at one moment, on top of everything else the scene does (the "fix it in
+# the shot" layer). Parts are plain names; the values are the Rigify controls they drive.
+FIX_PARTS = {
+    "head": "head", "neck": "neck", "chest": "chest", "hips": "torso",
+    "shoulder.L": "shoulder.L", "shoulder.R": "shoulder.R",
+    "upper_arm.L": "upper_arm_fk.L", "upper_arm.R": "upper_arm_fk.R",
+    "forearm.L": "forearm_fk.L", "forearm.R": "forearm_fk.R",
+    "hand.L": "hand_fk.L", "hand.R": "hand_fk.R",
+    "thigh.L": "thigh_fk.L", "thigh.R": "thigh_fk.R",
+    "shin.L": "shin_fk.L", "shin.R": "shin_fk.R",
+    "foot.L": "foot_fk.L", "foot.R": "foot_fk.R",
+}
+FIX_FADE = 0.35          # seconds a fix takes to come in and go out
+
+
+def fix_frames(fix, fps, end, step=2):
+    """[(frame, weight)] for one fix: it holds full strength over its window and fades at both ends, so it
+    never pops. A fix with no "seconds" is a single moment (it fades in and straight out again)."""
+    at = float(fix.get("at", 0.0))
+    hold = max(0.0, float(fix.get("seconds", 0.0)))
+    fade = max(0.05, float(fix.get("fade", FIX_FADE)))
+    t0, t1 = at - fade, at + hold + fade
+    f0, f1 = max(1, int(round(t0 * fps))), min(int(end), int(round(t1 * fps)))
+    out = []
+    for f in range(f0, f1 + 1, step):
+        w = window(f / fps, t0, t1, fade)
+        if w > 1e-4:
+            out.append((f, w))
+    if out and out[-1][0] != f1 and f1 > f0:
+        out.append((f1, window(f1 / fps, t0, t1, fade)))
+    return out
+
+
 # --- walking -----------------------------------------------------------------------------------------------
 # pace: speed (m/s), step length (m), arm swing scale, extra forward lean (rad)
 PACES = {"stroll": (0.8, 0.55, 0.7, 0.0), "normal": (1.1, 0.62, 1.0, 0.0),

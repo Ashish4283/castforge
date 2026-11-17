@@ -15,7 +15,7 @@ per GPU-second.
 | Hands and weapons | `hold`/`release` steps: carry grips (stick/palm, `acting.carry_grip`), props ride the hand through walks and clips (a held crowbar swings with a punch clip); `clap`; `duck` step; `crouch` posture | v1 done 2026-11-14 |
 | Fight choreography | `strike` step: one beat = close to reach, attack clip, impact sound on the contact frame, hit-stop freeze, reaction (stagger/dodge/block); director covers a fight as two-shot -> push-in -> tight on contact -> reaction, with faster cuts | v1 done 2026-11-16 |
 | Editor 1: 3D scene editor | app: the scene in 3D (preview.glb), play/scrub, timeline of steps, drag start spots and walk targets, undo, save history | v1 done 2026-11-10 |
-| Editor 2: pose fixes | grab a body part at a moment and rotate it; stored as fixes in scene.json, re-applied on every render (animation layer) | next |
+| Editor 2: pose fixes | pick a character in the 3D view, scrub to the moment, turn a body part with X/Y/Z dials; stored in scene.json `fixes` and re-applied as the last layer of every render, fading in and out | v1 done 2026-11-17 |
 | Editor 3: character design | design editor over `<name>.design.json` (body, face, hair, outfit, costume), ready-made looks, previews, rebuild; costume kit: long coat, fabric, fur trim, belt+buckle, gloves, boots | v1 done 2026-11-11 |
 | Costume kit v2 | more looks (uniforms, armour, robes); capes/hoods as real garments; fur with hair strands | |
 | Editor 4: art | light, weather, grade, props per scene, previewed in the 3D view; move seats and props by dragging | |

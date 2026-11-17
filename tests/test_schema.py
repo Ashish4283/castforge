@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from core import schema
+from core import config, schema
 
 TYPES = {"point", "number", "text", "audio", "enum", "target", "look", "voice", "door", "seat", "sfx", "bed", "bool",
          "clip", "cast_list", "prop"}
@@ -237,3 +237,30 @@ def test_strike_needs_a_cast_target_and_a_known_clip(tmp_path, capsys):
     assert schema.check_scene(str(tmp_path)) >= 1
     out = capsys.readouterr().out
     assert '"target" must be a cast member' in out
+
+
+def test_pose_fixes_are_checked_in_plain_language(tmp_path, capsys):
+    scene = {"background": "bg.png", "floor": "wood",
+             "cast": {"Arthur": {"character": "a.blend", "position": [0, 0]}},
+             "props": [], "script": [{"do": "wait", "seconds": 1}],
+             "fixes": [{"who": "Arthur", "part": "head", "at": 1.5, "rotate": [0, 0, 12]},
+                       {"who": "Ghost", "part": "head", "at": 1.0, "rotate": [0, 0, 5]},
+                       {"who": "Arthur", "part": "elbow", "at": 1.0, "rotate": [0, 0, 5]},
+                       {"who": "Arthur", "part": "head", "at": -1, "rotate": "a lot"},
+                       {"who": "Arthur", "part": "head", "at": 2.0, "rotate": [0, 0, 140]}]}
+    (tmp_path / "bg.png").write_bytes(b"x")
+    (tmp_path / "a.blend").write_bytes(b"x")
+    (tmp_path / "scene.json").write_text(json.dumps(scene), encoding="utf-8")
+    assert schema.check_scene(str(tmp_path)) == 4
+    out = capsys.readouterr().out
+    assert "'Ghost' is not in the cast" in out
+    assert "unknown body part 'elbow'" in out
+    assert '"at" must be a time in seconds' in out and '"rotate" must be [x, y, z] in degrees' in out
+    assert "more than 90 degrees will look broken" in out        # a warning, not an error
+
+
+def test_a_pose_fix_changes_the_render_key(tmp_path):
+    base = {"background": "bg.png", "cast": {}, "script": []}
+    fixed = {**base, "fixes": [{"who": "Arthur", "part": "head", "at": 1.0, "rotate": [0, 0, 10]}]}
+    key = config.render_key(base, "blocking", str(tmp_path), schema.FINISH_KEYS)
+    assert key != config.render_key(fixed, "blocking", str(tmp_path), schema.FINISH_KEYS)

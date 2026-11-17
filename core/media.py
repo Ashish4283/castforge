@@ -11,6 +11,7 @@ import math
 import os
 import re
 import subprocess
+import time
 
 from core import config
 
@@ -38,13 +39,20 @@ AUDIO_ARGS = ["-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-ac", "2"]
 CONTAINER_ARGS = ["-movflags", "+faststart"]
 
 
-def run(cmd, **kw):
-    """Run ffmpeg/ffprobe; on failure raise with the tool's own last lines (plain enough to read)."""
-    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", **kw)
-    if r.returncode != 0:
+def run(cmd, tries=3, **kw):
+    """Run ffmpeg/ffprobe; on failure raise with the tool's own last lines (plain enough to read).
+
+    A failure with nothing to say is a transient one (a file another program has not finished releasing,
+    a scanner holding it open): those are retried briefly, real errors are raised at once."""
+    for attempt in range(1, tries + 1):
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", **kw)
+        if r.returncode == 0:
+            return r
         tail = "\n".join((r.stderr or r.stdout).strip().splitlines()[-6:])
-        raise RuntimeError(f"{os.path.basename(cmd[0])} failed:\n{tail}")
-    return r
+        if tail.strip() or attempt == tries:
+            raise RuntimeError(f"{os.path.basename(cmd[0])} failed:\n{tail}")
+        time.sleep(0.4 * attempt)
+    raise RuntimeError(f"{os.path.basename(cmd[0])} failed")
 
 
 def probe_duration(path):

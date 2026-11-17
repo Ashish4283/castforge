@@ -88,3 +88,27 @@ def test_process_voice_levels_a_line_and_keeps_its_length(tmp_path):
     level, _ = media.measure_loudness(out)
     assert abs(level - media.LINE_LOUDNESS) < 1.0
     assert media.process_voice(str(line), "none") == str(line)
+
+
+def test_a_silent_failure_is_retried_but_a_real_error_is_not(monkeypatch):
+    import subprocess as sp
+    calls = []
+
+    class R:
+        def __init__(self, code, err):
+            self.returncode, self.stderr, self.stdout = code, err, ""
+
+    def fake(cmd, **kw):
+        calls.append(cmd)
+        return R(1, "") if len(calls) < 3 else R(0, "")
+
+    monkeypatch.setattr(sp, "run", fake)
+    monkeypatch.setattr(media.time, "sleep", lambda s: None)
+    assert media.run(["ffprobe", "x"]).returncode == 0        # two silent failures, then it works
+    assert len(calls) == 3
+
+    calls.clear()
+    monkeypatch.setattr(sp, "run", lambda cmd, **kw: (calls.append(cmd), R(1, "No such file or directory"))[1])
+    with pytest.raises(RuntimeError, match="No such file"):
+        media.run(["ffprobe", "y"])
+    assert len(calls) == 1                                     # a real error is reported at once

@@ -137,3 +137,27 @@ def test_carry_grips_tell_sticks_from_handfuls():
     assert plank["kind"] == "stick" and plank["axis"] == 0 and plank["lift"] == 0.02
     assert acting.can_carry([0.08, 0.08, 0.9]) and not acting.can_carry([1.5, 0.4, 0.4])
     assert not acting.can_carry([0.8, 0.7, 0.4])                         # too wide for one hand
+
+
+def test_a_pose_fix_fades_in_and_out_around_its_moment():
+    keys = acting.fix_frames({"at": 2.0, "seconds": 1.0, "fade": 0.5}, 24, 300)
+    frames = [f for f, _ in keys]
+    assert min(frames) >= 24 * 1.5 - 2 and max(frames) <= 24 * 3.5 + 2     # window = at - fade .. at+hold+fade
+    middle = [w for f, w in keys if 24 * 2.1 <= f <= 24 * 2.9]
+    assert middle and min(middle) > 0.99                                    # full strength while it holds
+    assert keys[0][1] < 0.2 and keys[-1][1] < 0.2                           # eased at both ends
+    assert all(0.0 <= w <= 1.0 for _, w in keys)
+
+
+def test_a_momentary_fix_still_has_keys_and_never_runs_past_the_scene():
+    keys = acting.fix_frames({"at": 1.0}, 24, 300)
+    assert len(keys) >= 3 and max(w for _, w in keys) > 0.9
+    assert acting.fix_frames({"at": 100.0}, 24, 300) == []                  # past the end: nothing
+    short = acting.fix_frames({"at": 0.0, "fade": 0.5}, 24, 300)
+    assert short and min(f for f, _ in short) >= 1                          # never before frame 1
+
+
+def test_fix_parts_are_plain_names_mapped_to_rig_controls():
+    assert acting.FIX_PARTS["head"] == "head" and acting.FIX_PARTS["hips"] == "torso"
+    assert acting.FIX_PARTS["upper_arm.L"] == "upper_arm_fk.L"
+    assert all("." not in p or p.endswith((".L", ".R")) for p in acting.FIX_PARTS)
