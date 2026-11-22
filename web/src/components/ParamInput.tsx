@@ -35,6 +35,14 @@ export function ParamInput({name, def, value, onChange, onError}: {
           {Object.keys(ep.cast()).map(n => <option key={n} value={n}>{n}</option>)}
         </select>
       );
+    case "set": {
+      // the built sets of the open film; a set brings its picture, its depth and its objects with it
+      const made = (current?.sets || []).filter(s => s.blueprint);
+      if (!made.length)
+        return <p className="hint">No built sets yet. Open Sets, place what stands in the room, and save it.</p>;
+      return <Select value={value ? String(value) : ""} onChange={v => onChange(v || null)} placeholder="This scene's own picture"
+                     options={made.map(s => [`../sets/${s.name}`, s.name] as [string, string])} />;
+    }
     case "door":
     case "seat":
     case "prop": {

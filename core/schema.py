@@ -255,7 +255,7 @@ SCENE_KEYS = {
     "shots": p("enum", "how the camera cuts", default="auto", values=SHOTS_MODES),
     "aspect": p("enum", "picture shape", default="16:9", values=ASPECTS),
     "set": p("enum", "3D set from the picture, or a flat backdrop", default="3d", values=["3d", "flat"]),
-    "set_folder": p("text", "a built set folder to use (its picture, its depth and everything standing in "
+    "set_folder": p("set", "a built set folder to use (its picture, its depth and everything standing in "
                             "it come with it; the scene's own props are added on top)"),
     "duck": p("bool", "music and ambience dip under dialogue", default=True),
     "gaze": p("bool", "eyes look at whoever matters", default=True),
