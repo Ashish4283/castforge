@@ -9,7 +9,7 @@ import math
 import os
 
 from blender import acting, motion
-from core import config, finish, media
+from core import config, finish, media, sets
 
 # --- names ------------------------------------------------------------------------------------------------
 _LANG = {"a": "American English", "b": "British English", "h": "Hindi", "e": "Spanish", "f": "French",
@@ -255,6 +255,8 @@ SCENE_KEYS = {
     "shots": p("enum", "how the camera cuts", default="auto", values=SHOTS_MODES),
     "aspect": p("enum", "picture shape", default="16:9", values=ASPECTS),
     "set": p("enum", "3D set from the picture, or a flat backdrop", default="3d", values=["3d", "flat"]),
+    "set_folder": p("text", "a built set folder to use (its picture, its depth and everything standing in "
+                            "it come with it; the scene's own props are added on top)"),
     "duck": p("bool", "music and ambience dip under dialogue", default=True),
     "gaze": p("bool", "eyes look at whoever matters", default=True),
     "quality": p("enum", "default render quality", default="blocking", values=QUALITIES),
@@ -498,8 +500,8 @@ def check_parsed(folder, sc):
         return 1
     lib = library()
     for key in ("background", "cast", "script"):
-        if key not in sc:
-            errors.append(f'missing "{key}"')
+        if key not in sc and not (key == "background" and sc.get("set_folder")):
+            errors.append(f'missing "{key}"')      # a built set brings its own picture
     if "cast" in sc and not isinstance(sc["cast"], dict):
         errors.append('"cast" must be an object keyed by character name')
     if not isinstance(sc.get("props", []), list):
@@ -514,6 +516,16 @@ def check_parsed(folder, sc):
         return len(errors)
     if sc.get("background") and not os.path.exists(os.path.join(folder, sc["background"])):
         errors.append(f"background image not found: {sc['background']}")
+    if sc.get("set_folder"):
+        if not isinstance(sc["set_folder"], str):
+            errors.append('"set_folder" must be a folder path')
+        else:
+            sd = os.path.join(folder, sc["set_folder"])
+            if not os.path.isdir(sd):
+                errors.append(f"set folder not found: {sc['set_folder']}")
+            elif not sets.is_set_folder(sd):
+                errors.append(f"{sc['set_folder']} is not a built set yet: open it in Sets and save its "
+                              "objects, then build it (python castforge.py set-build FOLDER)")
     for key in ("ambience", "music"):
         bed = sc.get(key)
         bed = bed.get("bed") if isinstance(bed, dict) else bed

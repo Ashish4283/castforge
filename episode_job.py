@@ -76,6 +76,8 @@ def expand():
         # paths in the episode file are relative to the episode folder; the scene lives in a subfolder
         if scene.get("background"):
             scene["background"] = absolute(scene["background"])
+        if scene.get("set_folder"):
+            scene["set_folder"] = absolute(scene["set_folder"])
         if is_file(scene.get("ambience")):
             scene["ambience"] = absolute(scene["ambience"])
         music = scene.get("music")

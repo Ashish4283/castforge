@@ -48,6 +48,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | per-frame life: blinks, nods, gaze, gestures applied | `scene_kit.py` anchor `# --- life` |
 | which shot when | `blender/director.py` (pure, tested; fights: `_fight`, `beats=`); cameras: `scene_kit.py` `def close_up`/`two_shot` |
 | a fight beat (strike), hit-stop timing | `scene_kit.py` `elif do == "strike"` (reuses `run_perform`/`run_duck`); hit-stop maths `motion.to_scene`/`to_clip`/`hold_shift` |
+| a reusable set used by many scenes | `core/sets.py` (pure, tested: blueprint, merge_props, geometry_dir); scene key `set_folder`; `scene_kit.py` anchor `# --- a built set`; build `castforge.py set-build` |
 | 2.5D set from the picture, floor map, A* walks | `generate/depth_set.py`; `scene_kit.py` anchor `# --- 3D set` |
 | set picture shading, sun/world light | `scene_kit.py` anchor `# --- set:` (`def image_material`) |
 | lighting moods, weather, flicker | `blender/world.py` |
@@ -103,6 +104,11 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - A photo + design build: the photo gives face, body and colours; the design adds hat, beard, costume and overrides
   what it states. `<name>.design.json` `use_photo` records how the character was last built.
 - Mixamo FBX imports with x0.01 scale and a 90° axis turn on the armature object; CMU BVH (cgspeed) at 120 fps.
+- A set folder (`movies/<film>/sets/<name>/`) holds the picture, `set_blueprint.json`, shared depth under
+  `.castforge_geometry/` and the built `set.blend`. A scene naming it with `set_folder` inherits the picture,
+  that geometry (derived once for every scene on the set) and its objects; the scene's own props are added
+  after, and a scene prop with a set object's id moves it in place. Set file paths are anchored to the set
+  folder, and `episode_job.py` must make `set_folder` absolute like any other path.
 - Picture-fitted prop roots carry a scale: hold constrains with COPY_LOCATION + COPY_ROTATION, never COPY_TRANSFORMS.
 - A prop made by `make` has no "size" in scene.json: measure the built object (`measure_prop`), never assume one,
   or every grip is computed for a 30 cm cube and the prop ends up through the palm and into the wrist.

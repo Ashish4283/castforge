@@ -60,7 +60,7 @@ import director  # noqa: E402
 import motion  # noqa: E402
 import motion_rig  # noqa: E402
 import world as world_kit  # noqa: E402
-from core import config, media, schema  # noqa: E402
+from core import config, media, schema, sets  # noqa: E402
 
 RHUBARB = config.RHUBARB
 SCENE_DIR = os.path.dirname(os.path.abspath(args.scene))
@@ -612,11 +612,24 @@ def heading_towards(a, b):
     return math.atan2(d.x, -d.y)
 
 
+# --- a built set, when the scene names one: its picture, its depth and everything standing in it ------
+SET_FOLDER = path(spec["set_folder"]) if spec.get("set_folder") else None
+if SET_FOLDER:
+    set_picture = sets.picture(SET_FOLDER, sets.read_blueprint(SET_FOLDER).get("image"))
+    if not set_picture:
+        raise ValueError(f"the set {spec['set_folder']} has no picture")
+    spec.setdefault("background", set_picture)          # the scene may still name its own
+    blueprint_props = sets.resolve_paths(sets.read_blueprint(SET_FOLDER)["props"], SET_FOLDER)
+    spec["props"] = sets.merge_props(blueprint_props, spec.get("props"))
+    log(f"set {os.path.basename(SET_FOLDER)}: {len(blueprint_props)} object(s) from the set, "
+        f"{len(spec['props'])} in all")
+
 # --- 3D set from the background image (default): relief mesh + walkable floor map ---------------------
 SET = None
 if spec.get("set", "3d") == "3d":
     import shutil
-    set_dir = os.path.join(SCENE_DIR, "set")
+    # a built set keeps its depth beside the set, so every scene on that set reads the same geometry
+    set_dir = sets.geometry_dir(SET_FOLDER) if SET_FOLDER else os.path.join(SCENE_DIR, "set")
     set_json = os.path.join(set_dir, "set.json")
     bg = path(spec["background"])
     if not os.path.exists(set_json) or os.path.getmtime(set_json) < os.path.getmtime(bg):
