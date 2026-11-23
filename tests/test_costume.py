@@ -199,10 +199,37 @@ def test_boot_bands_take_the_highest_opening_on_each_side():
     assert min(co[v][2] for v in bands["boot"]) >= 0.2 - kit.TRIM_WIDTHS["boot"]
 
 
+def hat_with_a_bobble():
+    """A cap: a tube for the head, and a little bobble hanging below it with a hole of its own.
+
+    This is the shape that caught me out - the bobble's hole is the LOWEST boundary in the mesh, and
+    anchoring the hat to it balloons the whole thing round the pompom."""
+    co, faces = tube(rings=4, n=8, radius=0.1, step=0.05, z0=1.8)    # opening at 1.65, crown at 1.8
+    first = len(co)
+    bob = [(0.004 * math.cos(2 * math.pi * i / 6), 0.12 + 0.004 * math.sin(2 * math.pi * i / 6), 1.60)
+           for i in range(6)]                                        # a 4 mm ring, hanging off the back
+    bob += [(p[0], p[1], p[2] + 0.02) for p in bob]
+    co = list(co) + bob
+    faces = list(faces) + [(first + i, first + (i + 1) % 6, first + 6 + (i + 1) % 6, first + 6 + i)
+                           for i in range(6)]
+    return co, faces
+
+
+def test_the_opening_is_the_ring_that_lies_on_the_head_not_the_lowest_or_the_widest():
+    co, faces = hat_with_a_bobble()
+    rim = kit.rim_of(co, faces, head_at(1.66))                       # a skull at the opening's height
+    assert len(rim) == 8 and kit.centroid(co, rim)[2] == pytest.approx(1.65)
+    assert min(co[v][2] for v in rim) > 1.59                          # not the bobble, which hangs lower
+
+
+def head_at(z, radius=0.1, n=12):
+    return [(radius * math.cos(2 * math.pi * i / n), radius * math.sin(2 * math.pi * i / n), z) for i in range(n)]
+
+
 def test_a_bigger_hat_keeps_its_opening_exactly_where_it_was():
     co, faces = tube(rings=4, n=8, radius=0.1, step=0.05, z0=1.8)    # opening at 1.65, crown at 1.8
-    rim = kit.rim_of(co, faces)
-    assert kit.centroid(co, rim)[2] == pytest.approx(1.65)           # the lower of the two openings
+    rim = kit.rim_of(co, faces, head_at(1.66))
+    assert kit.centroid(co, rim)[2] == pytest.approx(1.65)           # the one lying against the head
     big = kit.grow_hat(co, 1.5, rim)
     for v in rim:
         assert big[v] == pytest.approx(co[v], abs=1e-9)              # what grips the head does not move
@@ -215,7 +242,7 @@ def test_a_tilted_hat_is_not_stretched_off_the_forehead():
     """A hat worn at an angle: growing it must leave the whole opening alone, high side included."""
     co, faces = tube(rings=3, n=8, radius=0.1, step=0.05, z0=1.8)
     co = [(x, y, z + 0.04 * y) for x, y, z in co]                    # tip it back
-    rim = kit.rim_of(co, faces)
+    rim = kit.rim_of(co, faces, head_at(1.72))
     big = kit.grow_hat(co, 1.4, rim)
     for v in rim:
         assert big[v] == pytest.approx(co[v], abs=1e-9)
@@ -223,4 +250,4 @@ def test_a_tilted_hat_is_not_stretched_off_the_forehead():
 
 def test_a_hat_left_at_its_own_size_is_untouched():
     co, faces = tube(rings=3, radius=0.1, step=0.05, z0=1.8)
-    assert kit.grow_hat(co, 1.0, kit.rim_of(co, faces)) == [tuple(p) for p in co]
+    assert kit.grow_hat(co, 1.0, kit.rim_of(co, faces, head_at(1.71))) == [tuple(p) for p in co]

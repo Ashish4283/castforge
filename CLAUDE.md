@@ -207,6 +207,11 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   tried: scaling the whole hat lifts the brim clear of the skull all round, and scaling about a horizontal
   plane through the lowest vertex stretches the front of the brim up off the forehead, because these hats
   are worn tilted back.
+- Which boundary loop is a hat's opening cannot be guessed from the geometry alone, and both guesses are
+  wrong on real assets: the LOWEST loop of the Santa cap is the 4 mm hole at the tip of its bobble (anchor
+  to it and the hat balloons round the pompom - it reads as a lampshade), and the WIDEST loop of a fedora
+  is the outer edge of its brim. `costume.rim_of` therefore asks the BODY: the opening is the loop lying
+  closest to it. Both callers sample the body for it (every 7th vertex is plenty).
 
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).

@@ -343,10 +343,22 @@ def beyond(co, verts, origin, towards, reach=1.6):
             if sum(co[v][i] * axis[i] for i in range(3)) >= at and math.dist(co[v], origin) <= far}
 
 
-def rim_of(co, faces):
-    """The hat's opening: the boundary loop whose centre is lowest - the edge that grips the head."""
-    loops = boundary_loops(faces)
-    return min(loops, key=lambda l: centroid(co, l)[2]) if loops else []
+def rim_of(co, faces, body=(), least=8):
+    """The hat's opening: the boundary loop that lies against the head.
+
+    Not the lowest loop, and not the widest. A Santa cap's LOWEST boundary is the little hole at the tip
+    of its bobble, four millimetres across and hanging below everything; anchoring a hat to that balloons
+    it round the pompom. A fedora's WIDEST boundary is the outer edge of its brim, nowhere near the head.
+    What the opening actually is, is the ring the head goes through - so it is found by asking which loop
+    lies closest to the body. `body` is a sample of the body's vertices, in the same space as `co`; with
+    none to go by, the widest loop is the best guess left. Loops of fewer than `least` vertices are
+    ignored: they are bobble tips and lace holes, never an opening."""
+    loops = [l for l in boundary_loops(faces) if len(l) >= least] or boundary_loops(faces)
+    if not loops:
+        return []
+    if not len(body):
+        return max(loops, key=lambda l: sum(math.dist(co[v], centroid(co, l)) for v in l) / len(l))
+    return min(loops, key=lambda l: sum(min(math.dist(co[v], b) for b in body) for v in l) / len(l))
 
 
 def grow_hat(co, scale, rim=()):

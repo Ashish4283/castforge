@@ -142,7 +142,7 @@ found = {}
 if args.folder == "clothes":
     if args.asset in appearance.HATS.values():
         # a hat grows away from its opening, and the opening has to be found on the real mesh
-        bands = {"rim": set(costume.rim_of(rest_co, polys))}
+        bands = {"rim": set(costume.rim_of(rest_co, polys, [tuple(p) for p in coords[::7]]))}
     elif args.asset in (appearance.SHOES, appearance.BOOTS):
         bands = costume.boot_bands(rest_co, polys, 0.0)
     else:
