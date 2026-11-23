@@ -109,6 +109,9 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   that geometry (derived once for every scene on the set) and its objects; the scene's own props are added
   after, and a scene prop with a set object's id moves it in place. Set file paths are anchored to the set
   folder, and `episode_job.py` must make `set_folder` absolute like any other path.
+- A set folder can hold an empty version of its picture (`sets.EMPTY`, made by `/api/set/empty` or uploaded);
+  a scene on that set uses it as the background so 3D furniture does not stand in front of its painted twin.
+  Which file is the set's own picture is decided only by `sets.is_picture_name` - never re-list the exceptions.
 - Picture-fitted prop roots carry a scale: hold constrains with COPY_LOCATION + COPY_ROTATION, never COPY_TRANSFORMS.
 - A prop made by `make` has no "size" in scene.json: measure the built object (`measure_prop`), never assume one,
   or every grip is computed for a 30 cm cube and the prop ends up through the palm and into the wrist.

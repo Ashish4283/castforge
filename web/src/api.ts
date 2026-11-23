@@ -33,6 +33,7 @@ export interface Schema {
 export interface Character { name: string; preview: string | null; design: boolean }
 export interface SetInfo {
   name: string; picture: string; path: string; blueprint: Json; asset: string | null; preview: string | null;
+  empty: string | null;
 }
 export interface PropAsset {
   name: string; make: string; asset: string | null; preview: string | null; picture: string | null; size: number[] | null;

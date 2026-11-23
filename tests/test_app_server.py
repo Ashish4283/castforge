@@ -9,6 +9,7 @@ from fastapi import HTTPException, UploadFile
 from PIL import Image
 
 from app import server
+from core import sets
 
 
 def test_movies_lists_nested_scene_directories(tmp_path, monkeypatch):
@@ -495,3 +496,46 @@ def test_gpu_busy_reports_a_build_started_from_a_terminal(tmp_path, monkeypatch)
     assert server.gpu_busy() is None
     (tmp_path / ".build.lock").write_text(f"{os.getpid()}\na 3D set build (cabin)\n", encoding="utf-8")
     assert server.gpu_busy() == "a 3D set build (cabin)"
+
+
+def test_a_set_picture_can_be_emptied_of_the_objects_lifted_into_3d(tmp_path, monkeypatch):
+    import json as _json
+    set_dir = tmp_path / "film" / "sets" / "cabin"
+    set_dir.mkdir(parents=True)
+    room = Image.new("RGB", (120, 80), (40, 90, 160))
+    room.paste((200, 30, 30), (40, 30, 80, 60))                    # a table painted into the room
+    room.save(set_dir / "background.png")
+    (set_dir / "set_blueprint.json").write_text(_json.dumps(
+        {"version": 1, "description": "", "props": [{"id": "table_1", "make": "table"}]}), encoding="utf-8")
+    monkeypatch.setattr(server, "MOVIES", str(tmp_path))
+    drawn = Image.new("L", (120, 80), 0)
+    drawn.paste(255, (40, 30, 80, 60))
+    buf = io.BytesIO()
+    drawn.save(buf, "PNG")
+    asyncio.run(server.set_mask(movie="film", set="cabin", id="table_1",
+                                mask=UploadFile(file=io.BytesIO(buf.getvalue()), filename="table_1.png")))
+
+    r = server.set_empty({"movie": "film", "set": "cabin"})
+
+    assert r["objects"] == ["table_1"]
+    empty = Image.open(set_dir / sets.EMPTY).convert("RGB")
+    assert empty.size == (120, 80)
+    assert empty.getpixel((60, 45))[0] < 110                       # the painted table is gone...
+    assert empty.getpixel((5, 5)) == (40, 90, 160)                 # ...and the rest of the room is untouched
+    assert sets.read_blueprint(str(set_dir))["empty_image"] == sets.EMPTY
+    assert sets.picture(str(set_dir)).endswith("background.png")   # the empty version is never the set picture
+
+
+def test_an_empty_room_made_elsewhere_can_be_used_instead(tmp_path, monkeypatch):
+    set_dir = tmp_path / "film" / "sets" / "cabin"
+    set_dir.mkdir(parents=True)
+    Image.new("RGB", (120, 80), (40, 90, 160)).save(set_dir / "background.png")
+    monkeypatch.setattr(server, "MOVIES", str(tmp_path))
+    buf = io.BytesIO()
+    Image.new("RGB", (60, 40), (10, 20, 30)).save(buf, "PNG")      # a different size: it must be made to line up
+
+    r = asyncio.run(server.set_empty_upload(movie="film", set="cabin",
+                                            picture=UploadFile(file=io.BytesIO(buf.getvalue()), filename="e.png")))
+
+    assert "empty room" in r["message"]
+    assert Image.open(set_dir / sets.EMPTY).size == (120, 80)

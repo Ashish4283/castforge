@@ -46,3 +46,42 @@ def fill_hidden(rgb, mask, max_steps=400):
         todo = todo & ~grow
     alpha = np.where(mask > 0, 255, 0).astype(np.uint8)
     return np.dstack([np.clip(out, 0, 255).astype(np.uint8), alpha])
+
+
+def patch_background(rgb, masks, max_steps=600, soften=2):
+    """The picture with the masked objects taken out of it: an empty room.
+
+    `masks` is one mask or a list of them (the same ones the region editor saves). Every pixel any mask
+    claims is repainted by growing the surrounding wall and floor colours inward, so a table lifted into 3D
+    does not stay painted on the set picture behind its own 3D copy. `soften` passes of a 3x3 average over
+    the patched pixels only keep the fill from reading as streaks; the rest of the picture is untouched."""
+    rgb = np.asarray(rgb, dtype=np.float32)[..., :3]
+    if isinstance(masks, np.ndarray) and masks.ndim == 2:
+        masks = [masks]
+    hole = np.zeros(rgb.shape[:2], bool)
+    for m in masks:
+        hole |= np.asarray(m) > 0
+    out = rgb.copy()
+    known = ~hole
+    todo = hole.copy()
+    for _ in range(max_steps):
+        if not todo.any():
+            break
+        total = np.zeros_like(out)
+        count = np.zeros(known.shape, np.float32)
+        for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)):
+            k = np.roll(known, (dy, dx), (0, 1))
+            total += np.roll(out, (dy, dx), (0, 1)) * k[..., None]
+            count += k
+        grow = todo & (count > 0)
+        if not grow.any():
+            break
+        out[grow] = total[grow] / count[grow][:, None]
+        known = known | grow
+        todo = todo & ~grow
+    for _ in range(max(0, soften)):
+        blur = np.zeros_like(out)
+        for dy, dx in ((0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)):
+            blur += np.roll(out, (dy, dx), (0, 1))
+        out[hole] = (blur / 5.0)[hole]
+    return np.clip(out, 0, 255).astype(np.uint8)

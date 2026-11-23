@@ -1,7 +1,7 @@
 // Sets: a picture of a place, with the 3D details people use (doors, seats, tables) marked on it, built into a
 // reusable 3D set. Building never changes the movie's scenes.
 import {useEffect, useState} from "react";
-import {Crop, Download, Hammer, Image as ImageIcon, PenTool, Plus, Save, Trash2, X} from "lucide-react";
+import {Crop, Download, Eraser, Hammer, Image as ImageIcon, PenTool, Plus, Save, Trash2, X} from "lucide-react";
 import {form, Json, post, SetInfo} from "../api";
 import {useStore} from "../app/store";
 import {Badge, Button, Card, Empty, Field, Modal, PageHead, PictureDrop, Select} from "../components/ui";
@@ -47,7 +47,7 @@ export function Sets() {
 }
 
 function SetCard({set, all}: {set: SetInfo; all: SetInfo[]}) {
-  const {schema, movie, toast} = useStore();
+  const {schema, movie, toast, reload} = useStore();
   const [bp, setBp] = useState<Json>(() => structuredClone(set.blueprint || {description: "", props: []}));
   const [editing, setEditing] = useState<number | null | false>(false);   // false: closed; a number: that object
   const [newType, setNewType] = useState("door");
@@ -63,6 +63,27 @@ function SetCard({set, all}: {set: SetInfo; all: SetInfo[]}) {
       const r = await post<{blueprint: Json; job?: string}>(build ? "/api/set/build" : "/api/set/blueprint", {movie, set: set.name, blueprint: bp});
       setBp(r.blueprint);
       toast(build ? "Building the 3D set: a few minutes the first time. Your scenes are unchanged." : "Set details saved", build ? "info" : "ok");
+    } catch (e) { toast((e as Error).message, "err"); }
+    finally { setBusy(""); }
+  };
+  const [showEmpty, setShowEmpty] = useState(false);
+  const emptyRoom = async () => {         // paint every marked object out of the picture
+    setBusy("empty");
+    try {
+      const r = await post<{message: string}>("/api/set/empty", {movie, set: set.name});
+      toast(r.message, "ok");
+      setShowEmpty(true);
+      reload();
+    } catch (e) { toast((e as Error).message, "err"); }
+    finally { setBusy(""); }
+  };
+  const uploadEmpty = async (file: File) => {
+    setBusy("empty");
+    try {
+      const r = await form<{message: string}>("/api/set/empty/upload", {movie, set: set.name, picture: file});
+      toast(r.message, "ok");
+      setShowEmpty(true);
+      reload();
     } catch (e) { toast((e as Error).message, "err"); }
     finally { setBusy(""); }
   };
@@ -83,11 +104,29 @@ function SetCard({set, all}: {set: SetInfo; all: SetInfo[]}) {
       <div className="grid-2" style={{alignItems: "start"}}>
         <div className="stack">
           <div className="set-stage" style={{cursor: "pointer"}} onClick={() => setEditing(null)} title="Open the region editor">
-            <img src={set.picture} alt={set.name} draggable={false} />
+            <img src={(showEmpty && set.empty) || set.picture} alt={set.name} draggable={false} />
             {marks.map(({p, i, r}) => {
               const [l, t, rr, bb] = r.map((v: number) => Math.max(0, Math.min(1, v)) * 100);
               return <div key={i} className="set-mark" style={{left: `${l}%`, top: `${t}%`, width: `${rr - l}%`, height: `${bb - t}%`}}><span>{p.id || p.make}</span></div>;
             })}
+          </div>
+          <div className="stack" style={{gap: 8}}>
+            <div className="row nowrap" style={{alignItems: "center", gap: 8}}>
+              <b className="small">Empty room</b>
+              {set.empty ? <Badge kind="ok" pip>made</Badge> : <Badge>not made</Badge>}
+              <div className="spacer" />
+              {set.empty && <Button size="sm" variant="ghost" onClick={() => setShowEmpty(v => !v)}>
+                {showEmpty ? "Show the picture" : "Show the empty room"}</Button>}
+              <Button size="sm" icon={<Eraser size={14} />} busy={busy === "empty"} onClick={emptyRoom}>
+                Paint objects out</Button>
+            </div>
+            <p className="muted small" style={{margin: 0}}>
+              Furniture you lift into 3D is still painted on the picture, so it shows twice. This paints every
+              object that has a region out of the picture and grows the wall and floor in behind it; scenes on
+              this set then stand their 3D furniture in the empty room. If the result is messy, drop in an empty
+              version of the room you made yourself.
+            </p>
+            <PictureDrop label="Empty version of this room" hint="Optional: a picture of the same room with the furniture gone, at the same framing." file={null} onFile={f => f && uploadEmpty(f)} />
           </div>
           {set.preview && <figure style={{margin: 0}}><img src={set.preview} alt="3D build preview" style={{width: "100%", borderRadius: 8}} /><figcaption className="muted small">Generated 3D preview</figcaption></figure>}
         </div>

@@ -29,6 +29,7 @@ LIBRARY = os.path.join(ROOT, "library")
 sys.path.insert(0, ROOT)
 import castforge as cf  # noqa: E402
 from core import config, publish, schema  # noqa: E402
+from core import sets as sets_mod  # noqa: E402
 from core.buildings import (BUILDING_CATEGORIES, BUILDING_DESIGNS, default_asset_spec,
                             describe_buildings)  # noqa: E402
 from core import schema  # noqa: E402
@@ -175,8 +176,7 @@ def movies():
         if os.path.isdir(sdir):
             for s in sorted(os.listdir(sdir)):
                 sd = os.path.join(sdir, s)
-                pics = [p for p in sorted(os.listdir(sd))
-                        if p.lower().endswith((".png", ".jpg", ".jpeg")) and p.lower() != "set_preview.png"] \
+                pics = [p for p in sorted(os.listdir(sd)) if sets_mod.is_picture_name(p)] \
                     if os.path.isdir(sd) else []
                 if pics:
                     blueprint_path = os.path.join(sd, "set_blueprint.json")
@@ -198,7 +198,8 @@ def movies():
                     sets.append({"name": s, "picture": media_url(os.path.join(sd, pics[0])),
                                  "path": f"../sets/{s}/{pics[0]}", "blueprint": blueprint,
                                  "asset": media_url(asset) if os.path.isfile(asset) else None,
-                                 "preview": media_url(preview) if os.path.isfile(preview) else None})
+                                 "preview": media_url(preview) if os.path.isfile(preview) else None,
+                                 "empty": media_url(empty) if (empty := sets_mod.empty_picture(sd, blueprint)) else None})
         props = []
         pdir = os.path.join(d, "props")
         if os.path.isdir(pdir):
@@ -638,14 +639,12 @@ def validate_set_blueprint(movie, set_name, blueprint):
         if prop.get("outside_set") is not None:
             target = prop["outside_set"]
             if (kind != "door" or not isinstance(target, str) or target not in names
-                    or not any(name.lower().endswith((".png", ".jpg", ".jpeg"))
-                               and name.lower() != "set_preview.png"
+                    or not any(sets_mod.is_picture_name(name)
                                for name in os.listdir(os.path.join(movie_dir(movie), "sets", target)))):
                 raise HTTPException(400, f"{object_id}: linked outside set must name an existing set on a door")
         identifiers.add(object_id)
         props.append({**prop, "position": position, "size": size, "rotation": rotation})
-    if not any(f.lower().endswith((".png", ".jpg", ".jpeg")) and f.lower() != "set_preview.png"
-               for f in os.listdir(set_dir)):
+    if not any(sets_mod.is_picture_name(f) for f in os.listdir(set_dir)):
         raise HTTPException(400, "add a background image to this set before building it")
     saved = {"version": 1, "description": description, "props": props}
     return set_dir, saved
@@ -685,8 +684,7 @@ def save_set(body: dict):
 
 
 def set_picture(set_dir):
-    pics = sorted(p for p in os.listdir(set_dir)
-                  if p.lower().endswith((".png", ".jpg", ".jpeg")) and p.lower() != "set_preview.png")
+    pics = sorted(p for p in os.listdir(set_dir) if sets_mod.is_picture_name(p))
     if not pics:
         raise HTTPException(400, "this set has no picture")
     return os.path.join(set_dir, pics[0])
@@ -726,6 +724,60 @@ def set_fill(body: dict):
     out = os.path.join(set_dir, "masks", f"{object_id}_filled.png")
     Image.fromarray(set_masks.fill_hidden(rgb, m)).save(out)
     return {"url": media_url(out), "hidden": int((m == set_masks.HIDDEN).sum())}
+
+
+@app.post("/api/set/empty")
+def set_empty(body: dict):
+    """Paint this set's objects out of its picture, leaving an empty room for the 3D furniture to stand in.
+
+    Every object with a saved region is taken out and the wall and floor behind it grown in over the gap.
+    A set can instead carry an empty version made elsewhere (uploaded on the set page): that one is kept."""
+    import numpy as np
+    from core import set_masks
+    sets = sets_mod
+    movie, set_name = safe(body.get("movie"), "movie"), safe(body.get("set"), "set")
+    set_dir = os.path.join(movie_dir(movie), "sets", set_name)
+    blueprint = sets.read_blueprint(set_dir)
+    ids = [pr["id"] for pr in blueprint.get("props", [])
+           if os.path.isfile(os.path.join(set_dir, "masks", f"{pr['id']}.png"))]
+    only = [i for i in (body.get("ids") or []) if i in ids]
+    ids = only or ids
+    if not ids:
+        raise HTTPException(400, "no object in this set has a region yet: draw one in the region editor first")
+    picture = Image.open(set_picture(set_dir)).convert("RGB")
+    rgb = np.array(picture)
+    masks = [set_masks.quantize(np.array(Image.open(os.path.join(set_dir, "masks", f"{i}.png"))
+                                         .convert("L").resize(picture.size, Image.NEAREST))) for i in ids]
+    out = os.path.join(set_dir, sets.EMPTY)
+    Image.fromarray(set_masks.patch_background(rgb, masks)).save(out)
+    blueprint["empty_image"] = sets.EMPTY
+    with open(os.path.join(set_dir, sets.BLUEPRINT), "w", encoding="utf-8") as f:
+        json.dump(blueprint, f, indent=1)
+    return {"url": media_url(out), "objects": ids,
+            "message": f"{len(ids)} object(s) painted out: scenes on this set now stand their 3D furniture "
+                       "in an empty room."}
+
+
+@app.post("/api/set/empty/upload")
+async def set_empty_upload(movie: str = Form(...), set: str = Form(...), picture: UploadFile = File(...)):
+    """Use an empty version of the room made elsewhere (a photo of the room cleared, or one an image tool
+    generated) instead of painting the objects out here."""
+    sets = sets_mod
+    set_dir = os.path.join(movie_dir(movie), "sets", safe(set, "set"))
+    size = Image.open(set_picture(set_dir)).size
+    try:
+        img = Image.open(io.BytesIO(await picture.read())).convert("RGB")
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(400, "the empty room must be a picture (PNG or JPG)")
+    if img.size != size:
+        img = img.resize(size, Image.LANCZOS)      # it must line up with the set's own picture, pixel for pixel
+    out = os.path.join(set_dir, sets.EMPTY)
+    img.save(out)
+    blueprint = sets.read_blueprint(set_dir)
+    blueprint["empty_image"] = sets.EMPTY
+    with open(os.path.join(set_dir, sets.BLUEPRINT), "w", encoding="utf-8") as f:
+        json.dump(blueprint, f, indent=1)
+    return {"url": media_url(out), "message": "empty room saved: scenes on this set will stand their furniture in it."}
 
 
 @app.post("/api/set/build")

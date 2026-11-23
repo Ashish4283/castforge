@@ -22,7 +22,8 @@ per GPU-second.
 | Costume kit v2 | whole-body styles (suit, formal, work, robe, tunic), cape, metal armour (breastplate, pauldrons, bracers, greaves), 5 hats, 6 ready-made looks | v1 done 2026-11-18 |
 | Costume kit v3 | hood as a shell of its own (`costume.hood`): rings from the shoulders over a domed crown, face open, back draping onto the shoulders, taken off the garment as its own object; ranger and monk looks | v3 done 2026-11-23 |
 | Costume kit v4 | fur with hair strands; cloth simulation on capes and robes (both want GPU time we do not have on 4 GB at render); cleaner armour plate edges; accessories (scarf, bag, glasses) | |
-| Editor 4: art | light, weather, grade, props per scene, previewed in the 3D view; move seats and props by dragging | |
+| Editor 4: art | props are squares in the 3D view and move by dragging (a set object's move is written as an override); the editor's lights follow the scene's lighting mood and weather. Still open: light/weather/grade edited in the 3D view itself | part done 2026-11-23 |
+| Empty sets | a set picture can be emptied of the furniture lifted into 3D (`/api/set/empty`, grows the wall and floor in behind each marked object) or given an empty version made elsewhere; scenes on the set stand their props in it | v1 done 2026-11-23 |
 | Motion library page | app: search CMU, import Mixamo files, preview a clip, pick from/to visually | with canvas |
 | 3D sets for action | free CC0 kits and the city library instead of the 2.5D picture | |
 | Any humanoid character | imported rigged model (bone map like motion.py) + costume and armour props | |

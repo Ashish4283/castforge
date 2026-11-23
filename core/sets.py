@@ -25,11 +25,29 @@ def picture(folder, named=None):
         p = os.path.join(folder, named)
         return p if os.path.isfile(p) else None
     try:
-        names = sorted(n for n in os.listdir(folder)
-                       if n.lower().endswith(IMAGES) and n.lower() != "set_preview.png")
+        names = sorted(n for n in os.listdir(folder) if is_picture_name(n))
     except OSError:
         return None
     return os.path.join(folder, names[0]) if names else None
+
+
+EMPTY = "empty_room.png"
+NOT_PICTURES = ("set_preview.png", EMPTY)
+
+
+def is_picture_name(name):
+    """True when a file in a set folder is the set's own picture, and not something the app made from it
+    (the build preview, or the empty version of the room). One place, so nothing picks up the wrong file."""
+    return bool(name) and name.lower().endswith(IMAGES) and name.lower() not in NOT_PICTURES
+
+
+def empty_picture(folder, blueprint=None):
+    """The set's picture with its objects painted out, when it has one: what a scene should stand its 3D
+    furniture in. A set whose objects were lifted into 3D keeps its original picture too (the objects are
+    still painted on it), so a scene using the empty version does not see each table twice."""
+    named = (blueprint or {}).get("empty_image") or EMPTY
+    path = os.path.join(folder, named)
+    return path if os.path.isfile(path) else None
 
 
 def read_blueprint(folder):

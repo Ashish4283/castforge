@@ -77,3 +77,24 @@ def test_geometry_is_shared_by_every_scene_on_the_set(tmp_path):
     for name in ("set.json", "set.obj"):
         open(os.path.join(sets.geometry_dir(folder), name), "w").write("{}")
     assert not sets.needs_geometry(folder, sets.picture(folder))
+
+
+def test_a_set_can_carry_an_empty_version_of_its_picture(tmp_path):
+    folder = tmp_path / "cabin"
+    folder.mkdir()
+    (folder / "cabin.png").write_bytes(b"x")
+    (folder / "set_blueprint.json").write_text(json.dumps({"props": []}), encoding="utf-8")
+    assert sets.empty_picture(str(folder)) is None             # until one is made
+    (folder / sets.EMPTY).write_bytes(b"x")
+    assert sets.empty_picture(str(folder)) == os.path.join(str(folder), sets.EMPTY)
+    assert sets.picture(str(folder)) == os.path.join(str(folder), "cabin.png")   # the original is still there
+
+
+def test_a_set_can_name_an_empty_version_made_elsewhere(tmp_path):
+    folder = tmp_path / "cabin"
+    folder.mkdir()
+    (folder / "room.png").write_bytes(b"x")
+    (folder / "cleared.png").write_bytes(b"x")
+    blueprint = {"image": "room.png", "empty_image": "cleared.png", "props": []}
+    (folder / "set_blueprint.json").write_text(json.dumps(blueprint), encoding="utf-8")
+    assert sets.empty_picture(str(folder), blueprint) == os.path.join(str(folder), "cleared.png")
