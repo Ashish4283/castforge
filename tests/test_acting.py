@@ -218,3 +218,63 @@ def test_fix_parts_are_plain_names_mapped_to_rig_controls():
     assert acting.FIX_PARTS["head"] == "head" and acting.FIX_PARTS["hips"] == "torso"
     assert acting.FIX_PARTS["upper_arm.L"] == "upper_arm_fk.L"
     assert all("." not in p or p.endswith((".L", ".R")) for p in acting.FIX_PARTS)
+
+
+# --- the thumb and the wrist (measured on movies/santa_is_a_lie/characters/arthur.blend) -------------------
+
+def test_relaxed_thumb_is_unchanged_without_a_shape():
+    # no shape asked for: the thumb rests against the fingers exactly as it always did, and never across
+    for thumb in (0.0, 0.5, 1.0, 1.6):
+        pose = acting.thumb_pose(None, 0.0, thumb)
+        assert pose == {seg: (v * thumb, 0.0) for seg, v in acting.THUMB.items()}
+
+
+def test_a_fist_brings_the_thumb_across_the_palm():
+    # the whole point: the first joint moves, and it swings across the fingers, not just curls
+    for shape in ("fist", "grip"):
+        pose = acting.thumb_pose(shape, 1.0, 1.0)
+        assert pose["01"][0] > 0.2, shape               # the joint nothing used to touch
+        assert pose["01"][1] < -0.4, shape              # across the palm, over the fingers
+        assert pose["02"][0] > 0.6, shape
+
+
+def test_thumbs_up_keeps_the_thumb_out_of_the_fist():
+    pose = acting.thumb_pose("thumbs", 1.0, 1.6)
+    assert pose["01"] == (0.0, 0.0) and pose["02"][0] == 0.0
+
+
+def test_the_thumb_eases_in_with_the_grip():
+    # half way into a fist is half way between resting and closed, so a grip can stop where a prop is
+    rest, shut = acting.thumb_pose(None, 0.0, 1.0), acting.thumb_pose("fist", 1.0, 1.0)
+    half = acting.thumb_pose("fist", 0.5, 1.0)
+    for seg in ("02", "03"):
+        assert min(rest[seg][0], shut[seg][0]) <= half[seg][0] <= max(rest[seg][0], shut[seg][0])
+    assert shut["01"][1] < half["01"][1] < 0.0
+
+
+def test_a_plain_number_is_still_just_the_bend():
+    # gestures asked for a wrist with one number before there was a tilt, and must keep working
+    assert acting.wrist_angles(0.3) == (pytest.approx(0.3), 0.0)
+    assert acting.wrist_angles(None) == (0.0, 0.0)
+    assert acting.wrist_angles(0) == (0.0, 0.0)
+
+
+def test_the_wrist_stops_where_a_human_wrist_stops():
+    # flexion 80, extension 70, radial 20, ulnar 35 degrees: asking for more gets the limit, not the ask
+    assert math.degrees(acting.wrist_angles(3.0)[0]) == pytest.approx(70.0)
+    assert math.degrees(acting.wrist_angles(-3.0)[0]) == pytest.approx(-80.0)
+    assert math.degrees(acting.wrist_angles({"tilt": 3.0})[1]) == pytest.approx(20.0)
+    assert math.degrees(acting.wrist_angles({"tilt": -3.0})[1]) == pytest.approx(-35.0)
+
+
+def test_the_wrist_does_not_take_the_twist():
+    # the forearm carries the roll; a wrist asked to twist pinches the mesh, so the channel is not there
+    assert "turn" not in acting.WRIST_RANGE
+    assert acting.wrist_angles({"bend": 0.2, "turn": 1.0}) == (pytest.approx(0.2), 0.0)
+
+
+def test_a_gesture_fading_in_scales_every_wrist_channel():
+    assert acting.scale_wrist({"bend": 0.4, "tilt": -0.2}, 0.5) == {"bend": 0.2, "tilt": -0.1}
+    assert acting.scale_wrist(0.4, 0.5) == pytest.approx(0.2)
+    assert acting.scale_wrist({"bend": 0.4}, 0.0) is None
+    assert acting.scale_wrist(None, 1.0) is None

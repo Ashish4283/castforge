@@ -242,15 +242,22 @@ class Actor:
                                                       ("R", swing_r, bend_r, raise_r, twist_r, wrist_r)):
             if side not in sides:
                 continue
-            # the wrist: + tips the fingers back and up, as when the palms meet in a clap. Only keyed when
-            # a gesture asks for it (and once more at 0 on the way out), so motion clips keep their own hands.
+            # The wrist bends (fingers back and up, or folded towards the palm) and leans towards the thumb
+            # or the little finger, clamped to what a human wrist reaches. Keyed on hand_fk: a scene poses
+            # the arms in IK (IK_FK = 1), where hand_fk drives the hand AND feeds the arm solve, which is
+            # what gestures like the clap are tuned against. hand_tweak moves the hand just as far but
+            # leaves the arm out of it, which quietly changes every gesture that was measured with it.
+            # Only keyed when a gesture asks (and once more at 0 on the way out), so clips keep their hands.
             if wrist or self.wrist_keyed.get(side):
+                w_bend, w_tilt = acting.wrist_angles(wrist)   # NOT "bend": that is the elbow, below
                 p_h = self.pb.get(f"hand_fk.{side}")
                 if p_h:
+                    sz = 1 if side == "L" else -1      # the thumb side is -Z on the left hand, +Z on the right
                     p_h.rotation_mode = "QUATERNION"
-                    p_h.rotation_quaternion = Matrix.Rotation(wrist, 3, "X").to_quaternion()
+                    p_h.rotation_quaternion = (Matrix.Rotation(w_bend, 3, "X")
+                                               @ Matrix.Rotation(-sz * w_tilt, 3, "Z")).to_quaternion()
                     p_h.keyframe_insert("rotation_quaternion", frame=frame)
-                    self.wrist_keyed[side] = bool(wrist)
+                    self.wrist_keyed[side] = bool(w_bend or w_tilt)
             ua_rest, r_ua, fa_rest, r_fix, d_ua = self.arm_q[side]
             sx = 1 if side == "L" else -1
             delta = Matrix.Rotation(swing, 3, "X") @ Matrix.Rotation(-sx * lift, 3, "Y")
@@ -276,7 +283,6 @@ class Actor:
             curls, thumb = acting.finger_curls(op, shape, grip)
             if cs != 1.0:
                 curls = {f: c * cs for f, c in curls.items()}
-                thumb *= cs
             for finger, curl in curls.items():
                 for seg, w in acting.SEGMENT.items():
                     p = self.pb.get(f"f_{finger}.{seg}.{side}")
@@ -284,11 +290,12 @@ class Actor:
                         p.rotation_mode = "XYZ"
                         p.rotation_euler = (curl * w, 0, 0)
                         p.keyframe_insert("rotation_euler", frame=frame)
-            for seg, v in acting.THUMB.items():
+            sz = 1 if side == "L" else -1          # the thumb swings across the palm the other way, mirrored
+            for seg, (tx, tz) in acting.thumb_pose(shape, grip, thumb).items():
                 p = self.pb.get(f"thumb.{seg}.{side}")
                 if p:
                     p.rotation_mode = "XYZ"
-                    p.rotation_euler = (v * thumb, 0, 0)
+                    p.rotation_euler = (tx * cs, 0, sz * tz * cs)
                     p.keyframe_insert("rotation_euler", frame=frame)
 
     def key_shoulders(self, frame, lift_l=0.0, lift_r=0.0):
@@ -1794,7 +1801,7 @@ for act in cast.values():
                 w, we = (weight, w_elbow) if side in arm_sides else (0.0, 0.0)
                 v[side] = (swing + w * (arm.get("swing", swing) - swing), bend + we * (arm.get("bend", bend) - bend),
                            w * arm.get("raise", 0.0), w * arm.get("twist", 0.0),
-                           w_hand * arm.get("wrist", 0.0) if side in arm_sides else 0.0)
+                           acting.scale_wrist(arm.get("wrist"), w_hand) if side in arm_sides else None)
             walking = f in act.walk_frames
             act.key_arms(f, v["L"][0], v["R"][0], v["L"][1], v["R"][1], v["L"][2], v["R"][2], v["L"][3], v["R"][3],
                          sides=arm_sides if walking else ("L", "R"), wrist_l=v["L"][4], wrist_r=v["R"][4])

@@ -121,6 +121,17 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Motion clips carry no finger movement (the bone map stops at `hand`): a punch keeps whatever the life loop
   keyed, so fighting clips need their fists made here (`acting.clip_hands`, `Actor.clip_hands`).
 - A bone-parented child sits at the bone's TAIL with +Y along the bone, so the palm is about half a hand back.
+- A scene poses the arms in IK (`IK_FK` = 1 on the shot rig), NOT in FK as a character .blend sits (0). So
+  `hand_fk` drives the hand AND feeds the arm solve, and the wrist belongs there: `hand_tweak` moves the hand
+  just as far but leaves the arm out of it, which silently changes every gesture tuned with the wrist on.
+  Measure hand rigs on a scene's `shot.blend`, never on the character file: they are in different modes.
+- The wrist is two axes, not three: bend about hand_fk's local X (the same sign on both hands) and deviation
+  about its local Z (mirrored: the thumb side is -Z on the left, +Z on the right). The twist belongs to the
+  forearm, which spreads it over its own twist bones; forcing it at the wrist pinches the mesh.
+- `key_arms` already has a local called `bend` and it is the ELBOW. Anything else bend-ish needs its own name
+  (`w_bend`): shadowing it moves the forearm instead, which no test catches and only a render shows.
+- A fist needs `thumb.01` (`acting.THUMB_CLOSE`): curl alone leaves the thumb standing beside the hand. The
+  swing across the palm mirrors between the hands, the curl does not.
 - A hood is not the head's surface. Copying head faces or banding the collar reads as a flat band every
   time; build a shell of rings (`costume.hood_rings`), domed over the crown, open at the face, and take it
   off the garment as its own object like the cape. The head's deform bone is `DEF-spine.006`, not `DEF-head`.

@@ -174,6 +174,19 @@ class Layer:
 FINGER_CURL = {"index": 0.22, "middle": 0.30, "ring": 0.38, "pinky": 0.46}
 SEGMENT = {"01": 0.8, "02": 1.0, "03": 0.7}
 THUMB = {"02": 0.25, "03": 0.20}
+# The thumb has to close ACROSS the fingers, and that needs its first joint, which nothing used to touch.
+# Measured on the rig (arthur, left hand, fingers already in a fist): thumb.01 at 0.30 curl and -0.50 across
+# the palm, with 0.80 at thumb.02, puts the thumb tip 0.5 cm off the index and middle middle-phalanges - a
+# hand actually closed round something. Without the across-the-palm swing the thumb stands beside the fist.
+# Each entry is {segment: (curl about X, across the palm about Z)}; the across swing mirrors between the
+# hands (the thumb side is -Z on the left and +Z on the right), the curl does not.
+THUMB_CLOSE = {
+    "fist":   {"01": (0.30, -0.50), "02": (0.80, 0.0), "03": (0.20, 0.0)},
+    "grip":   {"01": (0.26, -0.46), "02": (0.70, 0.0), "03": (0.18, 0.0)},
+    "point":  {"01": (0.18, -0.30), "02": (0.45, 0.0), "03": (0.15, 0.0)},
+    "flat":   {"01": (0.00, -0.22), "02": (0.10, 0.0), "03": (0.05, 0.0)},
+    "thumbs": {"01": (0.00, 0.00), "02": (0.00, 0.0), "03": (0.00, 0.0)},
+}
 HAND_SHAPES = {     # per-finger curl (radians at the middle segment) and thumb factor
     "point": ({"index": 0.02, "middle": 1.35, "ring": 1.40, "pinky": 1.45}, 0.6),
     "fist": ({"index": 1.35, "middle": 1.40, "ring": 1.45, "pinky": 1.50}, 1.6),
@@ -198,6 +211,56 @@ def finger_curls(open_=0.0, shape=None, grip=0.0):
         curls = {f: c * (1 - grip) + target[f] * grip for f, c in curls.items()}
         thumb = thumb * (1 - grip) + t_thumb * grip
     return curls, thumb
+
+
+def thumb_pose(shape=None, grip=0.0, thumb=1.0):
+    """{segment: (curl, across the palm)} in radians for one thumb.
+
+    With no shape asked for this is the relaxed thumb resting against the fingers, scaled by `thumb` the way
+    it always was; towards a named shape by `grip` (0..1) it becomes the measured closed pose, so a fist and
+    a grip actually bring the thumb over the fingers instead of leaving it alongside."""
+    rest = {seg: (v * thumb, 0.0) for seg, v in THUMB.items()}
+    if shape not in THUMB_CLOSE or grip <= 0:
+        return rest
+    g = min(max(float(grip), 0.0), 1.0)
+    out = {}
+    for seg in ("01", "02", "03"):
+        rx, rz = rest.get(seg, (0.0, 0.0))
+        cx, cz = THUMB_CLOSE[shape][seg]
+        out[seg] = (rx * (1 - g) + cx * g, rz * (1 - g) + cz * g)
+    return out
+
+
+# --- the wrist ---------------------------------------------------------------------------------------------
+# Measured on the rig: the hand bends about hand_tweak's local X (the same sign on both hands) and deviates
+# about its local Z (mirrored). The twist is NOT the wrist's to give: the forearm carries it across its own
+# twist bones, and forcing it at the wrist pinches the mesh there. Degrees a human wrist actually reaches.
+WRIST_RANGE = {"bend": (-80.0, 70.0), "tilt": (-35.0, 20.0)}
+
+
+def wrist_angles(value):
+    """(bend, tilt) in radians for a wrist, clamped to what a human wrist does.
+
+    bend + tips the fingers back and up (extension, to 70 degrees), - folds them towards the palm (flexion,
+    80). tilt + leans the hand towards the thumb (radial, 20), - towards the little finger (ulnar, 35).
+    A plain number is the bend on its own, which is how gestures asked for a wrist before there was a tilt."""
+    if not value:
+        return (0.0, 0.0)
+    got = value if isinstance(value, dict) else {"bend": value}
+    out = []
+    for key in ("bend", "tilt"):
+        low, high = WRIST_RANGE[key]
+        out.append(math.radians(min(max(math.degrees(float(got.get(key, 0.0))), low), high)))
+    return tuple(out)
+
+
+def scale_wrist(value, weight):
+    """A gesture's wrist ask scaled by how far the gesture has come in; None when there is nothing to key."""
+    if not value or not weight:
+        return None
+    if isinstance(value, dict):
+        return {k: float(v) * weight for k, v in value.items()}
+    return float(value) * weight
 
 
 # --- gestures ----------------------------------------------------------------------------------------------
