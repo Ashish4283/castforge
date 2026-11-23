@@ -137,7 +137,8 @@ export function CharacterDesigner({name}: {name: string}) {
           </div>
           {stage === "live" && schema.slider_targets && (
             <Suspense fallback={<div className="live-preview"><div className="live-stage"><div className="live-cover"><span className="spinner" /></div></div></div>}>
-              <LivePreview design={design} schema={schema} focus={focus} />
+              <LivePreview design={design} schema={schema} focus={focus}
+                           onParts={v => change("parts", v as unknown as Json)} />
             </Suspense>
           )}
           <div className="stage" style={stage === "live" ? {display: "none"} : undefined}>

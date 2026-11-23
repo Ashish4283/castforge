@@ -268,3 +268,39 @@ def test_a_tilted_hat_is_not_stretched_off_the_forehead():
 def test_a_hat_left_at_its_own_size_is_untouched():
     co, faces = tube(rings=3, radius=0.1, step=0.05, z0=1.8)
     assert kit.grow_hat(co, 1.0, kit.rim_of(co, faces, head_at(1.71))) == [tuple(p) for p in co]
+
+
+def test_a_part_is_measured_along_the_surface_not_through_the_air():
+    """Two sleeves passing close to each other: clicking one must not select the other."""
+    left, lf = tube(rings=3, n=8, radius=0.04, step=0.05, z0=1.2)
+    right = [(x + 0.085, y, z) for x, y, z in left]              # 0.5 cm apart, never joined
+    co = list(left) + right
+    faces = list(lf) + [tuple(v + len(left) for v in f) for f in lf]
+    part = kit.part_at(co, faces, co[0], 0.30)                   # a generous radius, from the left sleeve
+    assert part and all(v < len(left) for v in part)             # nothing from the right one
+
+
+def test_a_resized_part_stays_joined_where_it_meets_the_rest():
+    co, faces = tube(rings=6, n=8, radius=0.1, step=0.05, z0=1.8)
+    adj = kit.neighbours(faces)
+    part = kit.band(co, kit.edges_of(faces), [v for v in range(len(co)) if co[v][2] == 1.8], 0.07)
+    edge = kit.border_of(part, adj)
+    big = kit.grow_part(co, part, 1.6, adj=adj)
+    for v in range(len(co)):
+        if v not in part:
+            assert big[v] == pytest.approx(co[v], abs=1e-9)      # the rest of the mesh is untouched
+    for v in edge:
+        assert big[v] == pytest.approx(co[v], abs=1e-9)          # and the seam does not open
+    deep = [v for v in part if co[v][2] == 1.8]                  # the far end of the part
+    c = kit.centroid(co, edge)
+    assert abs(big[deep[0]][0] - c[0]) > abs(co[deep[0]][0] - c[0]) * 1.4
+
+
+def test_shrinking_a_part_is_the_same_rule_backwards():
+    co, faces = tube(rings=6, n=8, radius=0.1, step=0.05, z0=1.8)
+    adj = kit.neighbours(faces)
+    part = kit.band(co, kit.edges_of(faces), [v for v in range(len(co)) if co[v][2] == 1.8], 0.07)
+    small = kit.grow_part(co, part, 0.6, adj=adj)
+    c = kit.centroid(co, kit.border_of(part, adj))
+    deep = [v for v in part if co[v][2] == 1.8][0]
+    assert abs(small[deep][0] - c[0]) < abs(co[deep][0] - c[0])

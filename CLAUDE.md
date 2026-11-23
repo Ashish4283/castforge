@@ -66,6 +66,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | Overview page (next step, progress) | `server.py` `/api/movie/progress`; `web/src/pages/Studio.tsx` |
 | 3D scene editor (view, timeline, drag spots) | `web/src/pages/episodes/viewer.ts` (three.js) + `Editor3D.tsx`; export `scene_kit.py` `if args.preview3d`; job `--preview3d` |
 | the studio's steps, look pickers, thumbnails | steps `web/src/pages/characters/steps.ts`; tiles `LookPicker.tsx`; pictures `blender/preview_thumbs.py` -> `library/preview_kits/thumbs/`; routes `/api/character/looks` (what to offer) and `/api/character/thumbs` (take the missing ones) |
+| picking a part of a mesh and resizing it | `costume.part_at`/`grow_part`/`neighbours` (pure, tested) mirrored in `web/src/pages/characters/parts.ts`; design key `parts`; picked by `bodyview.setParts`/`choose`, applied by `build_character.resize_parts` |
 | the costume in the live view (trim, belt, buckle, gloves) | `costume.trim_bands`/`boot_bands`/`beyond` (pure, tested); the bands travel in `preview_wear.py` (`regions`), the hands and joints in `preview_kit.py`; drawn by `bodyview.setCostume` |
 | what the live view wears (hair, beard, clothes) | export `blender/preview_wear.py` -> `library/preview_kits/worn/<folder>-<asset>/`; the wardrobe itself `appearance.wearables` (pure, tested); route `/api/character/wear`; drawing `bodyview.setWearing` |
 | the designer's live body (morphs as the sliders move) | export `blender/preview_kit.py` -> `library/preview_kits/<sex>-<age>-<build>-<height>/kit.json+bin`; what is needed and whether it is there `core/preview_kit.py` (pure, tested, `VERSION`); route `/api/character/preview-kit`; drawing `web/src/pages/characters/bodyview.ts` + `LivePreview.tsx` |
@@ -219,6 +220,14 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   and nothing is wrong with the recolouring when that happens.
 - `bpy_prop_collection` takes no slice STEP: `human.data.vertices[::7]` raises, and only at build time.
   Use `enumerate` with `i % 7`.
+
+- A resized part is remembered as the POINT that was clicked plus a reach and a scale, never as vertex
+  numbers: the build's mesh is subdivided one level more than the live view's, so a vertex number means
+  something different there. The body's parts are applied BEFORE anything is fitted to it (so clothes
+  follow), the worn ones after each garment is on - the same order the live view works in.
+- `liftOffSurface` only works on a LIT material: `objectNormal` is declared by the normal chunk, which a
+  MeshBasicMaterial leaves out, and the shader fails to compile. Unlit overlays (the part highlight) use
+  `polygonOffset` instead.
 
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).

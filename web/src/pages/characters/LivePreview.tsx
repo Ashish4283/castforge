@@ -1,11 +1,11 @@
 // The live body beside the sliders: it changes as you drag, so nothing has to be agreed to unseen.
 // It shows the SHAPE only - hair, beard, clothes and skin come from a build - and says so.
 import {useEffect, useRef, useState} from "react";
-import {Loader2, Maximize2, Move3d, RefreshCw} from "lucide-react";
+import {Check, Loader2, Maximize2, Move3d, RefreshCw, Scaling, X} from "lucide-react";
 import * as THREE from "three";
 import {api, Json, post, Schema} from "../../api";
 import {Button, Segmented} from "../../components/ui";
-import {BodyView, CostumeLook, Kit, RING_SPIN, RING_TIP, Worn, WornSpec} from "./bodyview";
+import {BodyView, CostumeLook, Kit, PartSpec, RING_SPIN, RING_TIP, Worn, WornSpec} from "./bodyview";
 
 const get = (d: Json, key: string) => key.split(".").reduce((o, k) => (o && typeof o === "object" ? o[k] : undefined), d);
 
@@ -33,13 +33,22 @@ function tintOf(design: Json, tint: string | null): string | undefined {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : undefined;
 }
 
-export function LivePreview({design, schema, focus}: {design: Json; schema: Schema; focus: "whole" | "face" | "body"}) {
+const partName = (on: string) => ({body: "body", hat: "hat", top: "top", bottom: "trousers",
+                                   outfit: "outfit", shoes: "shoes", hair: "hair", beard: "beard"}[on] || on);
+
+export function LivePreview({design, schema, focus, onParts}: {
+  design: Json; schema: Schema; focus: "whole" | "face" | "body";
+  onParts?: (parts: PartSpec[]) => void;
+}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const view = useRef<BodyView | null>(null);
   const [state, setState] = useState<"off" | "making" | "ready" | "failed">("off");
   const [note, setNote] = useState("");
   const [rings, setRings] = useState(true);
   const [dressing, setDressing] = useState(false);
+  const [picking, setPicking] = useState(false);          // a click chooses a part instead of turning
+  const [draft, setDraft] = useState<PartSpec | null>(null);
+  const saved: PartSpec[] = Array.isArray(get(design, "parts")) ? (get(design, "parts") as PartSpec[]) : [];
   const wornRef = useRef<{spec: WornSpec; bin: ArrayBuffer; texture: THREE.Texture | null}[]>([]);
   // only these change WHAT is worn; the sliders and the colours never do, so they never refetch
   const outfitKey = JSON.stringify([get(design, "gender"), get(design, "hair.style"), get(design, "hair.length"),
@@ -133,6 +142,22 @@ export function LivePreview({design, schema, focus}: {design: Json; schema: Sche
   };
   useEffect(() => { paint(); }, [colourKey]);   // eslint-disable-line react-hooks/exhaustive-deps
 
+  // what is being resized right now: everything already kept, plus the one being tried
+  useEffect(() => {
+    view.current?.setParts(draft ? [...saved, draft] : saved);
+    if (draft) view.current?.choose(draft);
+  }, [JSON.stringify(saved), JSON.stringify(draft)]);     // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!view.current) return;
+    view.current.picking = picking;
+    view.current.onPick = spec => { setDraft(spec); setPicking(false); };
+    if (!picking && !draft) view.current.choose(null);
+  }, [picking, draft]);
+
+  const keep = () => { if (draft) onParts?.([...saved, draft]); setDraft(null); };
+  const drop = (i: number) => onParts?.(saved.filter((_, k) => k !== i));
+
   useEffect(() => { view.current?.frame(focus); }, [focus]);
   useEffect(() => { view.current?.showRings(rings); }, [rings]);
 
@@ -164,12 +189,50 @@ export function LivePreview({design, schema, focus}: {design: Json; schema: Sche
           </div>
         )}
       </div>
+      {(draft || saved.length > 0) && (
+        <div className="part-bar">
+          {draft ? (
+            <>
+              <b>{partName(draft.on)}</b>
+              <label className="part-dial">
+                <span>How much of it</span>
+                <input type="range" min={0.02} max={0.3} step={0.01} value={draft.radius}
+                       onChange={e => setDraft({...draft, radius: Number(e.target.value)})} />
+                <i>{Math.round(draft.radius * 100)} cm</i>
+              </label>
+              <label className="part-dial">
+                <span>Size</span>
+                <input type="range" min={0.5} max={2} step={0.05} value={draft.scale}
+                       onChange={e => setDraft({...draft, scale: Number(e.target.value)})} />
+                <i>x{draft.scale.toFixed(2)}</i>
+              </label>
+              <Button variant="primary" icon={<Check size={14} />} onClick={keep}>Keep</Button>
+              <Button variant="ghost" icon={<X size={14} />} onClick={() => setDraft(null)}>Cancel</Button>
+            </>
+          ) : (
+            <>
+              <span className="muted small">Resized:</span>
+              {saved.map((part, i) => (
+                <button key={i} className="part-chip" onClick={() => drop(i)}
+                        title="Put this part back to its own size">
+                  {partName(part.on)} x{part.scale.toFixed(2)} <X size={11} />
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
       <div className="live-bar">
         <Segmented value="" onChange={v => view.current?.turnTo(v as "front")}
                    options={[["front", "Front"], ["three_quarter", "3/4"], ["side", "Side"], ["back", "Back"]]} />
         <span className="spacer" />
         <Button variant="ghost" icon={<Move3d size={14} />} onClick={() => setRings(r => !r)}
                 title="Show or hide the rings">{rings ? "Rings on" : "Rings off"}</Button>
+        <Button variant={picking ? "primary" : "ghost"} icon={<Scaling size={14} />}
+                onClick={() => { setPicking(p_ => !p_); setDraft(null); }}
+                title="Click a part of the character and make it bigger or smaller">
+          {picking ? "Click a part…" : "Resize a part"}
+        </Button>
         <Button variant="ghost" icon={<Maximize2 size={14} />} onClick={() => view.current?.frame("whole")}>Fit</Button>
       </div>
       <p className="live-note muted small">

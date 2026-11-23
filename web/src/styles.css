@@ -498,3 +498,20 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
 .steps-rail { position: relative; mask-image: linear-gradient(90deg, #000 0, #000 92%, transparent 100%); }
 .steps-rail::-webkit-scrollbar { height: 5px; }
 .steps-rail::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+
+/* --- picking a part of the character and resizing it ----------------------------------------------- */
+.part-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 10px; margin-top: 8px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2);
+}
+.part-bar > b { text-transform: capitalize; }
+.part-dial { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.part-dial input[type="range"] { width: 120px; }
+.part-dial i { font-style: normal; color: var(--text); min-width: 46px; text-align: right; }
+.part-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 12px;
+}
+.part-chip:hover { border-color: var(--accent-2); color: var(--accent-2); }

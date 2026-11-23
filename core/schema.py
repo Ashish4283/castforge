@@ -293,6 +293,9 @@ CHARACTER = {
     "hair.color": p("color", "hair colour (a beard takes it too)"),
     "beard": p("enum", "beard", default="none", values=BEARDS),
     "hat": p("enum", "hat (hides the hair)", default="none", values=HATS),
+    "parts": p("parts", "parts of the body or of something worn, made bigger or smaller: a list of "
+                        "{on, at: [x, y, z], radius, scale}. The studio writes these when you click a "
+                        "part and size it; leave the list out unless you mean to resize something"),
     "hat_size": p("number", "how big the hat is, 0.7 small to 1.6 oversized (1 = as the asset comes)",
                   default=1.0),
     "outfit.style": p("enum", "whole-body outfit (a uniform, suit or robe) instead of a top and trousers",
@@ -388,6 +391,16 @@ def check_design(design):
         elif spec["type"] == "slider" and not (isinstance(v, (int, float)) and not isinstance(v, bool)
                                                and appearance.RANGE[0] <= v <= appearance.RANGE[1]):
             problems.append(f"{key}: {v!r} must be a number from {appearance.RANGE[0]} to {appearance.RANGE[1]}")
+        elif spec["type"] == "parts":
+            for item in (v if isinstance(v, list) else [v]):
+                if not isinstance(item, dict):
+                    problems.append("parts: each one must be an object")
+                elif not (isinstance(item.get("at"), (list, tuple)) and len(item["at"]) == 3):
+                    problems.append("parts: each one needs 'at': [x, y, z]")
+                elif not all(isinstance(item.get(k), (int, float)) for k in ("radius", "scale")):
+                    problems.append("parts: each one needs a number 'radius' and 'scale'")
+                elif not isinstance(item.get("on"), str):
+                    problems.append("parts: each one needs 'on' (body, hat, top, bottom, outfit, shoes)")
         elif spec["type"] == "color" and not (isinstance(v, str) and len(v.lstrip("#")) == 6
                                               and all(c in "0123456789abcdefABCDEF" for c in v.lstrip("#"))):
             problems.append(f"{key}: {v!r} must be a colour like #a3161a")

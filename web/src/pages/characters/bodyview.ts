@@ -7,12 +7,14 @@
 // Turning it: drag anywhere to turn the body, or grab a ring - the green one round its feet spins it, the
 // red one standing up beside it tips it. The wheel zooms. Nothing here changes the design; it only looks.
 import * as THREE from "three";
+import {adjacencyOf, facesInside, growPart, nearestVertex, spreadFrom} from "./parts";
 
 export interface Kit {
   version: number;
   vertices: number; triangles: number; height: number;
   positions: {at: number; count: number};
   indices: {at: number; count: number};
+  floor?: number;
   shapes: Record<string, {at: number; count: number}>;
   regions?: Record<string, {at: number; count: number}>;   // body parts a costume covers (the hands)
   joints?: Record<string, [number, number, number]>;       // MakeHuman's joint markers, in this space
@@ -31,6 +33,18 @@ export interface WornSpec {                  // one thing being worn, as the ser
   regions?: {at: number; count: number};                   // one byte a vertex: which trim bands it is on
   band_bits?: Record<string, number>;
   rim?: {at: number; count: number};                       // a hat's opening, in loop order
+}
+
+/** A part of something worn (or of the body) that has been made bigger or smaller.
+ *
+ *  `at` is the point that was clicked, kept in the BUILD's space (z up, metres) so the build can find the
+ *  same place on its own mesh - which is a different mesh, subdivided once more than this one, so a
+ *  vertex number would mean nothing there. `radius` is how far the part reaches along the surface. */
+export interface PartSpec {
+  on: string;                        // the role it belongs to: "body", "hat", "top", "shoes"...
+  at: [number, number, number];
+  radius: number;
+  scale: number;
 }
 
 /** The costume, as the live view needs it: a colour for each piece, or nothing to leave the piece off. */
@@ -75,6 +89,8 @@ function tintLikeTheBuild(material: THREE.MeshStandardMaterial, median: number) 
  *  faces pushed out along their normals and given thickness. Here the same faces are drawn again, pushed
  *  out in the vertex shader - no new geometry, and it follows the body because it IS the body's vertices. */
 function liftOffSurface(material: THREE.Material, metres: number) {
+  // only for materials that are lit: `objectNormal` is declared by the normal chunk, which a
+  // MeshBasicMaterial does not include. Those get a polygon offset instead.
   material.onBeforeCompile = shader => {
     shader.uniforms.cfLift = {value: metres};
     shader.vertexShader = shader.vertexShader
@@ -140,12 +156,19 @@ export class BodyView {
   private rings = new THREE.Group();
   private wearing: {worn: Worn; mesh: THREE.Mesh; idx: Uint32Array; weight: Float32Array;
                     off: Float32Array; pos: Float32Array; hides: Uint32Array; scale: Float32Array;
-                    rim: Uint32Array}[] = [];
+                    rim: Uint32Array; adj: Uint32Array[] | null}[] = [];
   private tris: Uint32Array | null = null;   // the body's triangles, which garments are pinned to
   private hands: Uint32Array = new Uint32Array(0);     // the skin a glove covers
   private joints: Record<string, [number, number, number]> = {};
   private costume: CostumeLook = {};
   private hatSize = 1;                                 // these assets come in one size, and it is small
+  private parts: PartSpec[] = [];                      // parts made bigger or smaller, from the design
+  private chosen: {spec: PartSpec; verts: Set<number>} | null = null;
+  private glow: THREE.Mesh | null = null;              // what the chosen part looks like while it is chosen
+  private bodyAdj: Uint32Array[] | null = null;
+  picking = false;                                     // a click picks a part instead of turning the body
+  onPick: ((spec: PartSpec) => void) | null = null;
+  floor = 0;
   private pieces: THREE.Mesh[] = [];                   // the costume drawn over the clothes
   private spinRing!: THREE.Mesh;
   private tipRing!: THREE.Mesh;
@@ -214,6 +237,8 @@ export class BodyView {
     this.hands = kit.regions?.hands?.count
       ? new Uint32Array(bin, kit.regions.hands.at, kit.regions.hands.count) : new Uint32Array(0);
     this.joints = kit.joints || {};
+    this.floor = (kit as {floor?: number}).floor || 0;
+    this.bodyAdj = null;
     this.base = positions;
     this.work = new Float32Array(positions);          // a copy: the base is never written to
     this.height = kit.height || 1.8;
@@ -254,10 +279,15 @@ export class BodyView {
         this.work[v + 2] += d[k + 2] * weight;
       }
     }
+    if (this.parts.some(p_ => p_.on === "body")) {
+      const skin = this.surface("body");
+      if (skin) this.resizeParts("body", skin.pos, skin.adj);
+    }
     const attr = this.mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
     attr.needsUpdate = true;
     this.mesh.geometry.computeVertexNormals();
     this.dress();
+    this.showChosen();
   }
 
   /** Put everything worn back on the body as it stands now: the browser's half of preview_mesh.py.
@@ -285,6 +315,13 @@ export class BodyView {
         }
       }
       if (w.worn.spec.role === "hat") growHat(pos, this.hatSize, w.rim);
+      if (this.parts.some(p_ => p_.on === w.worn.spec.role)) {
+        const faces = w.mesh.geometry.getIndex();
+        if (faces) {
+          w.adj ||= adjacencyOf(faces.array as ArrayLike<number>, pos.length / 3);
+          this.resizeParts(w.worn.spec.role, pos, w.adj);
+        }
+      }
       const attr = w.mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
       attr.needsUpdate = true;
       w.mesh.geometry.computeVertexNormals();
@@ -360,7 +397,8 @@ export class BodyView {
       this.scene.add(mesh);
       // a hat's opening, in loop order: what holds it on, and what "above" is measured from
       const rim = spec.rim?.count ? new Uint32Array(bin, spec.rim.at, spec.rim.count) : new Uint32Array(0);
-      this.wearing.push({worn, mesh, idx, weight, off, pos, hides, scale: new Float32Array(3), rim});
+      this.wearing.push({worn, mesh, idx, weight, off, pos, hides, scale: new Float32Array(3), rim,
+                         adj: null});
     }
     this.dress();
     this.hideCovered();
@@ -479,6 +517,118 @@ export class BodyView {
     if (buckleColour) this.addPiece(w.mesh.geometry, front, buckleColour, 0.024, 0.25, 1.0);
   }
 
+  // --- parts you can pick and resize ------------------------------------------------------------------
+  // A part is whatever lies within so many centimetres of where you clicked, measured along the surface
+  // (parts.ts, mirroring costume.part_at). Resizing it grows it away from its own border, so it stays
+  // joined on and nothing outside it moves - the rule the hat taught.
+
+  /** Where a worn thing of this role lives, or the body itself. */
+  private surface(role: string) {
+    if (role === "body") {
+      if (!this.work || !this.tris || !this.mesh) return null;
+      this.bodyAdj ||= adjacencyOf(this.tris, this.work.length / 3);
+      return {pos: this.work, adj: this.bodyAdj, indices: this.tris as ArrayLike<number>, mesh: this.mesh};
+    }
+    const w = this.wearing.find(x => x.worn.spec.role === role);
+    if (!w) return null;
+    const faces = w.mesh.geometry.getIndex();
+    if (!faces) return null;
+    const indices = faces.array as ArrayLike<number>;
+    w.adj ||= adjacencyOf(indices, w.pos.length / 3);
+    return {pos: w.pos, adj: w.adj, indices, mesh: w.mesh};
+  }
+
+  /** The build works in z-up metres off the floor; this view works in y-up with the feet at zero. */
+  private toBuild(p: THREE.Vector3): [number, number, number] {
+    return [p.x, -p.z, p.y + this.floor];
+  }
+  private fromBuild(at: [number, number, number]): [number, number, number] {
+    return [at[0], at[2] - this.floor, -at[1]];
+  }
+
+  /** The parts the design asks for, each worked out again on the mesh as it stands now. */
+  setParts(parts: PartSpec[]) {
+    this.parts = parts || [];
+    this.chosen = null;
+    this.dress();
+    this.buildCostume();
+    this.showChosen();
+  }
+
+  /** Work out which vertices a part covers, on whatever it belongs to. */
+  private vertsOf(spec: PartSpec): Set<number> {
+    const face = this.surface(spec.on);
+    if (!face) return new Set();
+    const seed = nearestVertex(face.pos, this.fromBuild(spec.at));
+    return seed < 0 ? new Set() : spreadFrom(face.pos, face.adj, seed, spec.radius);
+  }
+
+  /** Apply every resized part to a surface that has just been rebuilt. */
+  private resizeParts(role: string, pos: Float32Array, adj: Uint32Array[]) {
+    for (const spec of this.parts) {
+      if (spec.on !== role || Math.abs(spec.scale - 1) < 1e-6) continue;
+      const seed = nearestVertex(pos, this.fromBuild(spec.at));
+      if (seed < 0) continue;
+      growPart(pos, spreadFrom(pos, adj, seed, spec.radius), spec.scale, adj);
+    }
+  }
+
+  /** Click on the body: which part did that land on? Hands the answer to whoever asked for it. */
+  private pickAt(x: number, y: number, radius: number) {
+    const ray = new THREE.Raycaster();
+    const box = this.canvas.getBoundingClientRect();
+    ray.setFromCamera(new THREE.Vector2(((x - box.left) / box.width) * 2 - 1,
+                                        -((y - box.top) / box.height) * 2 + 1), this.camera);
+    const targets = [...this.wearing.map(w => w.mesh), ...(this.mesh ? [this.mesh] : [])];
+    const hit = ray.intersectObjects(targets, false)[0];
+    if (!hit) return null;
+    const role = hit.object === this.mesh ? "body"
+      : this.wearing.find(w => w.mesh === hit.object)?.worn.spec.role || "body";
+    const spec: PartSpec = {on: role, at: this.toBuild(hit.point), radius, scale: 1};
+    this.choose(spec);
+    return spec;
+  }
+
+  /** Show a part as chosen: its own triangles, lit up over whatever they belong to. */
+  choose(spec: PartSpec | null) {
+    if (this.glow) {
+      this.scene.remove(this.glow);
+      this.glow.geometry.dispose();
+      (this.glow.material as THREE.Material).dispose();
+      this.glow = null;
+    }
+    this.chosen = spec ? {spec, verts: this.vertsOf(spec)} : null;
+    this.showChosen();
+  }
+
+  private showChosen() {
+    if (this.glow) {
+      this.scene.remove(this.glow);
+      this.glow.geometry.dispose();
+      (this.glow.material as THREE.Material).dispose();
+      this.glow = null;
+    }
+    if (!this.chosen || !this.chosen.verts.size) return;
+    const face = this.surface(this.chosen.spec.on);
+    if (!face) return;
+    const faces = facesInside(face.indices, this.chosen.verts);
+    if (!faces.length) return;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", face.mesh.geometry.getAttribute("position"));
+    const normal = face.mesh.geometry.getAttribute("normal");
+    if (normal) g.setAttribute("normal", normal);
+    g.setIndex(new THREE.BufferAttribute(new Uint32Array(faces), 1));
+    // a plain material has no normals to push along (`objectNormal` only exists where there is lighting),
+    // so the highlight is lifted off the surface with a depth offset instead of in the shader
+    const mat = new THREE.MeshBasicMaterial({color: 0x7cc7ff, transparent: true, opacity: 0.45,
+                                             depthWrite: false, side: THREE.DoubleSide,
+                                             polygonOffset: true, polygonOffsetFactor: -4,
+                                             polygonOffsetUnits: -4});
+    this.glow = new THREE.Mesh(g, mat);
+    this.glow.renderOrder = 3;
+    this.scene.add(this.glow);
+  }
+
   /** Look at the whole person, or close in on what is being edited. */
   frame(what: "whole" | "face" | "body") {
     const h = this.height;
@@ -519,6 +669,11 @@ export class BodyView {
 
   private bind() {
     this.canvas.addEventListener("pointerdown", e => {
+      if (this.picking) {                         // choosing a part to resize: a click picks, not turns
+        const got = this.pickAt(e.clientX, e.clientY, 0.08);
+        if (got && this.onPick) this.onPick(got);
+        return;
+      }
       this.grab = this.pick(e);
       this.last = {x: e.clientX, y: e.clientY};
       this.canvas.setPointerCapture(e.pointerId);

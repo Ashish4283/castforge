@@ -272,3 +272,16 @@ def test_the_gemini_character_prompt_teaches_every_design_key():
     prompt = (Path(__file__).parent.parent / "docs" / "GEMINI_CHARACTER_PROMPT.md").read_text(encoding="utf-8")
     for key in schema.CHARACTER:
         assert key.split(".")[-1] in prompt, key       # a new look (a hood, a cape) must be taught here too
+
+
+def test_a_resized_part_must_say_where_and_how_much():
+    good = dict(SANTA := {"gender": "male", "age": 60, "height_cm": 175})
+    good["parts"] = [{"on": "hat", "at": [0.0, 0.1, 1.7], "radius": 0.08, "scale": 1.3}]
+    assert schema.check_design(good) == []
+    for broken, says in (
+        ({"on": "hat", "radius": 0.08, "scale": 1.3}, "at"),
+        ({"on": "hat", "at": [0, 0, 1.7], "scale": 1.3}, "radius"),
+        ({"at": [0, 0, 1.7], "radius": 0.08, "scale": 1.3}, "on"),
+    ):
+        bad = dict(SANTA, parts=[broken])
+        assert any("parts" in m and says in m for m in schema.check_design(bad)), broken

@@ -21,6 +21,7 @@ no explanation. Format:
   "eyebrows": "style_1" ... "style_12",
   "beard": "none" | "scruffy" | "full" | "long" | "faun" | "moustache" | "santa",
   "hat": "none" | "santa" | "newsboy" | "fedora" | "cloche" | "flat_cap",
+  // "parts" is left out: the studio writes it when someone clicks a part and resizes it by hand.
   "hat_size": 1.0,                      // 0.7 small, 1 as the asset comes, 1.6 oversized.
                                         // The assets are cut small: a Santa cap wants about 1.35.
   "eyes": "brown" | "brownlight" | "green" | "grey" | "blue" | "bluegreen" | "deepblue" | "lightblue" | "ice",

@@ -474,6 +474,39 @@ HumanService.set_character_skin(pool[skin_name]["mhmat"], human, skin_type="ENHA
 log("skin", skin_name, pool[skin_name]["tone"], "photo", skin_tone)
 
 # --- body parts ---------------------------------------------------------------------------------
+PARTS = [p_ for p_ in ((DESIGN or {}).get("parts") or []) if isinstance(p_, dict)]
+
+
+def resize_parts(obj, role):
+    """Apply the design's resized parts to one object: what someone shaped in the studio by hand.
+
+    A part is remembered as the point that was clicked, how far it reaches along the surface and how much
+    bigger it should be - never as vertex numbers, because this mesh is not the one the studio drew (it is
+    subdivided once more), so only a point in space means the same thing in both."""
+    mine = [p_ for p_ in PARTS if p_.get("on") == role and abs(float(p_.get("scale", 1)) - 1) > 1e-6]
+    if not obj or not mine:
+        return
+    sys.path.insert(0, HERE)
+    import costume as _kit
+    co = [tuple(v.co) for v in obj.data.vertices]
+    faces = [tuple(f.vertices) for f in obj.data.polygons]
+    adj = _kit.neighbours(faces)
+    for spec in mine:
+        at = tuple(float(x) for x in spec["at"])
+        part = _kit.part_at(co, faces, at, float(spec.get("radius", 0.08)))
+        if not part:
+            log(f"WARNING a resized {role} part at {at} found nothing")
+            continue
+        co = _kit.grow_part(co, part, float(spec["scale"]), adj=adj)
+        log(f"{role} part x{float(spec['scale']):.2f} over {len(part)} vertices")
+    obj.data.vertices.foreach_set("co", [c for p_ in co for c in p_])
+    obj.data.update()
+
+
+# Parts resized by hand in the studio. The BODY is resized before anything is fitted to it, so the
+# clothes follow it - which is the order the live view works in too.
+resize_parts(human, "body")
+
 eye_alt = None
 iris = (FACE or {}).get("iris")
 if DESIGN and DESIGN.get("eyes") in index.get("eyes", {}):
@@ -599,6 +632,11 @@ else:
     worn = [top_name, bottom_name]
 shoes_name = "shoes03" if COSTUME.get("boots") else "shoes04"     # shoes03: black boots
 shoes_obj = cloth(shoes_name)
+
+# and the parts of what is worn, once each garment is on: the same shaping the studio showed
+for _obj, _role in ((top_obj, "top"), (bottom_obj, "bottom"), (dress_obj, "outfit"),
+                    (shoes_obj, "shoes"), (hat_obj, "hat")):
+    resize_parts(_obj, _role)
 log("wearing", worn + [shoes_name], clothing)
 
 # layering: push each garment out along its (posed) normals so the outer layer always covers

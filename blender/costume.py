@@ -410,3 +410,73 @@ def grow_hat(co, scale, rim=()):
         grow = 1.0 + (scale - 1.0) * (t * t * (3 - 2 * t))      # smooth: no crease at the opening
         out.append(tuple(c[i] + (p[i] - c[i]) * grow for i in range(3)))
     return out
+
+
+# --- picking a part of a mesh and resizing it ------------------------------------------------------------
+# The studio lets you click a part of anything worn - a sleeve, a crown, a boot - and make it bigger or
+# smaller. A part is not a named thing in the asset: it is whatever lies within so many centimetres of
+# where you clicked, measured ALONG the surface, so a click on a cuff does not leak onto the hand inside
+# it. Resizing it has to leave it attached, which is the lesson the hat taught: grow away from the part's
+# border, by the full amount deep inside it and by nothing at all at the edge.
+
+def neighbours(faces):
+    """{vertex: set of vertices sharing an edge with it}."""
+    adj = defaultdict(set)
+    for a, b in edges_of(faces):
+        adj[a].add(b)
+        adj[b].add(a)
+    return adj
+
+
+def part_at(co, faces, point, radius):
+    """The vertices within `radius` metres of `point`, measured along the surface from the nearest vertex.
+
+    Along the surface, not through the air: a sleeve's cuff is a centimetre from the wrist underneath it
+    but a long way round the cloth, and a part you can click has to respect that."""
+    if not co:
+        return set()
+    seed = min(range(len(co)), key=lambda v: math.dist(co[v], point))
+    return band(co, edges_of(faces), [seed], radius)
+
+
+def border_of(part, adj):
+    """The vertices of `part` that touch something outside it - where it stays joined to the rest."""
+    return {v for v in part if any(w not in part for w in adj.get(v, ()))}
+
+
+def grow_part(co, part, scale, faces=None, adj=None):
+    """`part` of a mesh made bigger or smaller, still attached to the rest of it.
+
+    Everything grows away from the centre of the part's border: by the full `scale` deepest inside the
+    part, and by nothing at all at the border itself, so the seam does not open and nothing outside the
+    part moves. Vertices outside `part` are returned untouched. (This is the same rule that keeps a hat's
+    fur roll still while its crown grows; see `grow_hat`.)"""
+    part = set(part)
+    if abs(scale - 1.0) < 1e-6 or not part:
+        return [tuple(p) for p in co]
+    adj = adj if adj is not None else neighbours(faces or [])
+    edge = border_of(part, adj)
+    if not edge or edge == part:
+        return [tuple(p) for p in co]
+    c = centroid(co, edge)
+    # how far inside the part each vertex is, walking from the border and never leaving the part
+    deep = {v: 0.0 for v in edge}
+    heap = [(0.0, v) for v in edge]
+    while heap:
+        d, v = heapq.heappop(heap)
+        if d > deep.get(v, math.inf):
+            continue
+        for w in adj.get(v, ()):
+            if w not in part:
+                continue
+            nd = d + math.dist(co[v], co[w])
+            if nd < deep.get(w, math.inf):
+                deep[w] = nd
+                heapq.heappush(heap, (nd, w))
+    far = max(deep.values()) or 1.0
+    out = [tuple(p) for p in co]
+    for v in part:
+        t = min(1.0, deep.get(v, far) / far)
+        grow = 1.0 + (scale - 1.0) * (t * t * (3 - 2 * t))      # smooth: no crease at the seam
+        out[v] = tuple(c[i] + (co[v][i] - c[i]) * grow for i in range(3))
+    return out
