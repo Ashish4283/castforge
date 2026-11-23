@@ -356,7 +356,9 @@ COSTUMES = {
     "villager": {"outfit.style": "tunic", "outfit.top": "#7a6a4e", "outfit.bottom": "#5a4a36",
                  "costume.belt": "#4a3524", "costume.boots": "#3a2a1c"},
     "santa": {"hat": "santa", "hat_size": 1.35, "beard": "santa", "build": "heavy", "hair.color": "#eeeae4", "outfit.garment": "trousers",
-              "outfit.sleeves": "long", "outfit.top": "#8c1018", "outfit.bottom": "#8c1018",
+              "outfit.sleeves": "long", "outfit.top": "#c8102e", "outfit.bottom": "#c8102e",   # the cap's own
+              # red is #dc204c and it is never recoloured (a hat takes no tint), so the suit has to
+              # be asked for in that neighbourhood or the two do not look like one costume
               "costume.coat": "long", "costume.fabric": "velvet", "costume.trim": "#f3efe8", "costume.belt": "#141414",
               "costume.buckle": "#c9a227", "costume.gloves": "#f3efe8", "costume.boots": "#141414"},
 }

@@ -361,18 +361,39 @@ def rim_of(co, faces, body=(), least=8):
     return min(loops, key=lambda l: sum(min(math.dist(co[v], b) for b in body) for v in l) / len(l))
 
 
+def loop_normal(co, loop, towards=None):
+    """The normal of a boundary loop's own plane (Newell), pointing towards `towards` if that is given.
+
+    A hat's opening is a tilted ring, so "up out of the opening" is not the world's up and cannot be
+    faked with z."""
+    n = [0.0, 0.0, 0.0]
+    for a, b in zip(loop, loop[1:] + loop[:1]):
+        pa, pb = co[a], co[b]
+        n[0] += (pa[1] - pb[1]) * (pa[2] + pb[2])
+        n[1] += (pa[2] - pb[2]) * (pa[0] + pb[0])
+        n[2] += (pa[0] - pb[0]) * (pa[1] + pb[1])
+    length = math.sqrt(sum(v * v for v in n)) or 1.0
+    n = [v / length for v in n]
+    if towards is not None:
+        c = centroid(co, loop)
+        if sum((towards[i] - c[i]) * n[i] for i in range(3)) < 0:
+            n = [-v for v in n]
+    return tuple(n)
+
+
 def grow_hat(co, scale, rim=()):
-    """A hat made bigger (or smaller) without lifting it off the head.
+    """A hat made bigger (or smaller) without disturbing the part that sits on the head.
 
-    `rim` is its opening (`rim_of`), and that is what holds it on: those vertices do not move at all.
-    Everything else grows away from the opening's centre, by the full `scale` where it is furthest from
-    the opening - the crown - and by less as it comes back down to the brim.
+    Only what is ABOVE the opening changes. The opening itself does not move, and neither does anything
+    below it - the fur roll of a Santa cap hangs below the ring the head goes through, and letting it grow
+    flares it outward and downward like a lampshade (measured: 318 of this cap's vertices are below the
+    opening, and they moved up to 25 mm). Above the opening, everything grows away from its centre, in
+    full at the crown and tapering to nothing as it comes back down to the ring.
 
-    The two obvious ways both fail, and both look wrong on a Santa cap: scaling the whole hat lifts the
-    brim clear of the skull on every side, and scaling about a horizontal plane through the lowest vertex
-    stretches the front of the brim up off the forehead, because these hats are worn at an angle.
+    "Above" is measured along the opening's OWN normal, not the world's up: these hats are worn tilted.
 
-    `co` is the hat's vertices (z up); the answer is a new list in the same order."""
+    `co` is the hat's vertices (z up), `rim` its opening in loop order (`rim_of`); the answer is a new
+    list in the same order."""
     if abs(scale - 1.0) < 1e-6 or not co:
         return [tuple(p) for p in co]
     rim = list(rim)
@@ -380,12 +401,12 @@ def grow_hat(co, scale, rim=()):
         c = centroid(co, range(len(co)))
         return [tuple(c[i] + (p[i] - c[i]) * scale for i in range(3)) for p in co]
     c = centroid(co, rim)
-    edge = [co[v] for v in rim]
-    away = [min(math.dist(p, e) for e in edge) for p in co]
-    far = max(away) or 1.0
+    n = loop_normal(co, rim, centroid(co, range(len(co))))
+    up = [sum((p[i] - c[i]) * n[i] for i in range(3)) for p in co]
+    top = max(up) or 1.0
     out = []
-    for p, d in zip(co, away):
-        t = d / far
-        grow = 1.0 + (scale - 1.0) * (t * t * (3 - 2 * t))      # smooth: no crease where it meets the brim
+    for p, h in zip(co, up):
+        t = max(0.0, min(1.0, h / top))
+        grow = 1.0 + (scale - 1.0) * (t * t * (3 - 2 * t))      # smooth: no crease at the opening
         out.append(tuple(c[i] + (p[i] - c[i]) * grow for i in range(3)))
     return out

@@ -30,6 +30,7 @@ export interface WornSpec {                  // one thing being worn, as the ser
   indices: {at: number; count: number}; hides: {at: number; count: number};
   regions?: {at: number; count: number};                   // one byte a vertex: which trim bands it is on
   band_bits?: Record<string, number>;
+  rim?: {at: number; count: number};                       // a hat's opening, in loop order
 }
 
 /** The costume, as the live view needs it: a colour for each piece, or nothing to leave the piece off. */
@@ -84,33 +85,44 @@ function liftOffSurface(material: THREE.Material, metres: number) {
   material.needsUpdate = true;
 }
 
-/** Make a hat bigger without lifting it off the head: the same growth the build applies.
+/** Make a hat bigger without disturbing the part that sits on the head: the growth the build applies.
  *
- *  Mirrors `costume.grow_hat` (blender/costume.py, where it is explained and tested). `rim` is the hat's
- *  opening, marked when the hat was exported: those vertices do not move at all, because they are what
- *  holds the hat on. Everything else grows away from the opening's centre, in full at the crown and less
- *  as it comes back down to the brim. `pos` is the hat's live vertices, y up, changed in place. */
-function growHat(pos: Float32Array, scale: number, rim: number[]) {
-  if (Math.abs(scale - 1) < 1e-6 || !pos.length || !rim.length) return;
+ *  Mirrors `costume.grow_hat` (blender/costume.py, where it is explained and tested). Only what is ABOVE
+ *  the opening changes: the opening does not move, and neither does anything below it - the fur roll of a
+ *  Santa cap hangs below the ring the head goes through, and letting it grow flares it out like a
+ *  lampshade. "Above" is measured along the opening's own normal, because these hats are worn tilted, so
+ *  the world's up is not the hat's. `rim` is that opening in loop order; `pos` is changed in place. */
+function growHat(pos: Float32Array, scale: number, rim: Uint32Array) {
+  if (Math.abs(scale - 1) < 1e-6 || !pos.length || rim.length < 3) return;
   const c = [0, 0, 0];
   for (const v of rim) for (let k = 0; k < 3; k++) c[k] += pos[v * 3 + k] / rim.length;
-  const n = pos.length / 3;
-  const away = new Float32Array(n);
-  let far = 0;
-  for (let i = 0; i < n; i++) {
-    let best = Infinity;
-    for (const v of rim) {
-      const dx = pos[i * 3] - pos[v * 3], dy = pos[i * 3 + 1] - pos[v * 3 + 1], dz = pos[i * 3 + 2] - pos[v * 3 + 2];
-      const d = dx * dx + dy * dy + dz * dz;
-      if (d < best) best = d;
-    }
-    away[i] = Math.sqrt(best);
-    if (away[i] > far) far = away[i];
+  const n = [0, 0, 0];                                   // Newell: the plane of the opening itself
+  for (let i = 0; i < rim.length; i++) {
+    const a = rim[i] * 3, b = rim[(i + 1) % rim.length] * 3;
+    n[0] += (pos[a + 1] - pos[b + 1]) * (pos[a + 2] + pos[b + 2]);
+    n[1] += (pos[a + 2] - pos[b + 2]) * (pos[a] + pos[b]);
+    n[2] += (pos[a] - pos[b]) * (pos[a + 1] + pos[b + 1]);
   }
-  if (!far) return;
-  for (let i = 0; i < n; i++) {
-    const t = away[i] / far;
-    const grow = 1 + (scale - 1) * (t * t * (3 - 2 * t));   // smooth: no crease where it meets the brim
+  const len = Math.hypot(n[0], n[1], n[2]) || 1;
+  for (let k = 0; k < 3; k++) n[k] /= len;
+  const count = pos.length / 3;
+  const middle = [0, 0, 0];
+  for (let i = 0; i < count; i++) for (let k = 0; k < 3; k++) middle[k] += pos[i * 3 + k] / count;
+  let away = 0;
+  for (let k = 0; k < 3; k++) away += (middle[k] - c[k]) * n[k];
+  if (away < 0) for (let k = 0; k < 3; k++) n[k] = -n[k];       // point it up out of the opening
+  let top = 0;
+  const up = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    let h = 0;
+    for (let k = 0; k < 3; k++) h += (pos[i * 3 + k] - c[k]) * n[k];
+    up[i] = h;
+    if (h > top) top = h;
+  }
+  if (top <= 0) return;
+  for (let i = 0; i < count; i++) {
+    const t = Math.max(0, Math.min(1, up[i] / top));
+    const grow = 1 + (scale - 1) * (t * t * (3 - 2 * t));       // smooth: no crease at the opening
     for (let k = 0; k < 3; k++) pos[i * 3 + k] = c[k] + (pos[i * 3 + k] - c[k]) * grow;
   }
 }
@@ -128,7 +140,7 @@ export class BodyView {
   private rings = new THREE.Group();
   private wearing: {worn: Worn; mesh: THREE.Mesh; idx: Uint32Array; weight: Float32Array;
                     off: Float32Array; pos: Float32Array; hides: Uint32Array; scale: Float32Array;
-                    rim: number[]}[] = [];
+                    rim: Uint32Array}[] = [];
   private tris: Uint32Array | null = null;   // the body's triangles, which garments are pinned to
   private hands: Uint32Array = new Uint32Array(0);     // the skin a glove covers
   private joints: Record<string, [number, number, number]> = {};
@@ -346,12 +358,8 @@ export class BodyView {
       const mesh = new THREE.Mesh(g, mat);
       mesh.renderOrder = 1;
       this.scene.add(mesh);
-      const rim: number[] = [];                  // a hat's opening, so it can be grown without being lifted
-      if (spec.regions?.count) {
-        const bits = new Uint8Array(bin, spec.regions.at, spec.regions.count);
-        const bit = spec.band_bits?.rim ?? 16;
-        for (let v = 0; v < bits.length; v++) if (bits[v] & bit) rim.push(v);
-      }
+      // a hat's opening, in loop order: what holds it on, and what "above" is measured from
+      const rim = spec.rim?.count ? new Uint32Array(bin, spec.rim.at, spec.rim.count) : new Uint32Array(0);
       this.wearing.push({worn, mesh, idx, weight, off, pos, hides, scale: new Float32Array(3), rim});
     }
     this.dress();

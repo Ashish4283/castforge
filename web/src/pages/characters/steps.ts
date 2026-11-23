@@ -17,7 +17,8 @@ export interface Step {
 
 const SKIN = ["#f6ded0", "#edc8ab", "#dcab86", "#c58d64", "#a46a45", "#7d4a2e", "#563021"];
 const HAIR = ["#120e0c", "#2b1d16", "#4a2f1e", "#7a4a24", "#a9763f", "#c9a86a", "#9a9a9a", "#e6e2dc", "#8c2f1d"];
-const CLOTH = ["#2c2f36", "#3b4150", "#40506a", "#5a6b52", "#6b4a33", "#8e1b22", "#b8872f", "#d8d2c6", "#111214"];
+const CLOTH = ["#2c2f36", "#3b4150", "#40506a", "#5a6b52", "#6b4a33", "#8e1b22", "#c8102e", "#b8872f",
+               "#d8d2c6", "#111214"];
 
 export const STEPS: Step[] = [
   {id: "who", title: "Who are they?", look: "whole",

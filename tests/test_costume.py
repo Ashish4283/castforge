@@ -238,6 +238,23 @@ def test_a_bigger_hat_keeps_its_opening_exactly_where_it_was():
     assert abs(big[top][0] - kit.centroid(co, rim)[0]) > abs(co[top][0] - kit.centroid(co, rim)[0])
 
 
+def test_nothing_below_the_opening_moves():
+    """The fur roll of a Santa cap hangs BELOW the ring the head goes through. If it grows, it flares."""
+    co, faces = tube(rings=4, n=8, radius=0.1, step=0.05, z0=1.8)
+    skirt = [(0.13 * math.cos(2 * math.pi * i / 8), 0.13 * math.sin(2 * math.pi * i / 8), 1.60)
+             for i in range(8)]                                  # a roll hanging 5 cm below the opening
+    first = len(co)
+    co = list(co) + skirt
+    hem = [24 + i for i in range(8)]                             # the tube's own bottom ring, at 1.65
+    faces = list(faces) + [(hem[i], hem[(i + 1) % 8], first + (i + 1) % 8, first + i) for i in range(8)]
+    rim = kit.rim_of(co, faces, head_at(1.66))
+    big = kit.grow_hat(co, 1.5, rim)
+    for v in range(first, len(co)):
+        assert big[v] == pytest.approx(co[v], abs=1e-9)          # the roll is left exactly alone
+    top = max(range(len(co)), key=lambda v: co[v][2])
+    assert big[top][2] > co[top][2] + 0.05                       # while the crown grows
+
+
 def test_a_tilted_hat_is_not_stretched_off_the_forehead():
     """A hat worn at an angle: growing it must leave the whole opening alone, high side included."""
     co, faces = tube(rings=3, n=8, radius=0.1, step=0.05, z0=1.8)

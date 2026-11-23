@@ -554,7 +554,9 @@ if hat in HATS:
         import costume as _kit
         hat_co = [tuple(v.co) for v in hat_obj.data.vertices]
         hat_faces = [tuple(f.vertices) for f in hat_obj.data.polygons]
-        skull = [tuple(v.co) for v in human.data.vertices[::7]]     # which ring lies on the head
+        skull = [tuple(v.co) for i, v in enumerate(human.data.vertices) if i % 7 == 0]   # the head,
+        # sampled: rim_of asks which of the hat's rings lies against it (a bpy collection takes no
+        # slice step, and this one is 19158 vertices long)
         rim = _kit.rim_of(hat_co, hat_faces, skull)   # the opening holds it on: that is what stays put
         grown = _kit.grow_hat(hat_co, hat_size, rim)
         hat_obj.data.vertices.foreach_set("co", [c for p_ in grown for c in p_])

@@ -213,6 +213,13 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   is the outer edge of its brim. `costume.rim_of` therefore asks the BODY: the opening is the loop lying
   closest to it. Both callers sample the body for it (every 7th vertex is plenty).
 
+- A hat takes NO tint (`appearance.WEAR_KINDS["hat"]` has none), in the build and in the live view alike:
+  it keeps the red its artist painted (#dc204c on the Santa cap). So a costume's cloth colour has to be
+  chosen in that neighbourhood by hand - ask for a dark brick red and the suit will not match the cap,
+  and nothing is wrong with the recolouring when that happens.
+- `bpy_prop_collection` takes no slice STEP: `human.data.vertices[::7]` raises, and only at build time.
+  Use `enumerate` with `i % 7`.
+
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).
 Scene vocabulary for Gemini: `docs/GEMINI_SCENE_PROMPT.md`.

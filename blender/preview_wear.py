@@ -138,11 +138,16 @@ BANDS = {"hem": 1, "collar": 2, "cuff": 4, "boot": 8, "rim": 16}
 polys = [tuple(p.vertices) for p in me.polygons]
 rest_co = [tuple(v) for v in truth]
 regions = np.zeros(n_v, dtype=np.uint8)
+rim_order = np.zeros(0, dtype=np.uint32)
 found = {}
 if args.folder == "clothes":
     if args.asset in appearance.HATS.values():
-        # a hat grows away from its opening, and the opening has to be found on the real mesh
-        bands = {"rim": set(costume.rim_of(rest_co, polys, [tuple(p) for p in coords[::7]]))}
+        # A hat grows away from its opening and only ABOVE it, so the opening has to be found on the real
+        # mesh - and it travels IN LOOP ORDER, because its own normal is what "above" means on a hat that
+        # is worn tilted back.
+        rim = costume.rim_of(rest_co, polys, [tuple(p) for p in coords[::7]])
+        rim_order = np.array(rim, dtype=np.uint32)
+        bands = {"rim": set(rim)}
     elif args.asset in (appearance.SHOES, appearance.BOOTS):
         bands = costume.boot_bands(rest_co, polys, 0.0)
     else:
@@ -187,7 +192,7 @@ offsets_view = pm.to_view(offsets)
 blobs = [("verts", verts.tobytes(), n_v), ("weights", weights.tobytes(), n_v),
          ("offsets", offsets_view.tobytes(), n_v), ("uv", uv.tobytes(), n_v),
          ("indices", faces.tobytes(), len(faces) * 3), ("hides", hides.tobytes(), len(hides)),
-         ("regions", regions.tobytes(), n_v)]
+         ("regions", regions.tobytes(), n_v), ("rim", rim_order.tobytes(), len(rim_order))]
 at, where = 0, {}
 for name, blob, count in blobs:
     where[name] = {"at": at, "count": count}
