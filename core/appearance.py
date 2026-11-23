@@ -136,6 +136,95 @@ HAIR_STYLES = {
 }
 EYEBROWS = {f"style_{n}": f"eyebrow{n:03d}" for n in range(1, 13)}
 
+# --- what a person can wear ---------------------------------------------------------------------------------
+# The MPFB assets a design puts on, in one list so the build and the live preview dress a character from the
+# same wardrobe. `build_character.py` reads these to build; `blender/preview_wear.py` reads them to show.
+BEARDS = {"scruffy": ["wdg_scruffy_beard"], "long": ["rehmanpolanski_beard_viking"],
+          "full": ["grinsegold_beard_sigmund_wip"], "faun": ["culturalibre_faun_beard"],
+          "moustache": ["rehmanpolanski_moustache_viking"],
+          "santa": ["rehmanpolanski_beard_viking", "rehmanpolanski_moustache_viking"]}
+HATS = {"santa": "joepal_xmas_cap", "newsboy": "jujube_newsboy_cap", "fedora": "fedora01",
+        "cloche": "aethelraed_unraed_cloche_hat", "flat_cap": "grinsegold_uncle_joshis_hat"}
+OUTFITS = {                                   # a whole-body outfit instead of a top and a bottom
+    "suit": {"male": "male_casualsuit01", "female": "female_casualsuit01"},
+    "formal": {"male": "male_elegantsuit01", "female": "female_elegantsuit01"},
+    "work": {"male": "male_worksuit01", "female": "female_sportsuit01"},
+    "robe": {"male": "mindfront_kimono", "female": "mindfront_kimono"},
+    "tunic": {"male": "wdg_mycenaean_tunic", "female": "wdg_mycenaean_tunic"},
+}
+TOPS = {("male", "short"): "elvs_crude_t-shirt_male", ("female", "short"): "joepal_crude_t-shirt_female",
+        ("male", "long"): "toigo_fisherman_sweater", ("female", "long"): "toigo_fisherman_sweater"}
+BOTTOMS = {"trousers": "toigo_wool_pants", "shorts": "cortu_jeans_shorts",
+           "skirt": "toigo_tiered_mini_skirt"}
+DRESS = "toigo_shift_dress"
+SHOES, BOOTS = "shoes04", "shoes03"
+EYE_MESH = "high-poly"
+# where each worn thing lives in the asset library, and which design colour tints it
+WEAR_KINDS = {"hair": ("hair", "hair.color"), "beard": ("clothes", "hair.color"),
+              "eyebrows": ("eyebrows", "hair.color"), "eyes": ("eyes", None),
+              "hat": ("clothes", None), "top": ("clothes", "outfit.top"),
+              "bottom": ("clothes", "outfit.bottom"), "outfit": ("clothes", "outfit.top"),
+              "shoes": ("clothes", "outfit.shoes")}
+
+
+def wearables(design):
+    """Everything a design puts on, as [{role, asset, folder, tint}] in the order it is worn.
+
+    The build makes these as real fitted meshes; the preview shows the same list, so what someone picks is
+    what they see. A hat hides the hair, exactly as the build has it."""
+    d = design or {}
+    gender = d.get("gender") if d.get("gender") in ("male", "female") else "female"
+    outfit = d.get("outfit") or {}
+    costume = d.get("costume") or {}
+    hair = d.get("hair") or {}
+    out = []
+
+    def add(role, asset):
+        folder, tint = WEAR_KINDS[role]
+        out.append({"role": role, "asset": asset, "folder": folder, "tint": tint})
+
+    add("eyes", EYE_MESH)
+    add("eyebrows", EYEBROWS.get(d.get("eyebrows"), "eyebrow001"))
+    hat = d.get("hat", "none")
+    if hat in HATS:
+        add("hat", HATS[hat])
+    else:                                      # a hat covers the hair, so the hair is left off
+        style = HAIR_STYLES.get(hair.get("style"), hair.get("style") or "")
+        if not style:
+            style = {"none": "none", "short": "short01", "medium": "culturalibre_hair_05",
+                     "long": "long01"}.get(hair.get("length", "short"), "short01")
+            if gender == "female":
+                style = {"short01": "toigo_inverted_bob", "culturalibre_hair_05": "toigo_blunt_bob",
+                         "long01": "long01"}.get(style, style)
+        if style and style != "none":
+            add("hair", style)
+    for beard in BEARDS.get(d.get("beard", "none"), []):
+        add("beard", beard)
+
+    style = outfit.get("style", "casual")
+    if style in OUTFITS:
+        add("outfit", OUTFITS[style][gender])
+    elif outfit.get("garment") == "dress":
+        add("outfit", DRESS)
+    else:
+        add("bottom", BOTTOMS.get(outfit.get("garment", "trousers"), BOTTOMS["trousers"]))
+        add("top", TOPS[(gender, outfit.get("sleeves", "long") if outfit.get("sleeves") in ("short", "long")
+                         else "long")])
+    add("shoes", BOOTS if costume.get("boots") else SHOES)
+    return out
+
+
+def known_assets():
+    """Every MPFB asset this wardrobe can name. The live preview exports by name, and a name becomes a
+    folder, so anything not on this list is refused rather than fetched."""
+    names = {EYE_MESH, DRESS, SHOES, BOOTS}
+    names |= {v for v in HAIR_STYLES.values() if v and v != "none"}
+    names |= set(EYEBROWS.values()) | set(HATS.values()) | set(BOTTOMS.values()) | set(TOPS.values())
+    names |= {a for pair in BEARDS.values() for a in pair}
+    names |= {a for per_sex in OUTFITS.values() for a in per_sex.values()}
+    return names
+
+
 RANGE = (-1.0, 1.0)
 
 

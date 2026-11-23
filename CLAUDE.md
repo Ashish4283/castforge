@@ -65,6 +65,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | the app (React 18 + TS + Vite, sidebar layout) | `web/src/`: `main.tsx` routes, `app/store.tsx` (movies, GPU, jobs, toasts, hash route), `app/episode.tsx` (open scene model: `update`, `save`, `scene()`, `cast()`), `components/ui.tsx` (Button, Card, Field...), `components/ParamInput.tsx` (any schema parameter), `pages/*`; design tokens at the top of `styles.css`. Old page at `/classic` (`app/index.html`, `static/app.js`) until removed |
 | Overview page (next step, progress) | `server.py` `/api/movie/progress`; `web/src/pages/Studio.tsx` |
 | 3D scene editor (view, timeline, drag spots) | `web/src/pages/episodes/viewer.ts` (three.js) + `Editor3D.tsx`; export `scene_kit.py` `if args.preview3d`; job `--preview3d` |
+| what the live view wears (hair, beard, clothes) | export `blender/preview_wear.py` -> `library/preview_kits/worn/<folder>-<asset>/`; the wardrobe itself `appearance.wearables` (pure, tested); route `/api/character/wear`; drawing `bodyview.setWearing` |
 | the designer's live body (morphs as the sliders move) | export `blender/preview_kit.py` -> `library/preview_kits/<sex>-<age>-<build>-<height>/kit.json+bin`; what is needed and whether it is there `core/preview_kit.py` (pure, tested, `VERSION`); route `/api/character/preview-kit`; drawing `web/src/pages/characters/bodyview.ts` + `LivePreview.tsx` |
 | what a face or body can be shaped into (sliders) | `core/appearance.py` (pure, tested: `FACE`, `BODY`, `targets_for`, `photo_vars`, hair styles, eyebrows). One table: `schema.CHARACTER` grows from it, the app groups from `face_groups`/`body_groups`, the build applies it |
 | character designer, costumes | vocabulary `schema.CHARACTER`/`COSTUMES`/`check_design`; routes `/api/character`, `/api/character/rebuild`; UI `pages/CharacterDesigner.tsx`; build `build_character.py` anchor `# --- costume`; maths `blender/costume.py` (pure, tested: openings, bands, hem/cape rings, hood cut) |
@@ -111,6 +112,16 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - MPFB ships 1258 morph targets INSIDE the addon (`<addon>/data/targets/…`), not in the user asset library,
   which only carries expressions and visemes. `TargetService.target_full_path(name)` finds one by bare name
   (`chin-width-incr`) and `load_target` adds it as a weighted shape key. Paired features are `l-`/`r-`.
+- A MakeHuman asset already carries its own fitting: `Mhclo.verts[i]` gives 3 body vertices, 3 weights and
+  an offset, and `x_scale`/`y_scale`/`z_scale` give the spans that offset is measured against. Rebuilding a
+  garment is that weighted sum plus offset x span - exact to 0.0002 mm on any body, which is why the live
+  view fits clothes without Blender. Do NOT bind by nearest triangle: shoes and hats explode.
+  MakeHuman's y is up, so its y_scale measures Blender/viewer z and its z_scale measures y.
+- `Mhclo.delverts` is the body a garment hides. Dropping those triangles is what keeps a belly out of its
+  own shirt, and it is what the build does too.
+- Putting a garment on the body ADDS A MASK to the body. Read the body's vertices before dressing it, and
+  turn every mask off when you do (`preview_mesh.shaped_coords` raises if the count is wrong) - a hidden
+  vertex is a missing vertex, which renumbers the mesh and sends every binding somewhere else.
 - A preview kit exports TWO different meshes and mixing them up silently ignores age, build and height:
   positions come from the EVALUATED body (macros applied), deltas from the "Basis" shape key (every target
   is a delta from the untouched base). Targets apply additively on top, which is what MakeHuman does too.

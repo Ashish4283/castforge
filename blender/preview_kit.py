@@ -33,6 +33,8 @@ args = ap.parse_args(argv)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
+sys.path.insert(0, HERE)
+import preview_mesh as pm              # noqa: E402  the body numbering this shares with preview_wear.py
 from core import appearance            # noqa: E402  the same table the designer and the build use
 from core import preview_kit           # noqa: E402  what counts as a finished kit (its version)
 
@@ -85,28 +87,13 @@ def set_macro(**kw):
 
 # MakeHuman's mesh carries helper geometry (the cages that fit clothes) which stands taller than the person.
 # The build measures the "body" vertex group alone, and so must this, or every preview comes out short.
-_groups = {g.name: g.index for g in human.vertex_groups}
-_members = {}
-for _v in human.data.vertices:
-    for _g in _v.groups:
-        _members.setdefault(_g.group, []).append(_v.index)
-BODY_IDX = np.array(sorted(_members[_groups["body"]]), dtype=np.int64)
+BODY_IDX, TRIS = pm.body_parts(human)
 _mask = human.modifiers.get("Hide helpers")
 
 
 def body_height():
     """How tall the person stands right now, measured the way the build measures it."""
-    if _mask:
-        _mask.show_viewport = False          # every vertex present, so the indices still line up
-    deps = bpy.context.evaluated_depsgraph_get()
-    ev = human.evaluated_get(deps)
-    me = ev.to_mesh()
-    co = np.empty(len(me.vertices) * 3)
-    me.vertices.foreach_get("co", co)
-    ev.to_mesh_clear()
-    if _mask:
-        _mask.show_viewport = True
-    z = co.reshape(-1, 3)[BODY_IDX][:, 2]
+    z = pm.shaped_coords(human, _mask)[BODY_IDX][:, 2]
     return float(z.max() - z.min())
 
 
@@ -125,9 +112,10 @@ log(f"height {body_height():.3f} m (asked {want:.3f})")
 # The mesh carries helper vertices (the cages that fit clothes); they are not the person and must not be
 # drawn. The "body" vertex group is exactly the skin, so the kit keeps those vertices and the faces that
 # lie entirely within them, renumbered from zero.
+# The WHOLE mesh is exported, helpers included: a garment's offsets are measured against helper vertices
+# (preview_mesh.fit_scales), so they have to travel with the body and morph with it. Only the skin's
+# triangles are drawn, so the helpers are never seen.
 body = BODY_IDX
-keep = np.full(len(human.data.vertices), -1, dtype=np.int64)
-keep[body] = np.arange(len(body))
 
 # Two different meshes matter here, and mixing them up gives a preview that ignores age, build and height:
 #   * "shaped" is the body as it stands now, with the macros applied - that is what gets drawn;
@@ -140,37 +128,15 @@ basis.data.foreach_get("co", base)
 base = base.reshape(-1, 3)
 
 
-def shaped_coords():
-    if _mask:
-        _mask.show_viewport = False
-    deps = bpy.context.evaluated_depsgraph_get()
-    ev = human.evaluated_get(deps)
-    me = ev.to_mesh()
-    co = np.empty(len(me.vertices) * 3)
-    me.vertices.foreach_get("co", co)
-    ev.to_mesh_clear()
-    if _mask:
-        _mask.show_viewport = True
-    return co.reshape(-1, 3)
+shaped = pm.shaped_coords(human, _mask)
 
-
-shaped = shaped_coords()
-
-tris = []
-for poly in human.data.polygons:
-    vs = [v for v in poly.vertices]
-    if any(keep[v] < 0 for v in vs):
-        continue
-    for k in range(1, len(vs) - 1):                       # fan: quads become two triangles
-        tris.append([keep[vs[0]], keep[vs[k]], keep[vs[k + 1]]])
-tris = np.array(tris, dtype=np.uint32)
+tris = TRIS                                   # the skin's triangles, numbered into the whole mesh
 
 # Blender is z-up and the app's viewer is y-up, so the kit is written the way it will be drawn
-verts = shaped[body][:, [0, 2, 1]].astype(np.float32)
-verts[:, 2] *= -1.0
-floor = float(verts[:, 1].min())
-verts[:, 1] -= floor                                      # stand it on the ground
-log(f"body {len(verts)} vertices, {len(tris)} triangles")
+verts = pm.to_view(shaped)                                # every vertex, helpers and all
+floor = float(verts[body][:, 1].min())                    # the floor is where the FEET are, not a cage
+verts[:, 1] -= floor
+log(f"mesh {len(verts)} vertices ({len(body)} of them skin), {len(tris)} triangles")
 
 # --- what every slider does to it ---------------------------------------------------------------------------
 blobs = [verts.tobytes(), tris.tobytes()]
@@ -185,13 +151,12 @@ for name in sorted(appearance.every_target()):
     key = TargetService.load_target(human, path, weight=0.0, name=f"kit-{name}")
     co = np.empty(len(human.data.vertices) * 3, dtype=np.float64)
     key.data.foreach_get("co", co)
-    delta = (co.reshape(-1, 3) - base)[body]
+    delta = co.reshape(-1, 3) - base                       # over the whole mesh: the helpers move too
     moved = np.nonzero(np.abs(delta).max(axis=1) > 1e-6)[0]
     human.shape_key_remove(key)
     if not len(moved):
         continue
-    d = delta[moved][:, [0, 2, 1]].astype(np.float32)
-    d[:, 2] *= -1.0
+    d = pm.to_view(delta[moved])
     idx = moved.astype(np.uint32)
     shapes[name] = {"at": offset, "count": int(len(moved))}
     blobs += [idx.tobytes(), d.tobytes()]
@@ -203,10 +168,10 @@ with open(os.path.join(args.out, "kit.bin"), "wb") as fh:
         fh.write(b)
 json.dump({"version": preview_kit.VERSION, "gender": args.gender, "age": args.age, "build": args.build,
            "height_cm": args.height_cm,
-           "vertices": len(verts), "triangles": len(tris),
+           "vertices": len(verts), "triangles": len(tris), "skin": len(body),
            "positions": {"at": 0, "count": len(verts)},
            "indices": {"at": len(blobs[0]), "count": len(tris) * 3},
-           "height": round(float(verts[:, 1].max()), 4),
+           "height": round(float(verts[:, 1].max()), 4), "floor": round(floor, 4),
            "shapes": shapes},
           open(os.path.join(args.out, "kit.json"), "w", encoding="utf-8"))
 log(f"preview kit: {len(shapes)} shapes, {offset / 1e6:.2f} MB, {time.time() - started:.1f}s -> {args.out}")

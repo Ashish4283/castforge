@@ -29,6 +29,7 @@ LIBRARY = os.path.join(ROOT, "library")
 sys.path.insert(0, ROOT)
 import castforge as cf  # noqa: E402
 from core import config, publish, schema  # noqa: E402
+from core import appearance as look  # noqa: E402
 from core import preview_kit as kit_mod  # noqa: E402
 from core import sets as sets_mod  # noqa: E402
 from core.buildings import (BUILDING_CATEGORIES, BUILDING_DESIGNS, default_asset_spec,
@@ -68,6 +69,49 @@ def build_preview_kit(key):
             tail = " / ".join((r.stdout or r.stderr or "").strip().splitlines()[-3:])
             return False, f"the preview body could not be made: {tail}"
         return True, "made"
+
+
+def build_worn(folder, asset):
+    """Export one worn thing for the live view if it is not already there. Returns (ok, where, message)."""
+    if asset not in look.known_assets() or folder not in ("hair", "eyebrows", "eyes", "clothes"):
+        return False, None, f"{asset!r} is not something this wardrobe can put on"
+    where = os.path.join(LIBRARY, "preview_kits", "worn", f"{folder}-{asset}")
+    done = os.path.join(where, "wear.json")
+    with kit_lock:
+        try:
+            if os.path.isfile(done) and json.load(open(done, encoding="utf-8")).get("version") == kit_mod.VERSION:
+                return True, where, "ready"
+        except (OSError, ValueError):
+            pass
+        os.makedirs(where, exist_ok=True)
+        r = subprocess.run([config.BLENDER, "-b", "--factory-startup", "--python-exit-code", "1",
+                            "-P", os.path.join(ROOT, "blender", "preview_wear.py"), "--",
+                            "--asset", asset, "--folder", folder, "--out", where],
+                           capture_output=True, text=True, cwd=ROOT)
+        if not os.path.isfile(done):
+            return False, None, (r.stdout or r.stderr or "").strip().splitlines()[-1:] or ["it could not be made"]
+        return True, where, "made"
+
+
+@app.post("/api/character/wear")
+def character_wear(body: dict):
+    """What this design is wearing, each piece pinned to the body so it follows the sliders.
+
+    The design decides the list (core/appearance.wearables); this makes sure every piece has been exported
+    and says where to fetch it. Only the things that change what is worn - the hair, beard, hat, outfit and
+    sex - make this worth calling again; the sliders never do."""
+    design = body.get("design") or {}
+    out, problems = [], []
+    for item in look.wearables(design):
+        ok, where, message = build_worn(item["folder"], item["asset"])
+        if not ok:
+            problems.append(f"{item['role']}: {message}")
+            continue
+        rel = f"/preview-kit/worn/{os.path.basename(where)}"
+        spec = json.load(open(os.path.join(where, "wear.json"), encoding="utf-8"))
+        out.append({**item, "json": f"{rel}/wear.json", "bin": f"{rel}/wear.bin",
+                    "texture": f"{rel}/tex.png" if spec.get("texture") else None})
+    return {"wearing": out, "problems": problems}
 
 
 @app.get("/api/character/preview-kit")

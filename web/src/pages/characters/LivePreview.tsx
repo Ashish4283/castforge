@@ -2,9 +2,10 @@
 // It shows the SHAPE only - hair, beard, clothes and skin come from a build - and says so.
 import {useEffect, useRef, useState} from "react";
 import {Loader2, Maximize2, Move3d, RefreshCw} from "lucide-react";
-import {api, Json, Schema} from "../../api";
+import * as THREE from "three";
+import {api, Json, post, Schema} from "../../api";
 import {Button, Segmented} from "../../components/ui";
-import {BodyView, Kit, RING_SPIN, RING_TIP} from "./bodyview";
+import {BodyView, Kit, RING_SPIN, RING_TIP, Worn, WornSpec} from "./bodyview";
 
 const get = (d: Json, key: string) => key.split(".").reduce((o, k) => (o && typeof o === "object" ? o[k] : undefined), d);
 
@@ -23,12 +24,30 @@ export function targetsFor(design: Json, schema: Schema): Record<string, number>
   return out;
 }
 
+interface WearItem extends WornSpec { json: string; bin: string }
+
+/** The colour a worn thing takes from the design, or none (then its own texture shows as it is). */
+function tintOf(design: Json, tint: string | null): string | undefined {
+  if (!tint) return undefined;
+  const value = get(design, tint);
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : undefined;
+}
+
 export function LivePreview({design, schema, focus}: {design: Json; schema: Schema; focus: "whole" | "face" | "body"}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const view = useRef<BodyView | null>(null);
   const [state, setState] = useState<"off" | "making" | "ready" | "failed">("off");
   const [note, setNote] = useState("");
   const [rings, setRings] = useState(true);
+  const [dressing, setDressing] = useState(false);
+  const wornRef = useRef<{spec: WornSpec; bin: ArrayBuffer; texture: THREE.Texture | null}[]>([]);
+  // only these change WHAT is worn; the sliders and the colours never do, so they never refetch
+  const outfitKey = JSON.stringify([get(design, "gender"), get(design, "hair.style"), get(design, "hair.length"),
+                                    get(design, "beard"), get(design, "hat"), get(design, "eyebrows"),
+                                    get(design, "outfit.style"), get(design, "outfit.garment"),
+                                    get(design, "outfit.sleeves"), !!get(design, "costume.boots")]);
+  const colourKey = JSON.stringify([get(design, "skin"), get(design, "hair.color"), get(design, "outfit.top"),
+                                    get(design, "outfit.bottom"), get(design, "outfit.shoes")]);
   // the body underneath the sliders: only these three change it, so only these three fetch a new one
   const shape = [get(design, "gender") || "female", get(design, "age") || 30,
                  get(design, "build") || "average", get(design, "height_cm") || 170].join("|");
@@ -71,6 +90,42 @@ export function LivePreview({design, schema, focus}: {design: Json; schema: Sche
     if (state === "ready") view.current?.apply(JSON.parse(asked));
   }, [asked, state]);
 
+  useEffect(() => {                       // what the design is wearing: fetched only when the outfit changes
+    let dropped = false;
+    (async () => {
+      setDressing(true);
+      try {
+        const r = await post<{wearing: WearItem[]; problems: string[]}>("/api/character/wear", {design});
+        const loader = new THREE.TextureLoader();
+        const items = await Promise.all(r.wearing.map(async item => {
+          const [spec, bin] = await Promise.all([
+            fetch(item.json).then(x => x.json() as Promise<WornSpec>),
+            fetch(item.bin).then(x => x.arrayBuffer()),
+          ]);
+          const texture = item.texture
+            ? await new Promise<THREE.Texture | null>(done =>
+                loader.load(item.texture!, t => { t.colorSpace = THREE.SRGBColorSpace; done(t); }, undefined, () => done(null)))
+            : null;
+          return {spec: {...spec, role: item.role, tint: item.tint}, bin, texture};
+        }));
+        if (dropped) return;
+        wornRef.current = items;
+        paint();
+      } catch { /* a missing wardrobe must not take the body down with it */ }
+      finally { if (!dropped) setDressing(false); }
+    })();
+    return () => { dropped = true; };
+  }, [outfitKey, state === "ready"]);     // eslint-disable-line react-hooks/exhaustive-deps
+
+  const paint = () => {
+    const skin = tintOf(design, "skin");
+    view.current?.setSkin(skin);
+    view.current?.setWearing(wornRef.current.map(w => ({
+      spec: w.spec, bin: w.bin, texture: w.texture, colour: tintOf(design, w.spec.tint),
+    } as Worn)));
+  };
+  useEffect(() => { paint(); }, [colourKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => { view.current?.frame(focus); }, [focus]);
   useEffect(() => { view.current?.showRings(rings); }, [rings]);
 
@@ -97,7 +152,8 @@ export function LivePreview({design, schema, focus}: {design: Json; schema: Sche
           <div className="live-hint">
             <span><i style={{background: RING_SPIN}} />turn</span>
             <span><i style={{background: RING_TIP}} />tip</span>
-            <span className="muted">drag anywhere · wheel to zoom · double-click to fit</span>
+            <span className="muted">drag to turn · wheel to zoom · double-click a part to look at it</span>
+            {dressing && <span className="muted">· dressing…</span>}
           </div>
         )}
       </div>
@@ -110,7 +166,8 @@ export function LivePreview({design, schema, focus}: {design: Json; schema: Sche
         <Button variant="ghost" icon={<Maximize2 size={14} />} onClick={() => view.current?.frame("whole")}>Fit</Button>
       </div>
       <p className="live-note muted small">
-        The shape as it will be built. Hair, beard, clothes and skin are added by the build.
+        The character as it will be built: the body from the sliders, dressed in what you have picked.
+        Cloth is held clear of the skin, so nothing pokes through as you reshape the body.
       </p>
     </div>
   );

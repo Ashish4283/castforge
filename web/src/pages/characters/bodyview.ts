@@ -19,6 +19,16 @@ export interface Kit {
 export const RING_SPIN = "#49c96d";          // green: turn it round, left and right
 export const RING_TIP = "#e4564a";           // red: tip it up and down
 
+export interface WornSpec {                  // one thing being worn, as the server hands it over
+  role: string; asset: string; tint: string | null;
+  vertices: number; triangles: number; texture: string | null;
+  x_scale: [number, number, number]; y_scale: [number, number, number]; z_scale: [number, number, number];
+  verts: {at: number; count: number}; weights: {at: number; count: number};
+  offsets: {at: number; count: number}; uv: {at: number; count: number};
+  indices: {at: number; count: number}; hides: {at: number; count: number};
+}
+export interface Worn { spec: WornSpec; bin: ArrayBuffer; colour?: string; texture?: THREE.Texture | null }
+
 type Grab = null | "orbit" | "spin" | "tip";
 
 export class BodyView {
@@ -30,6 +40,9 @@ export class BodyView {
   private work: Float32Array | null = null;           // what is drawn: base + whatever is asked for
   private shapes = new Map<string, {idx: Uint32Array; d: Float32Array}>();
   private rings = new THREE.Group();
+  private wearing: {worn: Worn; mesh: THREE.Mesh; idx: Uint32Array; weight: Float32Array;
+                    off: Float32Array; pos: Float32Array; hides: Uint32Array; scale: Float32Array}[] = [];
+  private tris: Uint32Array | null = null;   // the body's triangles, which garments are pinned to
   private spinRing!: THREE.Mesh;
   private tipRing!: THREE.Mesh;
 
@@ -41,6 +54,7 @@ export class BodyView {
   private hover: Grab = null;
   private raf = 0;
   private alive = true;
+  private looking: "whole" | "face" | "body" | "spot" = "whole";   // what was last asked for
   height = 1.8;
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -101,6 +115,7 @@ export class BodyView {
       this.mesh.geometry.dispose();
       this.scene.remove(this.mesh);
     }
+    this.tris = indices;
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(this.work, 3));
     g.setIndex(new THREE.BufferAttribute(indices, 1));
@@ -111,7 +126,10 @@ export class BodyView {
     this.rings.position.y = 0;
     this.spinRing.scale.setScalar(1);
     this.tipRing.position.y = this.height * 0.52;
-    this.frame("whole");
+    this.dress();
+    // keep looking at whatever was being edited: a new body (a different age or build) must not throw the
+    // camera back out to the whole figure in the middle of someone shaping a nose
+    if (this.looking !== "spot") this.frame(this.looking);
   }
 
   /** Put the sliders on the body. `targets` is {morph target: weight}, exactly what the build applies. */
@@ -132,11 +150,108 @@ export class BodyView {
     const attr = this.mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
     attr.needsUpdate = true;
     this.mesh.geometry.computeVertexNormals();
+    this.dress();
+  }
+
+  /** Put everything worn back on the body as it stands now: the browser's half of preview_mesh.py.
+   *
+   *  A garment vertex is "this far off that body triangle", so it is simply worked out again from the
+   *  triangle's new corners. The offset along the triangle's normal is held to at least the layer's own
+   *  thickness, which is what keeps cloth outside the body however the sliders push it about. */
+  private dress() {
+    const body = this.work;
+    if (!body) return;
+    for (const w of this.wearing) {
+      const {idx, weight, off, pos, scale} = w;
+      // the three spans this garment's offsets were measured against, measured on THIS body
+      const span = (ref: [number, number, number], axis: number) =>
+        Math.abs(body[ref[0] * 3 + axis] - body[ref[1] * 3 + axis]) / ref[2];
+      scale[0] = span(w.worn.spec.x_scale, 0);
+      scale[1] = span(w.worn.spec.y_scale, 1);
+      scale[2] = span(w.worn.spec.z_scale, 2);
+      for (let i = 0; i < pos.length / 3; i++) {
+        const a = idx[i * 3] * 3, b = idx[i * 3 + 1] * 3, c = idx[i * 3 + 2] * 3;
+        const wa = weight[i * 3], wb = weight[i * 3 + 1], wc = weight[i * 3 + 2];
+        for (let k = 0; k < 3; k++) {
+          pos[i * 3 + k] = body[a + k] * wa + body[b + k] * wb + body[c + k] * wc
+                           + off[i * 3 + k] * scale[k];
+        }
+      }
+      const attr = w.mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
+      attr.needsUpdate = true;
+      w.mesh.geometry.computeVertexNormals();
+    }
+  }
+
+  /** Leave the skin undrawn where a garment covers it.
+   *
+   *  MakeHuman lists, with each garment, the body vertices it hides. Dropping those triangles is what
+   *  keeps a belly from coming through its own shirt however far a slider pushes it out - and it is what
+   *  the build does too, so the live view and the render agree. */
+  private hideCovered() {
+    if (!this.mesh || !this.tris) return;
+    const hidden = new Set<number>();
+    for (const w of this.wearing) for (const v of w.hides) hidden.add(v);
+    const keep: number[] = [];
+    for (let t = 0; t < this.tris.length; t += 3) {
+      if (hidden.has(this.tris[t]) || hidden.has(this.tris[t + 1]) || hidden.has(this.tris[t + 2])) continue;
+      keep.push(this.tris[t], this.tris[t + 1], this.tris[t + 2]);
+    }
+    this.mesh.geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(keep), 1));
+    this.mesh.geometry.computeVertexNormals();
+  }
+
+  /** The skin's colour, as the design has it (left alone when it says nothing). */
+  setSkin(colour?: string) {
+    const mat = this.mesh?.material as THREE.MeshStandardMaterial | undefined;
+    if (mat) mat.color.set(colour || "#d8b49a");
+  }
+
+  /** Dress the body: everything the design puts on, each pinned to the body's own triangles. */
+  setWearing(items: Worn[]) {
+    for (const w of this.wearing) {
+      this.scene.remove(w.mesh);
+      w.mesh.geometry.dispose();
+      (w.mesh.material as THREE.Material).dispose();
+    }
+    this.wearing = [];
+    for (const worn of items) {
+      const {spec, bin} = worn;
+      const n = spec.vertices;
+      const idx = new Uint32Array(bin, spec.verts.at, n * 3);
+      const weight = new Float32Array(bin, spec.weights.at, n * 3);
+      const off = new Float32Array(bin, spec.offsets.at, n * 3);
+      const uv = new Float32Array(bin, spec.uv.at, n * 2);
+      const faces = new Uint32Array(bin, spec.indices.at, spec.indices.count);
+      const hides = spec.hides.count ? new Uint32Array(bin, spec.hides.at, spec.hides.count) : new Uint32Array(0);
+      const pos = new Float32Array(n * 3);
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+      g.setIndex(new THREE.BufferAttribute(faces, 1));
+      const hairy = spec.role === "hair" || spec.role === "beard" || spec.role === "eyebrows";
+      const mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(worn.colour || "#ffffff"),
+        map: worn.texture || null,
+        roughness: hairy ? 0.9 : 0.72,
+        metalness: 0,
+        transparent: hairy,                        // hair and brows are cut-out textures
+        alphaTest: hairy ? 0.35 : 0,
+        side: hairy ? THREE.DoubleSide : THREE.FrontSide,
+      });
+      const mesh = new THREE.Mesh(g, mat);
+      mesh.renderOrder = 1;
+      this.scene.add(mesh);
+      this.wearing.push({worn, mesh, idx, weight, off, pos, hides, scale: new Float32Array(3)});
+    }
+    this.dress();
+    this.hideCovered();
   }
 
   /** Look at the whole person, or close in on what is being edited. */
   frame(what: "whole" | "face" | "body") {
     const h = this.height;
+    this.looking = what;
     if (what === "face") {
       this.wanted.target.set(0, h * 0.92, 0);
       this.wanted.dist = h * 0.42;
@@ -157,7 +272,7 @@ export class BodyView {
 
   showRings(on: boolean) { this.rings.visible = on; }
 
-  // --- turning it ------------------------------------------------------------------------------------
+  // --- turning it ---  // --- turning it ------------------------------------------------------------------------------------
   private pick(e: PointerEvent): Grab {
     if (!this.rings.visible) return "orbit";
     const r = this.canvas.getBoundingClientRect();
@@ -202,7 +317,23 @@ export class BodyView {
       e.preventDefault();
       this.wanted.dist = Math.max(0.35, Math.min(6, this.wanted.dist * (1 + Math.sign(e.deltaY) * 0.12)));
     }, {passive: false});
-    this.canvas.addEventListener("dblclick", () => this.frame("whole"));
+    this.canvas.addEventListener("dblclick", e => this.lookAtPoint(e));
+  }
+
+  /** Double-click anywhere on the body to put that part in the middle and move in close; miss, and it
+   *  goes back to the whole figure. The quickest way back to a head you have lost. */
+  private lookAtPoint(e: MouseEvent) {
+    if (!this.mesh) return;
+    const r = this.canvas.getBoundingClientRect();
+    const p = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1,
+                                -((e.clientY - r.top) / r.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(p, this.camera);
+    const hit = ray.intersectObject(this.mesh, false)[0];
+    if (!hit) { this.frame("whole"); return; }
+    this.looking = "spot";
+    this.wanted.target.copy(hit.point);
+    this.wanted.dist = Math.max(0.3, this.height * 0.4);
   }
 
   resize() {
@@ -229,6 +360,7 @@ export class BodyView {
 
   dispose() {
     this.alive = false;
+    for (const w of this.wearing) { w.mesh.geometry.dispose(); (w.mesh.material as THREE.Material).dispose(); }
     cancelAnimationFrame(this.raf);
     this.mesh?.geometry.dispose();
     this.renderer.dispose();
