@@ -336,6 +336,47 @@ def build_special(spec, template, scene, box, materials):
                 for y in (-length * 0.34, length * 0.31):
                     cylinder("Aircraft landing gear", 0.08, height * 0.27,
                              (side * width * 0.27, y, height * 0.16), dark, 12)
+    elif family == "street":
+        # street furniture: small pieces that dress a street between the buildings
+        if style == "fence":
+            posts = max(2, int(round(width / 1.6)) + 1)
+            for index in range(posts):
+                x = -width / 2 + width * index / (posts - 1)
+                box("Fence post", (0.12, 0.12, height), (x, 0, height / 2), trunk, 0.01)
+            for rail_z in (height * 0.38, height * 0.78):
+                box("Fence rail", (width, 0.06, 0.14), (0, 0, rail_z), wall, 0.01)
+        elif style == "shelter":
+            leg = 0.1
+            for sx in (-1, 1):
+                for sy in (-1, 1):
+                    box("Shelter post", (leg, leg, height),
+                        (sx * (width / 2 - leg), sy * (length / 2 - leg), height / 2), dark, 0.01)
+            box("Shelter roof", (width, length + 0.3, 0.12), (0, 0, height + 0.06), roof, 0.02)
+            box("Shelter back", (width, 0.06, height * 0.78),
+                (0, length / 2 - 0.05, height * 0.39 + 0.1), glass, 0.01)
+            for sx in (-1, 1):                                          # a side panel each end
+                box("Shelter side", (0.06, length, height * 0.7),
+                    (sx * (width / 2 - 0.05), 0, height * 0.35 + 0.1), glass, 0.01)
+            box("Shelter bench", (width * 0.8, 0.34, 0.08), (0, length * 0.18, 0.46), trim, 0.02)
+            for sx in (-1, 1):
+                box("Bench leg", (0.08, 0.3, 0.42), (sx * width * 0.32, length * 0.18, 0.21), dark, 0.01)
+        elif style == "billboard":
+            leg_h = height * 0.45
+            for sx in (-1, 1):
+                box("Billboard leg", (0.18, 0.18, leg_h), (sx * width * 0.3, 0, leg_h / 2), dark, 0.01)
+            board_h = height - leg_h
+            box("Billboard frame", (width, 0.16, board_h), (0, 0, leg_h + board_h / 2), wall, 0.02)
+            box("Billboard face", (width * 0.96, 0.06, board_h * 0.9),
+                (0, -0.1, leg_h + board_h / 2), white, 0.01)
+        elif style == "fountain":
+            radius = min(width, length) / 2
+            cylinder("Fountain basin", radius, 0.55, (0, 0, 0.275), wall, 32)
+            cylinder("Fountain water", radius * 0.86, 0.1, (0, 0, 0.5), glass, 32)
+            cylinder("Fountain pedestal", radius * 0.3, height * 0.45, (0, 0, 0.55 + height * 0.22), wall, 24)
+            cylinder("Fountain upper bowl", radius * 0.45, 0.16,
+                     (0, 0, 0.55 + height * 0.45), wall, 24)
+            sphere("Fountain finial", (radius * 0.12, radius * 0.12, radius * 0.12),
+                   (0, 0, 0.72 + height * 0.45), accent)
     elif family == "road":
         sidewalk = 1.8
         road_width = width * 0.55

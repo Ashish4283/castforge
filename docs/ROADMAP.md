@@ -25,6 +25,7 @@ per GPU-second.
 | Editor 4: art | props are squares in the 3D view and move by dragging (a set object's move is written as an override); the editor's lights follow the scene's lighting mood and weather. Still open: light/weather/grade edited in the 3D view itself | part done 2026-11-23 |
 | Empty sets | a set picture can be emptied of the furniture lifted into 3D (`/api/set/empty`, grows the wall and floor in behind each marked object) or given an empty version made elsewhere; scenes on the set stand their props in it | v1 done 2026-11-23 |
 | Motion library page | app: search CMU, import Mixamo files, preview a clip, pick from/to visually | with canvas |
+| City library v2 | 11 more buildings on the proven facade styles (apartment block, office block, warehouse, factory, school, bank, cafe, supermarket, petrol station, barn, church) and a new street-furniture family (fence, bus shelter, billboard, fountain). Facade details no longer land on trees, roads and street pieces, and the factory-startup cube no longer stands in every small asset | v2 done 2026-11-23 |
 | 3D sets for action | free CC0 kits and the city library instead of the 2.5D picture | |
 | Any humanoid character | imported rigged model (bone map like motion.py) + costume and armour props | |
 | Face capture | webcam -> MediaPipe blendshapes -> face keys | |

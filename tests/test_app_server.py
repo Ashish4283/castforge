@@ -57,9 +57,10 @@ def test_build_library_building_saves_design_and_lists_shared_asset(tmp_path, mo
         "diner", "jail", "garden", "oak_tree", "pine_tree", "palm_tree",
         "car", "jeep", "truck", "helicopter", "airplane", "straight_road",
         "curved_road", "crossroads", "t_junction",
+        "apartment_block", "warehouse", "church", "fence", "bus_shelter", "billboard", "fountain",
     }
     assert {category["id"] for category in catalog["categories"]} == {
-        "buildings", "arenas", "landscapes", "trees", "vehicles", "roads",
+        "buildings", "arenas", "landscapes", "trees", "vehicles", "roads", "street",
     }
 
     result = server.build_library_building({

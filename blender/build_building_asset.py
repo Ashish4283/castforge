@@ -82,6 +82,9 @@ scene.render.filepath = args.preview
 scene.view_settings.view_transform = "AgX"
 scene.world.color = (0.12, 0.12, 0.12)
 
+for startup_object in list(bpy.data.objects):      # the factory file's cube stood in every small asset
+    bpy.data.objects.remove(startup_object, do_unlink=True)
+
 model_collection = bpy.data.collections.new("CastForge Prop Asset")
 scene.collection.children.link(model_collection)
 before = set(bpy.data.objects)
@@ -164,93 +167,95 @@ elif family == "building":
     box("Flat roof and parapet", (width + 0.35, depth + 0.35, 0.34),
         (0, 0, building_top + 0.17), roof, 0.045)
 
-bay_count = min(8, max(2, int(width // (3.0 if width > 10 else 2.2))))
-window_width = min(1.55, width / (bay_count + 1) * 0.62)
-window_height = 1.1 if floors == 1 else 1.35
-front_levels = range(floors)
-if style in ("shop", "retail", "mall", "station", "diner"):
-    front_levels = range(1, floors)
-for floor in front_levels:
-    center_z = 0.24 + floor * floor_height + floor_height * 0.59
-    for bay in range(bay_count):
-        x = (bay - (bay_count - 1) / 2) * (width * 0.78 / max(bay_count - 1, 1))
-        if floor == 0 and abs(x) < door_width * 0.78:
-            continue
-        box("Glazed window", (window_width, 0.055, window_height), (x, front_y - 0.07, center_z), glass, 0.012)
-        for side in (-1, 1):
-            box("Window frame", (0.055, 0.09, window_height + 0.12),
-                (x + side * (window_width / 2 + 0.035), front_y - 0.105, center_z), trim, 0.01)
-        for edge in (-1, 1):
-            box("Window frame", (window_width + 0.12, 0.09, 0.055),
-                (x, front_y - 0.105, center_z + edge * (window_height / 2 + 0.035)), trim, 0.01)
-        if style in ("row", "residential", "hospital", "police", "hotel", "jail"):
-            box("Window mullion", (0.035, 0.1, window_height),
-                (x, front_y - 0.13, center_z), trim, 0.008)
-
-if style in ("shop", "retail", "mall", "station", "restaurant", "diner"):
-    ground_bays = max(2, min(8, int(width // 3)))
-    glass_width = width * 0.72 / ground_bays
-    for bay in range(ground_bays):
-        x = (bay - (ground_bays - 1) / 2) * width * 0.72 / ground_bays
-        if abs(x) > door_width * 0.85:
-            box("Storefront glass", (glass_width * 0.82, 0.055, 1.8),
-                (x, front_y - 0.08, 1.24), glass, 0.012)
-    sign_z = min(body_height - 0.28, 2.45)
-    box("Sign band", (width * 0.74, 0.12, 0.48), (0, front_y - 0.12, sign_z), accent, 0.025)
-    text("Store sign", spec["name"], (0, front_y - 0.19, sign_z), min(0.32, width / 18), white)
-
-if style in ("shop", "retail", "mall", "station", "police", "hotel", "restaurant", "diner"):
-    canopy_width = width * (0.68 if style == "shop" else 0.88)
-    box("Entry canopy", (canopy_width, 1.15, 0.16),
-        (0, front_y - 0.53, 2.55), accent if style == "police" else roof, 0.025)
-    for x in (-canopy_width * 0.42, canopy_width * 0.42):
-        box("Canopy support", (0.12, 0.12, 2.4), (x, front_y - 0.95, 1.2), trim, 0.015)
-
-if style in ("hotel", "restaurant", "diner"):
-    sign_z = min(body_height - 0.32, 2.9)
-    box("Venue sign band", (width * 0.62, 0.12, 0.48), (0, front_y - 0.14, sign_z), accent, 0.025)
-    text("Venue sign", spec["name"], (0, front_y - 0.22, sign_z), min(0.36, width / 18), white)
-if style == "jail":
-    for floor in range(floors):
+# the facade details below dress a building's front: a tree, a road or a bus shelter has no front
+if family == "building":
+    bay_count = min(8, max(2, int(width // (3.0 if width > 10 else 2.2))))
+    window_width = min(1.55, width / (bay_count + 1) * 0.62)
+    window_height = 1.1 if floors == 1 else 1.35
+    front_levels = range(floors)
+    if style in ("shop", "retail", "mall", "station", "diner"):
+        front_levels = range(1, floors)
+    for floor in front_levels:
         center_z = 0.24 + floor * floor_height + floor_height * 0.59
         for bay in range(bay_count):
             x = (bay - (bay_count - 1) / 2) * (width * 0.78 / max(bay_count - 1, 1))
             if floor == 0 and abs(x) < door_width * 0.78:
                 continue
-            for bar_index in range(5):
-                bar_x = x + (bar_index - 2) * window_width * 0.16
-                box("Jail window bar", (0.035, 0.1, window_height + 0.04),
-                    (bar_x, front_y - 0.18, center_z), dark, 0.008)
-if family == "building" and style == "hotel":
-    for side in (-1, 1):
-        box("Hotel entrance column", (0.25, 0.32, 2.65),
-            (side * width * 0.12, front_y - 0.3, 1.32), trim, 0.035)
+            box("Glazed window", (window_width, 0.055, window_height), (x, front_y - 0.07, center_z), glass, 0.012)
+            for side in (-1, 1):
+                box("Window frame", (0.055, 0.09, window_height + 0.12),
+                    (x + side * (window_width / 2 + 0.035), front_y - 0.105, center_z), trim, 0.01)
+            for edge in (-1, 1):
+                box("Window frame", (window_width + 0.12, 0.09, 0.055),
+                    (x, front_y - 0.105, center_z + edge * (window_height / 2 + 0.035)), trim, 0.01)
+            if style in ("row", "residential", "hospital", "police", "hotel", "jail"):
+                box("Window mullion", (0.035, 0.1, window_height),
+                    (x, front_y - 0.13, center_z), trim, 0.008)
 
-if style == "hospital":
-    cross_z = min(body_height - 0.45, 3.1)
-    box("Hospital cross vertical", (0.18, 0.16, 0.9), (0, front_y - 0.23, cross_z), red, 0.015)
-    box("Hospital cross horizontal", (0.72, 0.16, 0.18), (0, front_y - 0.25, cross_z), red, 0.015)
-if style == "police":
-    box("Police entry stripe", (width * 0.88, 0.14, 0.22), (0, front_y - 0.14, 2.85), accent, 0.01)
-    text("Police sign", "POLICE", (0, front_y - 0.23, min(body_height - 0.5, 3.6)), 0.48, white)
-if style == "castle":
-    tower_radius = max(0.55, min(width, depth) * 0.055)
-    for x in (-width / 2 + tower_radius, width / 2 - tower_radius):
-        for y in (-depth / 2 + tower_radius, depth / 2 - tower_radius):
-            bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=tower_radius, depth=body_height + 0.7,
-                                                location=(x, y, (body_height + 0.7) / 2 + 0.24))
-            tower = bpy.context.object
-            tower.name = "Castle corner tower"
-            tower.data.materials.append(wall)
-            bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=tower_radius * 1.12, radius2=0.08,
-                                            depth=0.75, location=(x, y, body_height + 0.24 + body_height + 0.36))
-            bpy.context.object.name = "Castle tower roof"
-            bpy.context.object.data.materials.append(roof)
-    crenel_width = max(0.35, width / 18)
-    count = max(6, int(width / (crenel_width * 1.8)))
-    for index in range(count):
-        x = (index - (count - 1) / 2) * width / count
-        box("Crenellation", (crenel_width, 0.38, 0.42), (x, front_y, building_top + 0.36), wall, 0.015)
+    if style in ("shop", "retail", "mall", "station", "restaurant", "diner"):
+        ground_bays = max(2, min(8, int(width // 3)))
+        glass_width = width * 0.72 / ground_bays
+        for bay in range(ground_bays):
+            x = (bay - (ground_bays - 1) / 2) * width * 0.72 / ground_bays
+            if abs(x) > door_width * 0.85:
+                box("Storefront glass", (glass_width * 0.82, 0.055, 1.8),
+                    (x, front_y - 0.08, 1.24), glass, 0.012)
+        sign_z = min(body_height - 0.28, 2.45)
+        box("Sign band", (width * 0.74, 0.12, 0.48), (0, front_y - 0.12, sign_z), accent, 0.025)
+        text("Store sign", spec["name"], (0, front_y - 0.19, sign_z), min(0.32, width / 18), white)
+
+    if style in ("shop", "retail", "mall", "station", "police", "hotel", "restaurant", "diner"):
+        canopy_width = width * (0.68 if style == "shop" else 0.88)
+        box("Entry canopy", (canopy_width, 1.15, 0.16),
+            (0, front_y - 0.53, 2.55), accent if style == "police" else roof, 0.025)
+        for x in (-canopy_width * 0.42, canopy_width * 0.42):
+            box("Canopy support", (0.12, 0.12, 2.4), (x, front_y - 0.95, 1.2), trim, 0.015)
+
+    if style in ("hotel", "restaurant", "diner"):
+        sign_z = min(body_height - 0.32, 2.9)
+        box("Venue sign band", (width * 0.62, 0.12, 0.48), (0, front_y - 0.14, sign_z), accent, 0.025)
+        text("Venue sign", spec["name"], (0, front_y - 0.22, sign_z), min(0.36, width / 18), white)
+    if style == "jail":
+        for floor in range(floors):
+            center_z = 0.24 + floor * floor_height + floor_height * 0.59
+            for bay in range(bay_count):
+                x = (bay - (bay_count - 1) / 2) * (width * 0.78 / max(bay_count - 1, 1))
+                if floor == 0 and abs(x) < door_width * 0.78:
+                    continue
+                for bar_index in range(5):
+                    bar_x = x + (bar_index - 2) * window_width * 0.16
+                    box("Jail window bar", (0.035, 0.1, window_height + 0.04),
+                        (bar_x, front_y - 0.18, center_z), dark, 0.008)
+    if family == "building" and style == "hotel":
+        for side in (-1, 1):
+            box("Hotel entrance column", (0.25, 0.32, 2.65),
+                (side * width * 0.12, front_y - 0.3, 1.32), trim, 0.035)
+
+    if style == "hospital":
+        cross_z = min(body_height - 0.45, 3.1)
+        box("Hospital cross vertical", (0.18, 0.16, 0.9), (0, front_y - 0.23, cross_z), red, 0.015)
+        box("Hospital cross horizontal", (0.72, 0.16, 0.18), (0, front_y - 0.25, cross_z), red, 0.015)
+    if style == "police":
+        box("Police entry stripe", (width * 0.88, 0.14, 0.22), (0, front_y - 0.14, 2.85), accent, 0.01)
+        text("Police sign", "POLICE", (0, front_y - 0.23, min(body_height - 0.5, 3.6)), 0.48, white)
+    if style == "castle":
+        tower_radius = max(0.55, min(width, depth) * 0.055)
+        for x in (-width / 2 + tower_radius, width / 2 - tower_radius):
+            for y in (-depth / 2 + tower_radius, depth / 2 - tower_radius):
+                bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=tower_radius, depth=body_height + 0.7,
+                                                    location=(x, y, (body_height + 0.7) / 2 + 0.24))
+                tower = bpy.context.object
+                tower.name = "Castle corner tower"
+                tower.data.materials.append(wall)
+                bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=tower_radius * 1.12, radius2=0.08,
+                                                depth=0.75, location=(x, y, body_height + 0.24 + body_height + 0.36))
+                bpy.context.object.name = "Castle tower roof"
+                bpy.context.object.data.materials.append(roof)
+        crenel_width = max(0.35, width / 18)
+        count = max(6, int(width / (crenel_width * 1.8)))
+        for index in range(count):
+            x = (index - (count - 1) / 2) * width / count
+            box("Crenellation", (crenel_width, 0.38, 0.42), (x, front_y, building_top + 0.36), wall, 0.015)
 
 model_objects = set(bpy.data.objects) - before
 for obj in model_objects:
