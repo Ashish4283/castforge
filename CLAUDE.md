@@ -93,6 +93,9 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Bash tool: heredocs with apostrophes or backslash escapes break; write edit scripts to a file.
 - A pose layer that reads the pose back must read every frame before writing any key, or it compounds onto itself.
 - The user's app runs on 8765; test servers use 8777.
+- A route that starts GPU work calls `server.gpu_job(kind, name, movie, start)`: it starts `start()` when the
+  GPU is free and otherwise queues it (one worker thread, `/api/gpu` lists the queue). Never refuse a job
+  with a 409 again.
 - One GPU at a time, two locks: `.render.lock` (renders) and `.build.lock` (character/set/prop/building builds,
   written by `castforge.claim_build`). Renders and builds refuse each other; `gpu_busy` reads both.
 - A just-appended object's `matrix_world` is not evaluated (reads identity): build on `matrix_basis`.

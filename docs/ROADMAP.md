@@ -39,9 +39,11 @@ user (free Adobe account) and must not be redistributed: `motions/` is git-ignor
 
 | Sound mix v2 | effects fade with distance from the camera like footsteps do (`media.distance_gain`, one place for both); the background bed is spread left and right instead of sitting dead centre (`ambience_width`); how far music and background dip under dialogue is a scene setting (`music_duck_db`, `ambience_duck_db`) | v2 done 2026-11-23 |
 
+| GPU queue | asking for a second GPU job while one is running queues it instead of refusing it: it starts on its own when the GPU frees up, the sidebar lists what is waiting with a way to drop it, and an episode waiting its turn says so (`/api/gpu`, `/api/gpu/cancel`) | v1 done 2026-11-23 |
+
 ## Maintenance
-Check character skin/highlights under `Standard`; one GPU job queue (character, set, SFX builds bypass
-`.render.lock`); assemble acts into one film (`movies/<m>/film.json`); disk clean-up command.
+Check character skin/highlights under `Standard`; assemble acts into one film (`movies/<m>/film.json`);
+disk clean-up command.
 
 ## Done
 React app with sidebar (2026-11-11): Overview, Episodes (scene, script, 3D editor, output, finishing, JSON),

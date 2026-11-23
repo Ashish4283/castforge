@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from "react";
 import {Boxes, Building2, ChevronsLeft, ChevronsRight, ChevronsUpDown, Clapperboard, Film, Image, LayoutDashboard,
-  LifeBuoy, Plus, Users} from "lucide-react";
+  LifeBuoy, Plus, Users, X} from "lucide-react";
 import {post} from "../api";
 import {useStore} from "../app/store";
 
@@ -15,7 +15,7 @@ export const PAGES = [
 ] as const;
 
 export function Sidebar({collapsed, onCollapse}: {collapsed: boolean; onCollapse: (v: boolean) => void}) {
-  const {movies, movie, current, setMovie, reload, route, go, gpu, jobs, toast} = useStore();
+  const {movies, movie, current, setMovie, reload, route, go, gpu, queue, jobs, toast} = useStore();
   const [menu, setMenu] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -90,6 +90,17 @@ export function Sidebar({collapsed, onCollapse}: {collapsed: boolean; onCollapse
             <span className="gpu-text">Building {building.map(j => j.name).join(", ")}</span>
           </div>
         )}
+        {queue.map(q => (
+          <div key={q.id} className="gpu" title={`${q.name} starts on its own when the GPU is free`}>
+            <span className="dot" />
+            <span className="gpu-text">{q.position}. waiting: {q.name}</span>
+            <button className="btn ghost sm" title="Take it out of the queue"
+                    onClick={async () => {
+                      try { await post("/api/gpu/cancel", {id: q.id}); toast(`${q.name} taken out of the queue`); }
+                      catch (e) { toast((e as Error).message, "err"); }
+                    }}><X size={13} /></button>
+          </div>
+        ))}
         <div className={`gpu ${gpu ? "busy" : ""}`} title={gpu ? `GPU busy: ${gpu}` : "GPU free"}>
           <span className="dot" />
           <span className="gpu-text">{gpu ? `GPU: ${gpu}` : "GPU free"}</span>

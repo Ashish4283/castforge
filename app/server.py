@@ -127,6 +127,77 @@ def character_building():
         return any(j["state"] == "building" for j in jobs.values())
 
 
+# --- one GPU, a queue in front of it ----------------------------------------------------------------------
+# This laptop runs one GPU job at a time. Asking for a second used to be refused, which meant sitting and
+# watching for a render to end before asking for the next thing. Instead the work waits here and starts on
+# its own, in the order it was asked for.
+gpu_queue = []
+queue_lock = threading.Lock()
+queue_worker = None
+QUEUE_POLL = 2.0
+
+
+def gpu_job(kind, name, movie, start):
+    """Start this GPU job now when nothing else is using the GPU, otherwise put it in the queue.
+
+    `start` does whatever starting that job means (it is called later, from the queue's own thread), and
+    returns what the route would have returned. The answer always says which of the two happened."""
+    busy = gpu_busy()
+    with queue_lock:
+        waiting = len(gpu_queue)
+    if not busy and not waiting:
+        return {"queued": False, **(start() or {})}
+    job_id = f"queue/{kind}/{name}/{int(time.time() * 1000)}"
+    with queue_lock:
+        gpu_queue.append({"id": job_id, "kind": kind, "name": name, "movie": movie, "start": start,
+                          "asked": time.time()})
+        at = len(gpu_queue)
+    _keep_queue_moving()
+    return {"queued": True, "id": job_id, "position": at,
+            "message": f"the GPU is busy with {busy or 'the job before this one'}: "
+                       f"{name} is number {at} in the queue and starts on its own."}
+
+
+def queue_items():
+    """What is waiting, in order (without the start functions: those do not leave this process)."""
+    with queue_lock:
+        return [{"id": j["id"], "kind": j["kind"], "name": j["name"], "movie": j["movie"],
+                 "position": n} for n, j in enumerate(gpu_queue, 1)]
+
+
+def _keep_queue_moving():
+    global queue_worker
+    with queue_lock:
+        if queue_worker is not None and queue_worker.is_alive():
+            return
+        queue_worker = threading.Thread(target=_work_through_queue, daemon=True)
+        queue_worker.start()
+
+
+def _work_through_queue():
+    while True:
+        with queue_lock:
+            if not gpu_queue:
+                return
+            head = gpu_queue[0]
+        if gpu_busy():
+            time.sleep(QUEUE_POLL)
+            continue
+        with queue_lock:
+            if not gpu_queue or gpu_queue[0] is not head:
+                continue                     # it was cancelled while we waited
+            gpu_queue.pop(0)
+        try:
+            head["start"]()
+        except Exception as exc:             # a queued job must never take the queue down with it
+            print(f"CF: {head['name']} could not start: {exc}", flush=True)
+            continue
+        for _ in range(int(30 / QUEUE_POLL)):    # let it take the GPU before we look at the next one
+            if gpu_busy():
+                break
+            time.sleep(QUEUE_POLL)
+
+
 def gpu_busy():
     """What is using the GPU right now, or None."""
     owner = cf.render_lock_owner()
@@ -349,8 +420,13 @@ def episode(movie: str, episode: str):
             if os.path.exists(os.path.join(pub, f)):
                 downloads.append({"name": label, "url": media_url(os.path.join(pub, f))})
     board = os.path.join(d, "storyboard.jpg")
+    # a job asked for while the GPU was busy is waiting its turn: say so here rather than look un-asked-for
+    waiting = next((q for q in queue_items() if q["name"].endswith(f" of {os.path.basename(d)}")), None)
+    status_text = st["text"] if st else "not rendered yet"
+    if waiting:
+        status_text = f"waiting in the queue (number {waiting['position']}): {waiting['name']}"
     return {"scene": open(os.path.join(d, "scene.json"), encoding="utf-8").read(),
-            "status": st["text"] if st else "not rendered yet", "rendering": bool(st and st["alive"]),
+            "status": status_text, "rendering": bool(st and st["alive"]) or bool(waiting),
             "video": media_url(video) if os.path.exists(video) else None, "shots": shots,
             "storyboard": media_url(board) if os.path.exists(board) else None, "downloads": downloads,
             "previews": previews}
@@ -442,15 +518,17 @@ def render_episode(body: dict):
     quality = body.get("quality", "blocking")
     if quality not in config.QUALITY:
         raise HTTPException(400, "unknown quality")
-    busy = gpu_busy()
-    if busy:
-        raise HTTPException(409, f"the GPU is busy with {busy}; one GPU job at a time on this laptop")
     out, code = run_cli("check", d)
     if code != 0:
         raise HTTPException(400, "fix these first:\n" + out)
     command = "preview3d" if body.get("preview3d") else "storyboard" if body.get("storyboard") else "episode"
-    out, code = run_cli(command, d, "--quality", quality)
-    return {"ok": code == 0, "output": out}
+
+    def start():
+        out_, code_ = run_cli(command, d, "--quality", quality)
+        return {"ok": code_ == 0, "output": out_}
+
+    label = f"{command} of {os.path.basename(d)}"
+    return gpu_job(command, label, body.get("movie"), start)
 
 
 @app.post("/api/episode/storyboard")
@@ -784,11 +862,9 @@ async def set_empty_upload(movie: str = Form(...), set: str = Form(...), picture
 def build_set(body: dict):
     movie, set_name = safe(body.get("movie"), "movie"), safe(body.get("set"), "set")
     set_dir, saved = validate_set_blueprint(movie, set_name, body.get("blueprint"))
-    busy = gpu_busy()
-    if busy:
-        raise HTTPException(409, f"the GPU is busy with {busy}; try again when it is done")
     save_set_blueprint(set_dir, saved)
-    return {"job": start_set_build(movie, set_name, set_dir), "blueprint": saved}
+    return {**gpu_job("set", f"3D set: {set_name}", movie,
+                      lambda: {"job": start_set_build(movie, set_name, set_dir)}), "blueprint": saved}
 
 
 def start_library_building(category, name, folder):
@@ -848,9 +924,6 @@ def build_library_building(body: dict):
     for field, color in (("wall_color", wall_color), ("roof_color", roof_color)):
         if not isinstance(color, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
             raise HTTPException(400, f"{field} must be a six-digit hex color")
-    busy = gpu_busy()
-    if busy:
-        raise HTTPException(409, f"the GPU is busy with {busy}; try again when it is done")
     folder = os.path.join(LIBRARY, category, name)
     if os.path.isfile(os.path.join(folder, f"{name}.blend")):
         raise HTTPException(409, f"a library building named {name!r} already exists")
@@ -867,7 +940,8 @@ def build_library_building(body: dict):
     with open(temporary_spec, "w", encoding="utf-8") as spec_file:
         json.dump(spec, spec_file, indent=1)
     os.replace(temporary_spec, os.path.join(folder, "building.json"))
-    return {"job": start_library_building(category, name, folder)}
+    return gpu_job("library", f"library asset: {name}", None,
+                   lambda: {"job": start_library_building(category, name, folder)})
 
 
 @app.post("/api/prop/build")
@@ -895,9 +969,6 @@ async def build_prop(movie: str = Form(...), name: str = Form(...), make: str = 
         raise HTTPException(400, "upload a valid PNG, JPEG, or WEBP reference image") from exc
     if not extension:
         raise HTTPException(400, "upload a PNG, JPEG, or WEBP reference image")
-    busy = gpu_busy()
-    if busy:
-        raise HTTPException(409, f"the GPU is busy with {busy}; try again when it is done")
     prop_dir = os.path.join(movie_dir(movie), "props", name)
     os.makedirs(prop_dir, exist_ok=True)
     image_name = f"reference{extension}"
@@ -911,7 +982,8 @@ async def build_prop(movie: str = Form(...), name: str = Form(...), make: str = 
         json.dump({"name": name, "make": make, "size": list(dimensions), "material": material,
                    "color": color.lower(), "image": image_name}, spec_file, indent=1)
     os.replace(temporary_spec, spec_path)
-    return {"job": start_prop_build(movie, name, prop_dir)}
+    return gpu_job("prop", f"3D prop: {name}", movie,
+                   lambda: {"job": start_prop_build(movie, name, prop_dir)})
 
 
 @app.post("/api/character/design")
@@ -924,13 +996,10 @@ def character_from_design(body: dict):
     problems = schema.check_design(design)
     if problems:
         raise HTTPException(400, "; ".join(problems))
-    busy = gpu_busy()
-    if busy:
-        raise HTTPException(409, f"the GPU is busy with {busy}; try again when it is done")
     cdir = os.path.join(movie_dir(movie), "characters")
     path = os.path.join(cdir, f"{name}.design.json")
     json.dump(design, open(path, "w", encoding="utf-8"), indent=1)
-    return {"job": start_build(movie, name, ["--design", path, name])}
+    return gpu_job("character", name, movie, lambda: {"job": start_build(movie, name, ["--design", path, name])})
 
 
 @app.post("/api/character/photo")
@@ -943,9 +1012,6 @@ async def character_from_photo(movie: str = Form(...), name: str = Form(...), ge
         raise HTTPException(400, "gender must be male or female")
     if costume and costume not in schema.COSTUMES:
         raise HTTPException(400, f"no costume {costume!r} (choose {', '.join(schema.COSTUMES)})")
-    busy = gpu_busy()
-    if busy:
-        raise HTTPException(409, f"the GPU is busy with {busy}; try again when it is done")
     cdir = os.path.join(movie_dir(movie), "characters", "photos")
     os.makedirs(cdir, exist_ok=True)
     ext = os.path.splitext(photo.filename or "")[1].lower() or ".png"
@@ -964,7 +1030,8 @@ async def character_from_photo(movie: str = Form(...), name: str = Form(...), ge
             design_set(design, key, value)
     dpath = os.path.join(movie_dir(movie), "characters", f"{name}.design.json")
     json.dump(design, open(dpath, "w", encoding="utf-8"), indent=1)
-    return {"job": start_build(movie, name, args + ["--design", dpath])}
+    return gpu_job("character", name, movie,
+                   lambda: {"job": start_build(movie, name, args + ["--design", dpath])})
 
 
 def design_set(design, key, value):
@@ -1024,9 +1091,6 @@ def character_rebuild(body: dict):
     problems = schema.check_design(design)
     if problems:
         raise HTTPException(400, "; ".join(problems))
-    busy = gpu_busy()
-    if busy:
-        raise HTTPException(409, f"the GPU is busy with {busy}; try again when it is done")
     cdir, photo, face = character_files(movie, name)
     dpath = os.path.join(cdir, f"{name}.design.json")
     use_photo = bool(body.get("use_photo") and photo)
@@ -1035,7 +1099,7 @@ def character_rebuild(body: dict):
         args = [photo, name, "--design", dpath] + (["--face-photo", face] if face else [])
     else:
         args = ["--design", dpath, name]
-    return {"job": start_build(movie, name, args)}
+    return gpu_job("character", name, movie, lambda: {"job": start_build(movie, name, args)})
 
 
 @app.get("/api/jobs")
@@ -1062,7 +1126,20 @@ def prompts():
 
 @app.get("/api/gpu")
 def gpu():
-    return {"busy": gpu_busy()}
+    return {"busy": gpu_busy(), "queue": queue_items()}
+
+
+@app.post("/api/gpu/cancel")
+def cancel_queued(body: dict):
+    """Take one waiting job out of the queue (nothing that has already started is touched)."""
+    job_id = body.get("id")
+    with queue_lock:
+        before = len(gpu_queue)
+        gpu_queue[:] = [j for j in gpu_queue if j["id"] != job_id]
+        gone = before - len(gpu_queue)
+    if not gone:
+        raise HTTPException(404, "that job is not waiting any more: it may have already started")
+    return {"queue": queue_items()}
 
 
 app.mount("/media", StaticFiles(directory=MOVIES), name="media")

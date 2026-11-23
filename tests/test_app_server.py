@@ -69,7 +69,7 @@ def test_build_library_building_saves_design_and_lists_shared_asset(tmp_path, mo
     })
     folder = library / "buildings" / "santa_hut"
     spec = json.loads((folder / "building.json").read_text(encoding="utf-8"))
-    assert result == {"job": "library/buildings/santa_hut/1"}
+    assert result == {"queued": False, "job": "library/buildings/santa_hut/1"}
     assert spec == {"name": "santa_hut", "template": "hut", "family": "building", "category": "buildings",
                     "footprint": [6.0, 5.0], "floors": 1, "size": [6.0, 5.0, 0],
                     "wall_color": "#98704c", "roof_color": "#49382d"}
@@ -120,7 +120,7 @@ def test_build_library_vehicle_uses_vehicle_catalog_category(tmp_path, monkeypat
     })
 
     spec = json.loads((library / "vehicles" / "rescue_heli" / "building.json").read_text(encoding="utf-8"))
-    assert result == {"job": "library/vehicles/rescue_heli/1"}
+    assert result == {"queued": False, "job": "library/vehicles/rescue_heli/1"}
     assert spec["family"] == "vehicle"
     assert spec["category"] == "vehicles"
     assert spec["size"] == [3.2, 10.0, 3.5]
@@ -144,7 +144,7 @@ def test_build_prop_saves_reference_and_design_and_lists_asset(tmp_path, monkeyp
 
     prop_dir = movie_dir / "props" / "radio"
     spec = json.loads((prop_dir / "prop.json").read_text(encoding="utf-8"))
-    assert result == {"job": "film/prop/radio/1"}
+    assert result == {"queued": False, "job": "film/prop/radio/1"}
     assert spec == {"name": "radio", "make": "car_radio", "size": [0.3, 0.2, 0.15],
                     "material": "wood", "color": "#804020", "image": "reference.png"}
     assert Image.open(prop_dir / "reference.png").size == (16, 16)
@@ -540,3 +540,51 @@ def test_an_empty_room_made_elsewhere_can_be_used_instead(tmp_path, monkeypatch)
 
     assert "empty room" in r["message"]
     assert Image.open(set_dir / sets.EMPTY).size == (120, 80)
+
+
+def test_a_second_gpu_job_waits_in_the_queue_instead_of_being_refused(monkeypatch):
+    started = []
+    monkeypatch.setattr(server, "gpu_busy", lambda: "an episode render (act1)")
+    server.gpu_queue.clear()
+    try:
+        first = server.gpu_job("set", "3D set: cabin", "film", lambda: started.append("cabin"))
+        second = server.gpu_job("character", "arthur", "film", lambda: started.append("arthur"))
+        assert first["queued"] and first["position"] == 1
+        assert second["queued"] and second["position"] == 2
+        assert started == []                                   # nothing runs while the GPU is busy
+        assert [j["name"] for j in server.queue_items()] == ["3D set: cabin", "arthur"]
+        assert "number 2 in the queue" in second["message"]
+        assert server.cancel_queued({"id": first["id"]})["queue"] == [
+            {"id": second["id"], "kind": "character", "name": "arthur", "movie": "film", "position": 1}]
+        with pytest.raises(HTTPException):
+            server.cancel_queued({"id": first["id"]})          # it is not waiting any more
+    finally:
+        server.gpu_queue.clear()
+
+
+def test_a_job_starts_straight_away_when_nothing_is_using_the_gpu(monkeypatch):
+    monkeypatch.setattr(server, "gpu_busy", lambda: None)
+    server.gpu_queue.clear()
+    answer = server.gpu_job("set", "3D set: cabin", "film", lambda: {"job": "film/set/cabin/1"})
+    assert answer == {"queued": False, "job": "film/set/cabin/1"}
+    assert server.queue_items() == []
+
+
+def test_the_queue_starts_what_is_waiting_once_the_gpu_is_free(monkeypatch):
+    import time as _time
+    state = {"busy": "a character build"}
+    started = []
+    monkeypatch.setattr(server, "gpu_busy", lambda: state["busy"])
+    monkeypatch.setattr(server, "QUEUE_POLL", 0.02)
+    server.gpu_queue.clear()
+    try:
+        server.gpu_job("set", "3D set: cabin", "film", lambda: started.append("cabin"))
+        assert started == []
+        state["busy"] = None                                   # the build finishes
+        for _ in range(100):
+            if started:
+                break
+            _time.sleep(0.02)
+        assert started == ["cabin"] and server.queue_items() == []
+    finally:
+        server.gpu_queue.clear()
