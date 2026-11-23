@@ -412,6 +412,12 @@ def describe():
             "character": CHARACTER, "costumes": COSTUMES, "fix_parts": sorted(acting.FIX_PARTS),
             # the designer groups its sliders from these, so a new one appears in the app on its own
             "face_groups": FACE_GROUPS, "body_groups": BODY_GROUPS, "slider_range": list(SLIDER_RANGE),
+            # which morph targets each slider leans on, so the live preview can shape the body in the
+            # browser from the same table the build uses. One vocabulary, two places that read it.
+            "slider_targets": {f"{part}.{key}": {"plus": plus, "minus": minus}
+                               for part, table in (("face", appearance.FACE), ("body", appearance.BODY))
+                               for key, (_g, plus, minus, _h) in table.items()},
+            "head_shapes": {s_: f"head-{s_}" for s_ in appearance.HEAD_SHAPES if s_ != "none"},
             "library": library()}
 
 

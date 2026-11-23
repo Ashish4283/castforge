@@ -65,6 +65,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | the app (React 18 + TS + Vite, sidebar layout) | `web/src/`: `main.tsx` routes, `app/store.tsx` (movies, GPU, jobs, toasts, hash route), `app/episode.tsx` (open scene model: `update`, `save`, `scene()`, `cast()`), `components/ui.tsx` (Button, Card, Field...), `components/ParamInput.tsx` (any schema parameter), `pages/*`; design tokens at the top of `styles.css`. Old page at `/classic` (`app/index.html`, `static/app.js`) until removed |
 | Overview page (next step, progress) | `server.py` `/api/movie/progress`; `web/src/pages/Studio.tsx` |
 | 3D scene editor (view, timeline, drag spots) | `web/src/pages/episodes/viewer.ts` (three.js) + `Editor3D.tsx`; export `scene_kit.py` `if args.preview3d`; job `--preview3d` |
+| the designer's live body (morphs as the sliders move) | export `blender/preview_kit.py` -> `library/preview_kits/<sex>-<age>-<build>-<height>/kit.json+bin`; what is needed and whether it is there `core/preview_kit.py` (pure, tested, `VERSION`); route `/api/character/preview-kit`; drawing `web/src/pages/characters/bodyview.ts` + `LivePreview.tsx` |
 | what a face or body can be shaped into (sliders) | `core/appearance.py` (pure, tested: `FACE`, `BODY`, `targets_for`, `photo_vars`, hair styles, eyebrows). One table: `schema.CHARACTER` grows from it, the app groups from `face_groups`/`body_groups`, the build applies it |
 | character designer, costumes | vocabulary `schema.CHARACTER`/`COSTUMES`/`check_design`; routes `/api/character`, `/api/character/rebuild`; UI `pages/CharacterDesigner.tsx`; build `build_character.py` anchor `# --- costume`; maths `blender/costume.py` (pure, tested: openings, bands, hem/cape rings, hood cut) |
 | model props (seat / wheel objects) | `scene_kit.py` `def load_prop_file`, `def wheel_pivot` |
@@ -110,6 +111,16 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - MPFB ships 1258 morph targets INSIDE the addon (`<addon>/data/targets/…`), not in the user asset library,
   which only carries expressions and visemes. `TargetService.target_full_path(name)` finds one by bare name
   (`chin-width-incr`) and `load_target` adds it as a weighted shape key. Paired features are `l-`/`r-`.
+- A preview kit exports TWO different meshes and mixing them up silently ignores age, build and height:
+  positions come from the EVALUATED body (macros applied), deltas from the "Basis" shape key (every target
+  is a delta from the untouched base). Targets apply additively on top, which is what MakeHuman does too.
+  Verified: a kit morphed by a design matches that design's built character to the millimetre (1.870 m,
+  0.749 m across the shoulders, both).
+- MakeHuman's mesh carries helper geometry that stands taller than the person. Height must be bisected
+  against the "body" vertex group alone (as `build_character` does) or every preview comes out short. A
+  built character measured with its masks ON is shorter again: clothes hide geometry.
+- Preview kits are cached on disk for ever, so `preview_kit.VERSION` must be bumped whenever the exporter
+  changes what it writes - otherwise a fixed exporter keeps serving the broken one's bodies.
 - The photo fit and the designer's sliders deliberately use DIFFERENT lists (`appearance.photo_vars` vs
   `FACE`/`BODY`). Widening the fit gives the solver freedom one front-on photo cannot support and changes
   every face already built from a photo; sliders are applied on top of the fit, so both can grow apart.

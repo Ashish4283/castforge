@@ -29,6 +29,7 @@ LIBRARY = os.path.join(ROOT, "library")
 sys.path.insert(0, ROOT)
 import castforge as cf  # noqa: E402
 from core import config, publish, schema  # noqa: E402
+from core import preview_kit as kit_mod  # noqa: E402
 from core import sets as sets_mod  # noqa: E402
 from core.buildings import (BUILDING_CATEGORIES, BUILDING_DESIGNS, default_asset_spec,
                             describe_buildings)  # noqa: E402
@@ -41,6 +42,43 @@ NAME = re.compile(r"^[a-z0-9_]{1,40}$")
 NOT_EPISODES = {"characters", "sets", "references", "motion"}
 jobs = {}               # character builds: id -> {"name", "movie", "state", "log", "started"}
 jobs_lock = threading.Lock()
+
+
+# --- the designer's live preview -----------------------------------------------------------------------
+# A kit is the plain body plus every shape the sliders morph it into, so the app can show a face changing
+# as it is dragged. Making one takes about eight seconds and depends only on sex, age band and build, so
+# they are kept and shared: everyone of the same shape underneath uses the same kit.
+kit_lock = threading.Lock()
+
+
+def build_preview_kit(key):
+    """Make the kit for this key if it is not already there. Returns (ok, message)."""
+    with kit_lock:                       # two sliders moved at once must not start two Blenders
+        if kit_mod.is_ready(LIBRARY, key):
+            return True, "ready"
+        gender, age, build, height = kit_mod.parts(key)
+        folder = kit_mod.folder_for(LIBRARY, key)
+        os.makedirs(folder, exist_ok=True)
+        r = subprocess.run([config.BLENDER, "-b", "--factory-startup", "--python-exit-code", "1",
+                            "-P", os.path.join(ROOT, "blender", "preview_kit.py"), "--",
+                            "--gender", gender, "--age", str(age), "--build", build,
+                            "--height-cm", str(height), "--out", folder],
+                           capture_output=True, text=True, cwd=ROOT)
+        if not kit_mod.is_ready(LIBRARY, key):
+            tail = " / ".join((r.stdout or r.stderr or "").strip().splitlines()[-3:])
+            return False, f"the preview body could not be made: {tail}"
+        return True, "made"
+
+
+@app.get("/api/character/preview-kit")
+def preview_kit(gender: str = "female", age: float = 30, build: str = "average", height_cm: float = 170):
+    """Where to fetch the body the designer morphs, making it first if this shape has not been asked for."""
+    key = kit_mod.key_for({"gender": gender, "age": age, "build": build, "height_cm": height_cm})
+    ok, message = build_preview_kit(key)
+    if not ok:
+        raise HTTPException(503, message)
+    return {"key": key, "json": f"/preview-kit/{key}/kit.json", "bin": f"/preview-kit/{key}/kit.bin",
+            "made": message == "made"}
 
 
 @app.get("/api/schema")
@@ -1145,6 +1183,8 @@ def cancel_queued(body: dict):
 app.mount("/media", StaticFiles(directory=MOVIES), name="media")
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
 app.mount("/library-media", StaticFiles(directory=LIBRARY), name="library-media")
+os.makedirs(os.path.join(LIBRARY, "preview_kits"), exist_ok=True)
+app.mount("/preview-kit", StaticFiles(directory=os.path.join(LIBRARY, "preview_kits")), name="preview-kit")
 
 
 UI = os.path.join(os.path.dirname(__file__), "ui")      # the React app, built from web/ (npm run build)

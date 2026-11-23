@@ -31,6 +31,8 @@ export interface Schema {
   face_groups: Record<string, string[]>;      // the designer's face sliders, by heading
   body_groups: Record<string, string[]>;      // and the body ones
   slider_range: [number, number];
+  slider_targets: Record<string, {plus: string[]; minus: string[]}>;   // what each slider morphs
+  head_shapes: Record<string, string>;
   library: {footsteps: string[]; sfx: string[]; beds: string[]; clips: string[]};
 }
 export interface Character { name: string; preview: string | null; design: boolean }

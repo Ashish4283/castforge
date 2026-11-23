@@ -441,3 +441,19 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
 .slider-row input[type="range"] { width: 100%; accent-color: var(--accent); background: transparent; }
 .slider-value { min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; font-size: 11.5px; color: var(--text-3); }
 .slider-row.set .slider-value { color: var(--accent-2); }
+
+/* --- the designer's live body --- */
+.stage-pick { padding: 10px 12px 0; display: flex; justify-content: center; }
+.live-preview { display: grid; gap: 8px; padding: 10px 12px 12px; }
+.live-stage { position: relative; aspect-ratio: 3 / 4; border-radius: var(--r-sm); overflow: hidden;
+  background: radial-gradient(120% 90% at 50% 10%, #2b3344 0%, #171c26 70%); border: 1px solid var(--line); }
+.live-stage canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+.live-cover { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(12, 15, 22, .72); backdrop-filter: blur(2px); }
+.live-cover .spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.live-hint { position: absolute; left: 10px; bottom: 9px; right: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  font-size: 11px; color: #cfd6e4; text-shadow: 0 1px 3px rgba(0,0,0,.7); pointer-events: none; }
+.live-hint span { display: inline-flex; align-items: center; gap: 5px; }
+.live-hint i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.live-bar { display: flex; align-items: center; gap: 8px; }
+.live-note { margin: 0; }

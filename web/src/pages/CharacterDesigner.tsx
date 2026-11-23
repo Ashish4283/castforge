@@ -1,10 +1,12 @@
 // The character designer: every design key (core/schema.py CHARACTER) as a control, ready-made looks, the
 // front/side/back previews, and Rebuild. Photo characters keep their face and body from the photo.
-import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {ChevronRight, Dumbbell, Hammer, RotateCcw, Shirt, Sparkles, UserRound, Wand2} from "lucide-react";
 import {api, CharacterDetail, Json, label, ParamDef, post, q} from "../api";
 import {useStore} from "../app/store";
 import {Badge, Button, ColorField, Field, Notice, PageHead, Segmented, Select, Switch} from "../components/ui";
+// three.js is 500 kB: it loads the first time someone opens the live body, not with the app
+const LivePreview = lazy(() => import("./characters/LivePreview").then(m => ({default: m.LivePreview})));
 
 const SECTIONS: {title: string; text: string; keys: string[]}[] = [
   {title: "Body", text: "Who they are. Age and build shape the whole body.", keys: ["gender", "age", "height_cm", "build"]},
@@ -35,6 +37,8 @@ export function CharacterDesigner({name}: {name: string}) {
   const [design, setDesign] = useState<Json>(null);
   const [saved, setSaved] = useState("");
   const [view, setView] = useState<"front" | "side" | "back">("front");
+  const [stage, setStage] = useState<"live" | "built">("live");     // the shape as it is now, or the last build
+  const [focus, setFocus] = useState<"whole" | "face" | "body">("whole");
   const [usePhoto, setUsePhoto] = useState(true);
   const [busy, setBusy] = useState(false);
   const wasBuilding = useRef(false);
@@ -103,11 +107,20 @@ export function CharacterDesigner({name}: {name: string}) {
         </>} />
       <div className="designer">
         <div className="viewer card">
-          <div className="stage">
+          <div className="stage-pick">
+            <Segmented value={stage} onChange={setStage}
+                       options={[["live", "Live shape"], ["built", isNew ? "Not built yet" : "Last build"]]} />
+          </div>
+          {stage === "live" && schema.slider_targets && (
+            <Suspense fallback={<div className="live-preview"><div className="live-stage"><div className="live-cover"><span className="spinner" /></div></div></div>}>
+              <LivePreview design={design} schema={schema} focus={focus} />
+            </Suspense>
+          )}
+          <div className="stage" style={stage === "live" ? {display: "none"} : undefined}>
             {img ? <img src={img} alt={`${name} ${view}`} /> : <UserRound size={64} className="muted" />}
             {job && <div className="building"><div className="stack" style={{justifyItems: "center"}}><span className="spinner" style={{width: 26, height: 26, borderWidth: 3}} /><b>Building…</b><span className="muted small">{job.last || "starting"}</span></div></div>}
           </div>
-          <div className="views"><Segmented value={view} onChange={setView} options={[["front", "Front"], ["side", "Side"], ["back", "Back"]]} /></div>
+          {stage === "built" && <div className="views"><Segmented value={view} onChange={setView} options={[["front", "Front"], ["side", "Side"], ["back", "Back"]]} /></div>}
           {detail.log.length > 0 && (
             <details style={{borderTop: "1px solid var(--line)", padding: "12px 16px"}}>
               <summary className="muted small" style={{cursor: "pointer"}}>Last build log</summary>
@@ -150,7 +163,8 @@ export function CharacterDesigner({name}: {name: string}) {
               <h3>{part === "face" ? <UserRound size={15} color="var(--accent-2)" /> : <Dumbbell size={15} color="var(--accent-2)" />}{heading}</h3>
               <p>{text}</p>
               {Object.entries(groups || {}).map(([group, keys]) => (
-                <details key={group} className="slider-group" open={groupTouched(part, keys)}>
+                <details key={group} className="slider-group" open={groupTouched(part, keys)}
+                         onToggle={e => { if ((e.target as HTMLDetailsElement).open) { setStage("live"); setFocus(part === "face" ? "face" : "body"); } }}>
                   <summary>
                     <span>{group}</span>
                     {groupTouched(part, keys) && <Badge>changed</Badge>}
@@ -162,7 +176,7 @@ export function CharacterDesigner({name}: {name: string}) {
                       <SliderField key={k} name={k} def={schema.character[`${part}.${k}`]}
                                    range={schema.slider_range || [-1, 1]}
                                    value={Number(get(design, `${part}.${k}`) || 0)}
-                                   onChange={v => change(`${part}.${k}`, v || null)} />
+                                   onChange={v => { setStage("live"); setFocus(part === "face" ? "face" : "body"); change(`${part}.${k}`, v || null); }} />
                     ))}
                   </div>
                 </details>

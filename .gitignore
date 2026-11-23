@@ -20,3 +20,6 @@ library/**/build.log
 library/**/*.tmp
 motions/
 web/node_modules/
+
+# preview kits: machine-made bodies for the designer's live view, 2.4 MB each, remade in 9 seconds
+library/preview_kits/
