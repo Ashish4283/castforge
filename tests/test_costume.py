@@ -169,3 +169,29 @@ def test_a_hood_shell_joins_into_an_open_fronted_strip():
     faces = kit.ring_faces([0, 1, 2, 3, 4], [[5, 6, 7, 8, 9], [10, 11, 12, 13, 14]], closed=False)
     assert len(faces) == 8                                           # 4 quads per row, no face across the front
     assert len(rings) == 3
+
+
+def test_trim_bands_names_the_hem_and_collar_and_leaves_short_sleeves_alone():
+    co, faces = tube(rings=6, step=0.05)                       # a sleeveless top: hem at 0.75, collar at 1.0
+    bands = kit.trim_bands(co, faces)
+    assert set(bands) == {"hem", "collar"}
+    assert min(co[v][2] for v in bands["hem"]) == 0.75
+    assert max(co[v][2] for v in bands["collar"]) == 1.0
+    assert not bands["hem"] & bands["collar"]                   # 0.25 m apart: the bands cannot meet
+
+
+def test_trim_bands_adds_the_cuffs_only_when_the_sleeves_are_long():
+    co, faces = tube(rings=3, step=0.05)
+    cuff = [(1.0 + 0.05 * i, 0.0, 0.9) for i in range(3)]       # a loose loop far out along the arm
+    co = list(co) + cuff
+    first = len(co) - 3
+    faces = list(faces) + [(first, first + 1, first + 2)]
+    assert "cuff" not in kit.trim_bands(co, faces, sleeves="short")
+    assert kit.trim_bands(co, faces, sleeves="long")["cuff"] == {first, first + 1, first + 2}
+
+
+def test_boot_bands_take_the_highest_opening_on_each_side():
+    co, faces = tube(rings=4, step=0.05, z0=0.2)               # one "shoe", opening at the top
+    bands = kit.boot_bands(co, faces)
+    assert max(co[v][2] for v in bands["boot"]) == 0.2
+    assert min(co[v][2] for v in bands["boot"]) >= 0.2 - kit.TRIM_WIDTHS["boot"]

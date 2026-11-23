@@ -35,8 +35,9 @@ args = ap.parse_args(argv)
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
+import costume                              # noqa: E402  the band maths the build trims with
 import preview_mesh as pm                   # noqa: E402  the body both exporters share
-from core import preview_kit                # noqa: E402  what counts as a finished export (its version)
+from core import appearance, preview_kit    # noqa: E402  the wardrobe, and the export's version
 
 MPFB = next(m.__name__ for m in addon_utils.modules() if m.__name__.endswith(".mpfb"))
 addon_utils.enable(MPFB, default_set=True)
@@ -127,6 +128,29 @@ if me.uv_layers:
 
 hides = np.array(sorted(mhclo.delverts or []), dtype=np.uint32)   # body the garment covers
 
+# --- where the costume's trim goes ----------------------------------------------------------------------
+# Fur trim, in the build, is a band of the garment's own faces round each opening, pushed out and
+# thickened. The live view cannot copy that geometry, but it can draw those same faces again in the trim's
+# colour, which reads the same. The bands are topological - so many metres along the surface from an
+# opening - so they are the same on every body and can be measured once, here. One bit per band, so a
+# vertex on both the hem and a cuff is not an argument.
+BANDS = {"hem": 1, "collar": 2, "cuff": 4, "boot": 8}
+polys = [tuple(p.vertices) for p in me.polygons]
+rest_co = [tuple(v) for v in truth]
+regions = np.zeros(n_v, dtype=np.uint8)
+found = {}
+if args.folder == "clothes":
+    if args.asset in (appearance.SHOES, appearance.BOOTS):
+        bands = costume.boot_bands(rest_co, polys, 0.0)
+    else:
+        bands = costume.trim_bands(rest_co, polys, 0.0, sleeves="long")        # cuffs too: the app chooses
+    for name, bit in BANDS.items():
+        for v in bands.get(name) or ():
+            regions[v] |= bit
+        if bands.get(name):
+            found[name] = len(bands[name])
+    log(f"{args.asset}: trim bands " + (", ".join(f"{k} {v}" for k, v in found.items()) or "none"))
+
 texture, median = None, 0.5
 os.makedirs(args.out, exist_ok=True)
 for mat in obj.data.materials:
@@ -159,7 +183,8 @@ ev.to_mesh_clear()
 offsets_view = pm.to_view(offsets)
 blobs = [("verts", verts.tobytes(), n_v), ("weights", weights.tobytes(), n_v),
          ("offsets", offsets_view.tobytes(), n_v), ("uv", uv.tobytes(), n_v),
-         ("indices", faces.tobytes(), len(faces) * 3), ("hides", hides.tobytes(), len(hides))]
+         ("indices", faces.tobytes(), len(faces) * 3), ("hides", hides.tobytes(), len(hides)),
+         ("regions", regions.tobytes(), n_v)]
 at, where = 0, {}
 for name, blob, count in blobs:
     where[name] = {"at": at, "count": count}
@@ -171,7 +196,7 @@ json.dump({"version": preview_kit.VERSION, "asset": args.asset, "folder": args.f
            "vertices": n_v, "triangles": len(faces), "texture": texture,
            "median": round(max(median, 0.02), 4),
            "x_scale": list(mhclo.x_scale), "y_scale": list(mhclo.y_scale), "z_scale": list(mhclo.z_scale),
-           "error_microns": round(err * 1e6, 1), **where},
+           "error_microns": round(err * 1e6, 1), "bands": found, "band_bits": BANDS, **where},
           open(os.path.join(args.out, "wear.json"), "w", encoding="utf-8"))
 log(f"worn kit: {at / 1e6:.2f} MB, hides {len(hides)} body vertices, "
     f"{time.time() - started:.1f}s -> {args.out}")

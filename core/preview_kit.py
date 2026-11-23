@@ -20,7 +20,7 @@ BUILDS = ("slim", "average", "athletic", "heavy", "muscular")
 FILES = ("kit.json", "kit.bin")
 # Bumped whenever blender/preview_kit.py changes what it writes. Kits are cached on disk for ever, so
 # without this a fixed exporter keeps serving the bodies the broken one made.
-VERSION = 4
+VERSION = 5
 
 
 def band_age(age):

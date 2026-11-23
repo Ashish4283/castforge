@@ -66,6 +66,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | Overview page (next step, progress) | `server.py` `/api/movie/progress`; `web/src/pages/Studio.tsx` |
 | 3D scene editor (view, timeline, drag spots) | `web/src/pages/episodes/viewer.ts` (three.js) + `Editor3D.tsx`; export `scene_kit.py` `if args.preview3d`; job `--preview3d` |
 | the studio's steps, look pickers, thumbnails | steps `web/src/pages/characters/steps.ts`; tiles `LookPicker.tsx`; pictures `blender/preview_thumbs.py` -> `library/preview_kits/thumbs/`; routes `/api/character/looks` (what to offer) and `/api/character/thumbs` (take the missing ones) |
+| the costume in the live view (trim, belt, buckle, gloves) | `costume.trim_bands`/`boot_bands`/`beyond` (pure, tested); the bands travel in `preview_wear.py` (`regions`), the hands and joints in `preview_kit.py`; drawn by `bodyview.setCostume` |
 | what the live view wears (hair, beard, clothes) | export `blender/preview_wear.py` -> `library/preview_kits/worn/<folder>-<asset>/`; the wardrobe itself `appearance.wearables` (pure, tested); route `/api/character/wear`; drawing `bodyview.setWearing` |
 | the designer's live body (morphs as the sliders move) | export `blender/preview_kit.py` -> `library/preview_kits/<sex>-<age>-<build>-<height>/kit.json+bin`; what is needed and whether it is there `core/preview_kit.py` (pure, tested, `VERSION`); route `/api/character/preview-kit`; drawing `web/src/pages/characters/bodyview.ts` + `LivePreview.tsx` |
 | what a face or body can be shaped into (sliders) | `core/appearance.py` (pure, tested: `FACE`, `BODY`, `targets_for`, `photo_vars`, hair styles, eyebrows). One table: `schema.CHARACTER` grows from it, the app groups from `face_groups`/`body_groups`, the build applies it |
@@ -183,6 +184,21 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Gesture poses may carry `arm_L`/`arm_R` beside `arm` when the two hands must differ (a clap).
 - Hand-to-hand gestures can't be eyeballed: pose the rig headlessly and score the result (palm gap, height,
   which way the palms and fingers point). The clap needed a negative twist and a wrist; no arm-only pose works.
+- The live view shows the costume WITHOUT making its geometry: fur trim, a belt, a buckle, gloves and a
+  boot cuff are all regions of a surface that is already there, so the same faces are drawn again in the
+  piece's colour and pushed out along their normals in the vertex shader (`bodyview.liftOffSurface`),
+  sharing the garment's own position and normal attributes so they follow the body for nothing. A cape, a
+  hood, a long coat and armour are new geometry and stay build-only.
+- Fur trim must be chosen in ONE place or the preview trims a different coat from the one that gets built:
+  `costume.trim_bands` (hem 0.075 m, collar 0.04, cuff 0.055, measured along the surface) and
+  `costume.boot_bands`. The band is topological, so it is the same on every body and is measured once, at
+  export. Cuffs are exported whichever sleeves are asked for; the app leaves them off unless they are long.
+- The base MakeHuman body has NO hand, arm or leg vertex group - only `body`, the helpers and the
+  `joint-*` cubes a rig is built from. So a region like a glove comes from two joints (`costume.beyond`:
+  past the wrist, towards the middle fingertip, within reach of it - a plane alone runs on across the body
+  and the glove swallows the far leg), and `joint-l-hand` IS the wrist. Joints must be measured on the
+  SHAPED body (`preview_mesh.joint_centres(human, coords)`) or a tall person's wrist lands in the wrong
+  place; the kit carries them so the live view knows a waist from a shoulder without having a rig.
 
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).

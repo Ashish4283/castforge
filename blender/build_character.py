@@ -1022,15 +1022,9 @@ if COSTUME:
     if trim and garment:
         _, co = rest(garment)
         fs = faces_of(garment)
-        edges = kit.edges_of(fs)
         ops = kit.openings(co, kit.boundary_loops(fs), centre_x)
-        keep = set()
-        if ops.get("hem"):
-            keep |= kit.band(co, edges, ops["hem"], 0.075)
-        if ops.get("collar"):
-            keep |= kit.band(co, edges, ops["collar"], 0.04)
-        for cuff in ops["cuffs"] if clothing.get("sleeves") == "long" else []:
-            keep |= kit.band(co, edges, cuff, 0.055)
+        keep = set().union(*kit.trim_bands(co, fs, centre_x, clothing.get("sleeves") or "short").values(),
+                           set())
         if COSTUME.get("coat") == "long" and ops.get("hem") and ops.get("collar"):
             dom = dominant(garment)
             c = kit.centroid(co, ops["hem"])
@@ -1244,9 +1238,7 @@ if COSTUME:
         tops = kit.highest_per_side(co, kit.boundary_loops(fs), centre_x)
         top_z = min(kit.centroid(co, l)[2] for l in tops) if tops else None
         if trim and tops:
-            keep = set()
-            for l in tops:
-                keep |= kit.band(co, kit.edges_of(fs), l, 0.05)
+            keep = set().union(*kit.boot_bands(co, fs, centre_x).values(), set())
             piece(shoes_obj, "cf_boot_trim", kit.faces_inside(fs, keep),
                   material("cf_fur_boots", trim, 0.95, sheen=1.0, fluff=0.5), 0.006, 0.014)
         if bottom_obj and top_z is not None and clothing.get("garment") == "trousers":

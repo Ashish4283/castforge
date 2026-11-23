@@ -84,3 +84,34 @@ def wear_positions(coords, verts, weights, offsets, scales):
     base = (coords[verts[:, 0]] * weights[:, 0:1] + coords[verts[:, 1]] * weights[:, 1:2]
             + coords[verts[:, 2]] * weights[:, 2:3])
     return base + offsets * scales
+
+
+def joint_centres(human, coords):
+    """{joint cube name: its centre} - MakeHuman's own joint markers, which is where a rig's bones go.
+
+    Measured on `coords`, the body as it stands now: the joints move with the macros like everything else,
+    so taking them from the base mesh puts a tall person's wrist in the wrong place."""
+    out = {}
+    for g in human.vertex_groups:
+        if g.name.startswith("joint-"):
+            out[g.name] = g.index
+    members = {}
+    for v in human.data.vertices:
+        for g in v.groups:
+            if g.group in out.values():
+                members.setdefault(g.group, []).append(v.index)
+    co = np.asarray(coords)
+    return {name: tuple(co[members[idx]].mean(axis=0)) for name, idx in out.items() if members.get(idx)}
+
+
+def hand_vertices(human, coords, skin):
+    """The skin of both hands: everything past the wrist, towards the middle fingertip. Gloves cover this."""
+    import costume
+    joints = joint_centres(human, coords)
+    out = set()
+    for side in ("l", "r"):
+        wrist = joints.get(f"joint-{side}-hand")          # MakeHuman's "hand" joint IS the wrist
+        tip = joints.get(f"joint-{side}-finger-3-4") or joints.get(f"joint-{side}-finger-2-4")
+        if wrist and tip:
+            out |= costume.beyond(coords, skin, wrist, tip)
+    return out

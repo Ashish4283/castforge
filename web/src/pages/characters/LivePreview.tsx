@@ -5,7 +5,7 @@ import {Loader2, Maximize2, Move3d, RefreshCw} from "lucide-react";
 import * as THREE from "three";
 import {api, Json, post, Schema} from "../../api";
 import {Button, Segmented} from "../../components/ui";
-import {BodyView, Kit, RING_SPIN, RING_TIP, Worn, WornSpec} from "./bodyview";
+import {BodyView, CostumeLook, Kit, RING_SPIN, RING_TIP, Worn, WornSpec} from "./bodyview";
 
 const get = (d: Json, key: string) => key.split(".").reduce((o, k) => (o && typeof o === "object" ? o[k] : undefined), d);
 
@@ -46,8 +46,13 @@ export function LivePreview({design, schema, focus}: {design: Json; schema: Sche
                                     get(design, "beard"), get(design, "hat"), get(design, "eyebrows"),
                                     get(design, "outfit.style"), get(design, "outfit.garment"),
                                     get(design, "outfit.sleeves"), !!get(design, "costume.boots")]);
+  const costume: CostumeLook = {
+    trim: tintOf(design, "costume.trim") || null, belt: tintOf(design, "costume.belt") || null,
+    buckle: tintOf(design, "costume.buckle") || null, gloves: tintOf(design, "costume.gloves") || null,
+    boots: !!get(design, "costume.boots"), sleeves: (get(design, "outfit.sleeves") as string) || null,
+  };
   const colourKey = JSON.stringify([get(design, "skin"), get(design, "hair.color"), get(design, "outfit.top"),
-                                    get(design, "outfit.bottom"), get(design, "outfit.shoes")]);
+                                    get(design, "outfit.bottom"), get(design, "outfit.shoes"), costume]);
   // the body underneath the sliders: only these three change it, so only these three fetch a new one
   const shape = [get(design, "gender") || "female", get(design, "age") || 30,
                  get(design, "build") || "average", get(design, "height_cm") || 170].join("|");
@@ -123,6 +128,7 @@ export function LivePreview({design, schema, focus}: {design: Json; schema: Sche
     view.current?.setWearing(wornRef.current.map(w => ({
       spec: w.spec, bin: w.bin, texture: w.texture, colour: tintOf(design, w.spec.tint),
     } as Worn)));
+    view.current?.setCostume(costume);              // after the clothes: the costume is drawn over them
   };
   useEffect(() => { paint(); }, [colourKey]);   // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -167,7 +173,9 @@ export function LivePreview({design, schema, focus}: {design: Json; schema: Sche
       </div>
       <p className="live-note muted small">
         The character as it will be built: the body from the sliders, dressed in what you have picked.
-        Cloth is held clear of the skin, so nothing pokes through as you reshape the body.
+        Cloth is held clear of the skin, so nothing pokes through as you reshape the body. Fur trim, the
+        belt and buckle, gloves and fur-topped boots show here too; a cape, a hood and armour are made at
+        build time and appear in the built character.
       </p>
     </div>
   );

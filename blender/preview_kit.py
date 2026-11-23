@@ -138,9 +138,25 @@ floor = float(verts[body][:, 1].min())                    # the floor is where t
 verts[:, 1] -= floor
 log(f"mesh {len(verts)} vertices ({len(body)} of them skin), {len(tris)} triangles")
 
+# --- the body's own regions a costume covers ----------------------------------------------------------------
+# Gloves, in the build, are the hand's own faces lifted 2.5 mm off the skin. The live view draws those same
+# faces again in the glove's colour, which reads the same without new geometry. The hand is found from
+# MakeHuman's joint markers (there is no "hand" vertex group), on this body, so it follows the sliders.
+hands = sorted(pm.hand_vertices(human, shaped, set(body.tolist())))
+# MakeHuman's joint markers, in the viewer's own space and off the floor: where a rig's bones would go,
+# which is how the live view knows a waist from a shoulder without having a rig at all.
+joints = {name: [round(float(x), 4) for x in (p[0], p[2] - floor, -p[1])]
+          for name, p in pm.joint_centres(human, shaped).items()
+          if not (name.startswith("joint-l-finger") or name.startswith("joint-r-finger")
+                  or "eye" in name or "toe" in name)}
+regions = {"hands": {"at": 0, "count": len(hands)}}        # "at" is filled in once the offsets are known
+hand_idx = np.array(hands, dtype=np.uint32)
+log(f"hands: {len(hands)} vertices")
+
 # --- what every slider does to it ---------------------------------------------------------------------------
-blobs = [verts.tobytes(), tris.tobytes()]
-offset = len(blobs[0]) + len(blobs[1])
+blobs = [verts.tobytes(), tris.tobytes(), hand_idx.tobytes()]
+regions["hands"]["at"] = len(blobs[0]) + len(blobs[1])
+offset = sum(len(b) for b in blobs)
 shapes = {}
 missing = []
 for name in sorted(appearance.every_target()):
@@ -172,6 +188,7 @@ json.dump({"version": preview_kit.VERSION, "gender": args.gender, "age": args.ag
            "positions": {"at": 0, "count": len(verts)},
            "indices": {"at": len(blobs[0]), "count": len(tris) * 3},
            "height": round(float(verts[:, 1].max()), 4), "floor": round(floor, 4),
+           "regions": regions, "joints": joints,
            "shapes": shapes},
           open(os.path.join(args.out, "kit.json"), "w", encoding="utf-8"))
 log(f"preview kit: {len(shapes)} shapes, {offset / 1e6:.2f} MB, {time.time() - started:.1f}s -> {args.out}")

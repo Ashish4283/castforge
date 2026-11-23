@@ -294,3 +294,50 @@ def hood_rings(centre, base_z, top_z, radius, rings=8, span=17, opening=1.45, fl
                          z - drape + rise * (1.0 - t) * lip))
         out.append(ring)
     return out
+
+
+# Fur trim is a band round each opening, and the build and the live view must choose the same vertices or
+# the preview trims a different coat from the one that gets built. One place, used by both.
+TRIM_WIDTHS = {"hem": 0.075, "collar": 0.04, "cuff": 0.055, "boot": 0.05}
+
+
+def trim_bands(co, faces, centre_x=0.0, sleeves="short"):
+    """{"hem": verts, "collar": verts, "cuff": verts} - the bands fur trim covers on a top or a dress.
+
+    Cuffs only count when the sleeves are long: trimming a short sleeve puts fur round the biceps."""
+    edges = edges_of(faces)
+    ops = openings(co, boundary_loops(faces), centre_x)
+    out = {}
+    for name in ("hem", "collar"):
+        if ops.get(name):
+            out[name] = band(co, edges, ops[name], TRIM_WIDTHS[name])
+    cuffs = ops.get("cuffs") or [] if sleeves == "long" else []
+    if cuffs:
+        out["cuff"] = set().union(*(band(co, edges, c, TRIM_WIDTHS["cuff"]) for c in cuffs))
+    return out
+
+
+def boot_bands(co, faces, centre_x=0.0):
+    """The band round the top of each shoe - where a boot's fur cuff goes."""
+    tops = highest_per_side(co, boundary_loops(faces), centre_x)
+    if not tops:
+        return {}
+    edges = edges_of(faces)
+    return {"boot": set().union(*(band(co, edges, t, TRIM_WIDTHS["boot"]) for t in tops))}
+
+
+def beyond(co, verts, origin, towards, reach=1.6):
+    """Those of `verts` past the plane through `origin` facing `towards`, and within `reach` of `origin`
+    measured in lengths of origin-to-towards.
+
+    How a glove is cut: everything past the wrist, towards the fingertips. The base MakeHuman body has no
+    "hand" vertex group - only `body`, helpers and the joint cubes a rig is built from - so a region like
+    this is found from two joints, not from a name. The reach matters: a plane alone runs on across the
+    whole body and a glove swallows the far leg."""
+    axis = [towards[i] - origin[i] for i in range(3)]
+    length = math.sqrt(sum(a * a for a in axis)) or 1.0
+    axis = [a / length for a in axis]
+    at = sum(origin[i] * axis[i] for i in range(3))
+    far = reach * length
+    return {v for v in verts
+            if sum(co[v][i] * axis[i] for i in range(3)) >= at and math.dist(co[v], origin) <= far}
