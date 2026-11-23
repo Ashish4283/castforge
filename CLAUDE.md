@@ -115,6 +115,9 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Motion clips carry no finger movement (the bone map stops at `hand`): a punch keeps whatever the life loop
   keyed, so fighting clips need their fists made here (`acting.clip_hands`, `Actor.clip_hands`).
 - A bone-parented child sits at the bone's TAIL with +Y along the bone, so the palm is about half a hand back.
+- A hood is not the head's surface. Copying head faces or banding the collar reads as a flat band every
+  time; build a shell of rings (`costume.hood_rings`), domed over the crown, open at the face, and take it
+  off the garment as its own object like the cape. The head's deform bone is `DEF-spine.006`, not `DEF-head`.
 - Gesture poses may carry `arm_L`/`arm_R` beside `arm` when the two hands must differ (a clap).
 - Hand-to-hand gestures can't be eyeballed: pose the rig headlessly and score the result (palm gap, height,
   which way the palms and fingers point). The clap needed a negative twist and a wrist; no arm-only pose works.

@@ -143,3 +143,29 @@ def test_a_plate_keeps_a_solid_edge_instead_of_a_torn_one():
     assert kit.faces_mostly(faces, {0, 1}) == [0]          # two of four corners is enough, one is not
     assert kit.faces_mostly(faces, {6}) == []
     assert kit.faces_mostly(faces, set()) == []
+
+
+def test_a_hood_is_a_shell_that_rises_from_the_collar_and_shuts_over_the_crown():
+    rings = kit.hood_rings((0.0, 0.0), base_z=1.45, top_z=1.78, radius=0.1, rings=6, span=15)
+    assert len(rings) == 6 and all(len(r) == 15 for r in rings)
+    zs = [r[0][2] for r in rings]              # the front lip: no drape there
+    assert zs == sorted(zs) and abs(zs[-1] - 1.78) < 1e-6            # climbs evenly to the crown
+    steps = [b - a for a, b in zip(zs, zs[1:])]
+    assert max(steps) - min(steps) < 0.015                           # evenly: no flat lid of stacked rings
+    wide = [max(abs(p[0]) for p in r) for r in rings]                # half-width, free of the backward lean
+    assert wide[0] > wide[-2] > wide[-1]                             # wide at the shoulders, narrow at the crown
+    # the opening: wide across the face, shut by the time the shell reaches the crown
+    gap = [math.dist(r[0], r[-1]) for r in rings]
+    assert gap[0] > 0.1 and gap[-1] < 0.01 and gap == sorted(gap, reverse=True)
+    assert rings[-1][0][1] > rings[0][0][1]                          # and the shell leans back as it rises
+    mid = len(rings[0]) // 2                                         # the back of the bottom ring...
+    assert rings[0][mid][2] < rings[0][0][2] - 0.03                  # ...drapes onto the shoulders
+    assert rings[0][0][2] > 1.45 and rings[0][-1][2] > 1.45          # while both lips curve up, not down
+    assert abs(rings[-1][mid][2] - rings[-1][0][2]) < 0.005          # the crown ring stays level
+
+
+def test_a_hood_shell_joins_into_an_open_fronted_strip():
+    rings = kit.hood_rings((0.0, 0.0), 1.45, 1.78, 0.1, rings=3, span=5)
+    faces = kit.ring_faces([0, 1, 2, 3, 4], [[5, 6, 7, 8, 9], [10, 11, 12, 13, 14]], closed=False)
+    assert len(faces) == 8                                           # 4 quads per row, no face across the front
+    assert len(rings) == 3

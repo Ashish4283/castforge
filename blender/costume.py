@@ -255,3 +255,42 @@ def push_clear(point, surface, normal, clearance):
     if d >= clearance:
         return tuple(point)
     return tuple(p + (clearance - d) * n for p, n in zip(point, normal))
+
+
+def hood_rings(centre, base_z, top_z, radius, rings=8, span=17, opening=1.45, flare=1.45,
+               dome=0.45, back=0.05, sag=0.07, rise=0.13, face=-1.0):
+    """Rings for a hood: a cowl that sits on the shoulders, rises round the head, domes over the crown and
+    stays open at the face.
+
+    Three earlier tries copied head faces or banded the collar and all read as a flat band, because a hood
+    is not the head's surface: it is a shell of its own. Ring k (1..rings) is spaced evenly in height from
+    `base_z` (the shoulders) to `top_z` (just over the crown) and carries `span` points walked round the
+    back from one lip of the face opening to the other. Below `dome` (a fraction of that height, about the
+    middle of the head) the shell draws in from `flare` times `radius` down at the shoulders to `radius`;
+    above it the radius follows a dome, so the crown is round and not a flat lid. The opening narrows to
+    nothing by the crown, and the whole shell leans `back` metres away from the face as it rises. The last
+    ring is small: cap it with one face.
+
+    Returns a list of `rings` lists of `span` (x, y, z) points, each ring in the same walk order."""
+    cx, cy = centre
+    out = []
+    for k in range(1, rings + 1):
+        t = k / rings
+        z = base_z + (top_z - base_z) * t
+        if t <= dome:
+            r = radius * (flare + (1.0 - flare) * t / dome)
+        else:
+            u = (t - dome) / (1.0 - dome)
+            r = radius * math.sqrt(max(0.05, 1.0 - u * u))
+        half = opening * (1.0 - t) ** 1.4                                  # shut by the crown
+        y0 = cy - face * back * t                                          # leans away from the face
+        ring = []
+        for i in range(span):
+            s = i / (span - 1)
+            a = half + (2 * math.pi - 2 * half) * s                        # from one lip round to the other
+            drape = sag * (1.0 - t) * (1.0 - math.cos(a)) / 2.0            # the back falls onto the shoulders
+            lip = max(0.0, 1.0 - min(s, 1.0 - s) / 0.3)                    # ...the open edge curves up instead
+            ring.append((cx + r * math.sin(a), y0 + face * r * math.cos(a),
+                         z - drape + rise * (1.0 - t) * lip))
+        out.append(ring)
+    return out

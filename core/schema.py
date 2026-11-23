@@ -309,6 +309,7 @@ CHARACTER = {
     "costume.cape": p("color", "a cape hanging from the shoulders (empty: none)"),
     "costume.cape_length": p("number", "how far the cape falls, 0.3 short to 1.2 past the knees", default=0.75),
     "costume.armour": p("color", "metal plates: breastplate, shoulders, forearms, shins (empty: none)"),
+    "costume.hood": p("color", "a hood over the head, open at the face (empty: none)"),
 }
 # ready-made looks the app offers; each is a set of design keys (dotted, as above)
 COSTUMES = {
@@ -326,6 +327,13 @@ COSTUMES = {
     "detective": {"outfit.style": "formal", "outfit.top": "#2a2b30", "outfit.bottom": "#2a2b30",
                   "costume.coat": "long", "costume.fabric": "leather", "hat": "fedora",
                   "costume.belt": "#1c1c1c", "outfit.shoes": "#1a1a1a"},
+    "ranger": {"outfit.style": "work", "outfit.top": "#3c4a37", "outfit.bottom": "#2f3a2c",
+               "costume.hood": "#36432f", "costume.cape": "#2e3828", "costume.cape_length": 0.7,
+               "costume.fabric": "leather", "costume.belt": "#3a2a1c", "costume.buckle": "#8a8f98",
+               "costume.gloves": "#3a2a1c", "costume.boots": "#2b2018", "build": "athletic"},
+    "monk": {"outfit.style": "robe", "outfit.top": "#5a4632", "outfit.bottom": "#5a4632",
+             "costume.hood": "#503d2c", "costume.fabric": "cotton", "costume.belt": "#8a6f4a",
+             "hair.length": "none", "beard": "short"},
     "villager": {"outfit.style": "tunic", "outfit.top": "#7a6a4e", "outfit.bottom": "#5a4a36",
                  "costume.belt": "#4a3524", "costume.boots": "#3a2a1c"},
     "santa": {"hat": "santa", "beard": "santa", "build": "heavy", "hair.color": "#eeeae4", "outfit.garment": "trousers",

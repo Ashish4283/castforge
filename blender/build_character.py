@@ -1093,6 +1093,71 @@ if COSTUME:
                     cut(p_obj, [(2, ankle.z + 0.04, knee.z - 0.03)])             # the shin, not the knee or foot
             made.append(f"armour {side}")
 
+    # a hood: a cowl rising from the garment's collar, over the head, open at the face. A hood is not the
+    # head's surface (copying head faces or banding the collar both read as a flat band): it is a shell of
+    # its own, built from rings and taken off the garment as its own object, like the cape.
+    hood = lin(COSTUME.get("hood"))
+    if hood and garment:
+        head_b = next((h for h in (head("DEF-spine.006"), head("head")) if h is not None), None)
+        above = [body_w[v] for v in in_body if head_b is not None and body_w[v][2] > head_b.z + 0.02]
+        if above and head("DEF-upper_arm.L") is not None:
+            crown = max(p[2] for p in above)
+            radius = max(abs(p[0] - centre_x) for p in above) + 0.03
+            head_y = sum(p[1] for p in above) / len(above)
+            base_z = head("DEF-upper_arm.L").z          # it sits on the shoulders, not round the neck
+            rings = [[clear_of_body(p) for p in r] for r in
+                     kit.hood_rings((centre_x, head_y), base_z, crown + 0.045, radius,
+                                    rings=9, span=19, face=-1.0)]
+            names = {g.index: g.name for g in garment.vertex_groups}
+            bm = bmesh.new()
+            bm.from_mesh(garment.data)
+            bm.verts.ensure_lookup_table()
+            uv = bm.loops.layers.uv.active
+            deform = bm.verts.layers.deform.verify()
+            inv = np.linalg.inv(np.array(garment.matrix_world))
+            rows = []
+            for r in rings:
+                row = []
+                for p in r:
+                    nv = bm.verts.new((inv @ np.array([*p, 1.0]))[:3])
+                    _, near, _ = body_kd.find(p)       # the head's own weights: the hood turns with the head
+                    for g, wt in body_weights(near).items():
+                        gi = garment.vertex_groups.get(g) or garment.vertex_groups.new(name=g)
+                        nv[deform][gi.index] = wt
+                    row.append(nv)
+                rows.append(row)
+            bm.verts.index_update()
+            bm.verts.ensure_lookup_table()
+            new_faces = []
+            shell = kit.ring_faces([v.index for v in rows[0]],
+                                   [[v.index for v in r] for r in rows[1:]], closed=False)
+            for f in shell + [tuple(v.index for v in rows[-1])]:          # the strips, then a cap on top
+                try:
+                    nf = bm.faces.new([bm.verts[i] for i in f])
+                except ValueError:
+                    continue
+                nf.smooth = True
+                for loop in nf.loops:
+                    loop[uv].uv = (0.5, 0.5)
+                new_faces.append(nf)
+            bmesh.ops.recalc_face_normals(bm, faces=new_faces)
+            keep = {v.index for f_ in new_faces for v in f_.verts}
+            bm.to_mesh(garment.data)
+            bm.free()
+            piece(garment, "cf_hood", kit.faces_inside(faces_of(garment), keep),
+                  material("cf_hood", hood, 0.78, sheen=0.45), 0.0, 0.007)
+            cut_faces = kit.faces_inside(faces_of(garment), keep)          # off the garment again
+            bm = bmesh.new()
+            bm.from_mesh(garment.data)
+            bm.faces.ensure_lookup_table()
+            bmesh.ops.delete(bm, geom=[bm.faces[i] for i in cut_faces], context="FACES")
+            bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+            bm.to_mesh(garment.data)
+            bm.free()
+            made.append(f"hood to {crown + 0.04:.2f} m")
+        else:
+            log("no hood: no head bone or head vertices found")
+
     # a cape: a sheet hanging from the back of the collar to the knees, weighted to the chest so it swings
     cape = lin(COSTUME.get("cape"))
     if cape and garment:
