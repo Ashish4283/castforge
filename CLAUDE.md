@@ -65,6 +65,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | the app (React 18 + TS + Vite, sidebar layout) | `web/src/`: `main.tsx` routes, `app/store.tsx` (movies, GPU, jobs, toasts, hash route), `app/episode.tsx` (open scene model: `update`, `save`, `scene()`, `cast()`), `components/ui.tsx` (Button, Card, Field...), `components/ParamInput.tsx` (any schema parameter), `pages/*`; design tokens at the top of `styles.css`. Old page at `/classic` (`app/index.html`, `static/app.js`) until removed |
 | Overview page (next step, progress) | `server.py` `/api/movie/progress`; `web/src/pages/Studio.tsx` |
 | 3D scene editor (view, timeline, drag spots) | `web/src/pages/episodes/viewer.ts` (three.js) + `Editor3D.tsx`; export `scene_kit.py` `if args.preview3d`; job `--preview3d` |
+| what a face or body can be shaped into (sliders) | `core/appearance.py` (pure, tested: `FACE`, `BODY`, `targets_for`, `photo_vars`, hair styles, eyebrows). One table: `schema.CHARACTER` grows from it, the app groups from `face_groups`/`body_groups`, the build applies it |
 | character designer, costumes | vocabulary `schema.CHARACTER`/`COSTUMES`/`check_design`; routes `/api/character`, `/api/character/rebuild`; UI `pages/CharacterDesigner.tsx`; build `build_character.py` anchor `# --- costume`; maths `blender/costume.py` (pure, tested: openings, bands, hem/cape rings, hood cut) |
 | model props (seat / wheel objects) | `scene_kit.py` `def load_prop_file`, `def wheel_pivot` |
 | character build | `blender/build_character.py` (photo spec: `generate/analyze_photo.py`, .venv only) |
@@ -106,6 +107,15 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   is too coarse to pick a belt by whole faces, so `cut()` bisects it. bmesh faces are flat-shaded unless `smooth`.
 - A photo + design build: the photo gives face, body and colours; the design adds hat, beard, costume and overrides
   what it states. `<name>.design.json` `use_photo` records how the character was last built.
+- MPFB ships 1258 morph targets INSIDE the addon (`<addon>/data/targets/…`), not in the user asset library,
+  which only carries expressions and visemes. `TargetService.target_full_path(name)` finds one by bare name
+  (`chin-width-incr`) and `load_target` adds it as a weighted shape key. Paired features are `l-`/`r-`.
+- The photo fit and the designer's sliders deliberately use DIFFERENT lists (`appearance.photo_vars` vs
+  `FACE`/`BODY`). Widening the fit gives the solver freedom one front-on photo cannot support and changes
+  every face already built from a photo; sliders are applied on top of the fit, so both can grow apart.
+- `hair.style` in a design was already passed to `--hair` as a raw MPFB asset name (build_character line ~55).
+  A friendly style name has to be translated THERE, not where the hair is loaded, or `args.hair` wins and
+  the asset is looked up under a name that does not exist (silently: it only warns).
 - Mixamo FBX imports with x0.01 scale and a 90° axis turn on the armature object; CMU BVH (cgspeed) at 120 fps.
 - A set folder (`movies/<film>/sets/<name>/`) holds the picture, `set_blueprint.json`, shared depth under
   `.castforge_geometry/` and the built `set.blend`. A scene naming it with `set_folder` inherits the picture,

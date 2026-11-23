@@ -1,14 +1,15 @@
 // The character designer: every design key (core/schema.py CHARACTER) as a control, ready-made looks, the
 // front/side/back previews, and Rebuild. Photo characters keep their face and body from the photo.
 import {useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {ChevronRight, Hammer, RotateCcw, Shirt, Sparkles, UserRound, Wand2} from "lucide-react";
+import {ChevronRight, Dumbbell, Hammer, RotateCcw, Shirt, Sparkles, UserRound, Wand2} from "lucide-react";
 import {api, CharacterDetail, Json, label, ParamDef, post, q} from "../api";
 import {useStore} from "../app/store";
 import {Badge, Button, ColorField, Field, Notice, PageHead, Segmented, Select, Switch} from "../components/ui";
 
 const SECTIONS: {title: string; text: string; keys: string[]}[] = [
   {title: "Body", text: "Who they are. Age and build shape the whole body.", keys: ["gender", "age", "height_cm", "build"]},
-  {title: "Face and hair", text: "A hat hides the hair; a beard takes the hair colour.", keys: ["skin", "eyes", "hair.length", "hair.color", "beard", "hat"]},
+  {title: "Face and hair", text: "A hat hides the hair; a beard takes the hair colour. A hair style overrides the length.",
+   keys: ["skin", "eyes", "hair.length", "hair.style", "hair.color", "eyebrows", "beard", "hat"]},
   {title: "Outfit", text: "The base clothes, coloured to your choice. A style other than casual is one whole-body outfit.",
    keys: ["outfit.style", "outfit.garment", "outfit.sleeves", "outfit.top", "outfit.bottom", "outfit.shoes"]},
   {title: "Costume", text: "Pieces over the outfit: a long coat, fur trim, a belt, gloves and boots. Leave a colour empty to leave the piece out.",
@@ -63,6 +64,10 @@ export function CharacterDesigner({name}: {name: string}) {
   }, [job, load, reload]);
 
   const dirty = design && JSON.stringify(design) !== saved;
+  // put a whole group of sliders back to the middle: the quickest way out of a face gone wrong
+  const resetGroup = (part: string, keys: string[]) =>
+    setDesign((d: Json) => { const n = structuredClone(d); for (const k of keys) set(n, `${part}.${k}`, null); return n; });
+  const groupTouched = (part: string, keys: string[]) => keys.some(k => Number(get(design, `${part}.${k}`) || 0) !== 0);
   const change = (key: string, value: Json) => setDesign((d: Json) => { const n = structuredClone(d); set(n, key, value); return n; });
   const applyLook = (look: Record<string, string>) => {
     setDesign((d: Json) => { const n = structuredClone(d); for (const [k, v] of Object.entries(look)) set(n, k, v); return n; });
@@ -136,6 +141,40 @@ export function CharacterDesigner({name}: {name: string}) {
               </div>
             </div>
           )}
+          {([["face", "Face shape", schema.face_groups,
+              "Every feature from -1 to +1; the middle is an ordinary face. These are in addition to the photo, if there is one."],
+             ["body", "Body shape", schema.body_groups,
+              "The frame underneath the clothes. Height and build are up at the top; these shape the rest."]] as const).map(
+            ([part, heading, groups, text]) => (
+            <div key={part} className="design-section">
+              <h3>{part === "face" ? <UserRound size={15} color="var(--accent-2)" /> : <Dumbbell size={15} color="var(--accent-2)" />}{heading}</h3>
+              <p>{text}</p>
+              {Object.entries(groups || {}).map(([group, keys]) => (
+                <details key={group} className="slider-group" open={groupTouched(part, keys)}>
+                  <summary>
+                    <span>{group}</span>
+                    {groupTouched(part, keys) && <Badge>changed</Badge>}
+                    <span className="spacer" />
+                    <button className="btn ghost sm" onClick={e => { e.preventDefault(); resetGroup(part, keys); }}>Reset</button>
+                  </summary>
+                  <div className="sliders">
+                    {keys.filter(k => schema.character[`${part}.${k}`]).map(k => (
+                      <SliderField key={k} name={k} def={schema.character[`${part}.${k}`]}
+                                   range={schema.slider_range || [-1, 1]}
+                                   value={Number(get(design, `${part}.${k}`) || 0)}
+                                   onChange={v => change(`${part}.${k}`, v || null)} />
+                    ))}
+                  </div>
+                </details>
+              ))}
+              {part === "face" && schema.character["face.head_shape"] && (
+                <div className="form-grid">
+                  <DesignField k="face.head_shape" def={schema.character["face.head_shape"]}
+                               value={get(design, "face.head_shape")} onChange={v => change("face.head_shape", v)} />
+                </div>
+              )}
+            </div>
+          ))}
           {SECTIONS.map(s => (
             <div key={s.title} className="design-section">
               <h3>{s.title}</h3>
@@ -165,6 +204,21 @@ function title(k: string) {
   const [group, last] = k.includes(".") ? k.split(".") : ["", k];
   const words = (group === "hair" ? `hair ${last}` : last).replace("height_cm", "height (cm)").replace("color", "colour");
   return label(words).replace(/^./, c => c.toUpperCase());
+}
+
+// One feature, from one end to the other, with the middle marked. The number says where it is so a look can
+// be written down and repeated; double-click the handle (or Reset above) to come back to the middle.
+function SliderField({name, def, range, value, onChange}:
+                     {name: string; def: ParamDef; range: readonly [number, number] | number[]; value: number; onChange: (v: number) => void}) {
+  const [lo, hi] = range as [number, number];
+  return (
+    <label className={`slider-row ${value ? "set" : ""}`} title={def.help}>
+      <span className="slider-name">{title(name)}</span>
+      <input type="range" min={lo} max={hi} step={0.05} value={value}
+             onChange={e => onChange(Number(e.target.value))} onDoubleClick={() => onChange(0)} />
+      <span className="slider-value">{value ? (value > 0 ? "+" : "") + value.toFixed(2) : "0"}</span>
+    </label>
+  );
 }
 
 function DesignField({k, def, value, onChange}: {k: string; def: ParamDef; value: Json; onChange: (v: Json) => void}) {

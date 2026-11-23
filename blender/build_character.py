@@ -34,6 +34,8 @@ ap.add_argument("--hair", help="MPFB hair asset name (overrides the automatic pi
 args = ap.parse_args(argv)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, ".."))
+from core import appearance            # noqa: E402  every face and body shape, in one table
 # body build presets for designed characters: MakeHuman weight / muscle / proportions
 BUILDS = {"slim": (0.25, 0.4, 0.6), "average": (0.5, 0.5, 0.5), "athletic": (0.4, 0.75, 0.75),
           "heavy": (0.85, 0.45, 0.4), "muscular": (0.55, 0.95, 0.7)}
@@ -51,7 +53,9 @@ if args.design:
     args.age = args.age or float(DESIGN.get("age") or 0) or None
     args.height_cm = args.height_cm or float(DESIGN.get("height_cm") or 0) or None
     if hair.get("style") and hair["style"] != "auto":
-        args.hair = args.hair or hair["style"]
+        # a style the designer offers ("crew_cut") becomes its asset; anything else is taken as an asset
+        # name already, which is how a design could ask for one before the styles had names
+        args.hair = args.hair or appearance.HAIR_STYLES.get(hair["style"], hair["style"])
     colours = {"skin": rgb(DESIGN.get("skin")), "hair": rgb(hair.get("color")), "top": rgb(outfit.get("top")),
                "bottom": rgb(outfit.get("bottom")), "shoes": rgb(outfit.get("shoes"))}
     if args.spec:
@@ -255,32 +259,8 @@ if FACE and os.path.exists(FACE_MAP):
     def pinned(co):
         return (co[pin_v] * pin_b[..., None]).sum(axis=1)  # (n, 3)
 
-    # face-shape variables: (name, [targets for +], [targets for -]); eyes/cheeks mirrored
-    def lr(t):
-        return [f"l-{t}", f"r-{t}"]
-    VARS = [("head-scale-horiz", ["head-scale-horiz-incr"], ["head-scale-horiz-decr"]),
-            ("head-scale-vert", ["head-scale-vert-incr"], ["head-scale-vert-decr"]),
-            ("head-fat", ["head-fat-incr"], ["head-fat-decr"])]
-    VARS += [(s, [s], []) for s in ("head-oval", "head-round", "head-square", "head-triangular",
-                                    "head-invertedtriangular", "head-diamond", "head-rectangular")]
-    for base in ("nose-scale-horiz", "nose-scale-vert", "nose-width1", "nose-width2", "nose-width3",
-                 "nose-nostrils-width", "nose-point-width", "nose-flaring", "mouth-scale-horiz", "mouth-scale-vert",
-                 "mouth-upperlip-height", "mouth-lowerlip-height", "mouth-upperlip-width", "mouth-lowerlip-width",
-                 "chin-width", "chin-height", "chin-bones", "forehead-scale-vert"):
-        VARS.append((base, [f"{base}-incr"], [f"{base}-decr"]))
-    VARS += [("nose-trans-vert", ["nose-trans-up"], ["nose-trans-down"]),
-             ("mouth-trans-vert", ["mouth-trans-up"], ["mouth-trans-down"]),
-             ("mouth-angles", ["mouth-angles-up"], ["mouth-angles-down"]),
-             ("eyebrows-trans-vert", ["eyebrows-trans-up"], ["eyebrows-trans-down"]),
-             ("eyebrows-angle", ["eyebrows-angle-up"], ["eyebrows-angle-down"]),
-             ("eye-scale", lr("eye-scale-incr"), lr("eye-scale-decr")),
-             ("eye-trans-horiz", lr("eye-trans-out"), lr("eye-trans-in")),
-             ("eye-trans-vert", lr("eye-trans-up"), lr("eye-trans-down")),
-             ("eye-height2", lr("eye-height2-incr"), lr("eye-height2-decr")),
-             ("eye-corner1", lr("eye-corner1-up"), lr("eye-corner1-down")),
-             ("eye-corner2", lr("eye-corner2-up"), lr("eye-corner2-down")),
-             ("cheek-bones", lr("cheek-bones-incr"), lr("cheek-bones-decr")),
-             ("cheek-volume", lr("cheek-volume-incr"), lr("cheek-volume-decr"))]
+    # the variables the fit solves for: one table, shared with the designer's sliders (core/appearance.py)
+    VARS = appearance.photo_vars()
 
     basis = human.data.shape_keys.key_blocks["Basis"]
     columns, col_keys = [], []                              # one column per (variable, sign)
@@ -421,6 +401,27 @@ if FACE and os.path.exists(FACE_MAP):
     face_texture = FACE["image"]
     log(f"face texture: {int((weight > 0.5).sum())} head vertices from the photo (face {FACE['width_px']:.0f} px wide)")
 
+# --- the design's own face and body sliders --------------------------------------------------
+# Applied after the photo fit, so a photo character can still be adjusted by hand and a designed one is
+# shaped entirely from here. A slider left at 0 names no target at all, so an untouched design changes
+# nothing. Targets are loaded as shape keys at their weight, exactly as the fit loads its own.
+designed = appearance.targets_for(DESIGN)
+head_shape = appearance.head_shape_target(DESIGN)
+if head_shape:
+    designed[head_shape] = max(designed.get(head_shape, 0.0), 1.0)
+if designed:
+    applied, missing = {}, []
+    for tname, weight in sorted(designed.items()):
+        path = TargetService.target_full_path(tname)
+        if not path:
+            missing.append(tname)
+            continue
+        TargetService.load_target(human, path, weight=float(weight), name=f"cf-design-{tname}")
+        applied[tname] = round(float(weight), 2)
+    log(f"designed shape: {len(applied)} target(s)", applied)
+    if missing:
+        log("WARNING design targets missing", missing)
+
 # --- rig (before assets, so every asset gets rigged as it is attached) -------------------------
 HumanService.add_builtin_rig(human, "rigify.human_toes", import_weights=True)
 human.use_shape_key_edit_mode = True
@@ -492,7 +493,8 @@ if eye_alt:
                                  alternative_materials=eye_alt)
 else:
     asset("high-poly/high-poly.mhclo", "eyes", "Eyes")
-brows_obj = asset("eyebrow001/eyebrow001.mhclo", "eyebrows", "Eyebrows")
+brow_style = appearance.EYEBROWS.get((DESIGN or {}).get("eyebrows"), "eyebrow001")
+brows_obj = asset(f"{brow_style}/{brow_style}.mhclo", "eyebrows", "Eyebrows")
 asset("eyelashes01/eyelashes01.mhclo", "eyelashes", "Eyelashes")
 teeth_obj = asset("teeth_shape03/teeth_shape03.mhclo", "teeth", "Teeth")
 # teeth sit in the mouth's shadow and render grey with black gaps ("zombie"); like film/game rigs,
@@ -518,6 +520,7 @@ HAIR = {("male", "short"): "short01", ("male", "medium"): "culturalibre_hair_05"
         ("female", "short"): "toigo_inverted_bob", ("female", "medium"): "toigo_blunt_bob",
         ("female", "long"): "long01"}
 hair_obj = None
+# a named style (translated above) wins over the length, which is only what a photo could tell
 h_name = args.hair or (HAIR[(args.gender, spec["hair_length"])] if spec.get("hair_length", "none") != "none"
                        else "none")
 if (DESIGN or {}).get("hat", "none") != "none":     # a hat covers the hair: leave the hair off

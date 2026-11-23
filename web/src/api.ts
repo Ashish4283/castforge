@@ -28,6 +28,9 @@ export interface Schema {
   character: Record<string, ParamDef>;
   fix_parts: string[];
   costumes: Record<string, Record<string, string>>;
+  face_groups: Record<string, string[]>;      // the designer's face sliders, by heading
+  body_groups: Record<string, string[]>;      // and the body ones
+  slider_range: [number, number];
   library: {footsteps: string[]; sfx: string[]; beds: string[]; clips: string[]};
 }
 export interface Character { name: string; preview: string | null; design: boolean }

@@ -9,7 +9,7 @@ import math
 import os
 
 from blender import acting, motion
-from core import config, finish, media, sets
+from core import appearance, config, finish, media, sets
 
 # --- names ------------------------------------------------------------------------------------------------
 _LANG = {"a": "American English", "b": "British English", "h": "Hindi", "e": "Spanish", "f": "French",
@@ -314,6 +314,20 @@ CHARACTER = {
     "costume.armour": p("color", "metal plates: breastplate, shoulders, forearms, shins (empty: none)"),
     "costume.hood": p("color", "a hood over the head, open at the face (empty: none)"),
 }
+# Everything a person can shape themselves: the face and body sliders (core/appearance.py), the whole-head
+# shape, and the hair and eyebrows they can pick. Built from that one table so a new slider needs no edit
+# here, in the app, or in the checker - all three read CHARACTER.
+CHARACTER["face.head_shape"] = p("enum", "the overall shape of the head", default="none",
+                                 values=appearance.HEAD_SHAPES)
+CHARACTER["hair.style"] = p("enum", "hair style (overrides the length; a hat still hides it)",
+                            default="", values=[""] + list(appearance.HAIR_STYLES))
+CHARACTER["eyebrows"] = p("enum", "eyebrow shape", default="style_1", values=list(appearance.EYEBROWS))
+for _part, _table in (("face", appearance.FACE), ("body", appearance.BODY)):
+    for _key, (_group, _plus, _minus, _help) in _table.items():
+        CHARACTER[f"{_part}.{_key}"] = p("slider", _help, default=0.0)
+SLIDER_RANGE = appearance.RANGE          # -1 .. +1, the same for every slider
+FACE_GROUPS = appearance.groups(appearance.FACE)
+BODY_GROUPS = appearance.groups(appearance.BODY)
 # ready-made looks the app offers; each is a set of design keys (dotted, as above)
 COSTUMES = {
     "knight": {"outfit.style": "work", "outfit.top": "#3b4150", "outfit.bottom": "#3b4150",
@@ -367,6 +381,9 @@ def check_design(design):
             problems.append(f"{key}: {v!r} is not one of {', '.join(spec['values'])}")
         elif spec["type"] == "number" and not isinstance(v, (int, float)):
             problems.append(f"{key}: {v!r} must be a number")
+        elif spec["type"] == "slider" and not (isinstance(v, (int, float)) and not isinstance(v, bool)
+                                               and appearance.RANGE[0] <= v <= appearance.RANGE[1]):
+            problems.append(f"{key}: {v!r} must be a number from {appearance.RANGE[0]} to {appearance.RANGE[1]}")
         elif spec["type"] == "color" and not (isinstance(v, str) and len(v.lstrip("#")) == 6
                                               and all(c in "0123456789abcdefABCDEF" for c in v.lstrip("#"))):
             problems.append(f"{key}: {v!r} must be a colour like #a3161a")
@@ -393,6 +410,8 @@ def describe():
             "transitions": TRANSITIONS, "lighting": list(LIGHTING), "lights": {k: v for k, v in LIGHTING.items() if v}, "weather": WEATHER, "shots": SHOT_KINDS,
             "moves": CAMERA_MOVES, "qualities": QUALITIES, "aspects": ASPECTS, "seats": SEAT_TYPES,
             "character": CHARACTER, "costumes": COSTUMES, "fix_parts": sorted(acting.FIX_PARTS),
+            # the designer groups its sliders from these, so a new one appears in the app on its own
+            "face_groups": FACE_GROUPS, "body_groups": BODY_GROUPS, "slider_range": list(SLIDER_RANGE),
             "library": library()}
 
 
