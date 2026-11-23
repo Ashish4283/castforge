@@ -71,6 +71,60 @@ def build_preview_kit(key):
         return True, "made"
 
 
+THUMBS = os.path.join(LIBRARY, "preview_kits", "thumbs")
+thumbs_state = {"running": False}
+
+
+def thumb_url(folder, asset):
+    """Where the picture of one look is, or None when it has not been taken yet."""
+    return (f"/preview-kit/thumbs/{folder}-{asset}.png"
+            if os.path.isfile(os.path.join(THUMBS, f"{folder}-{asset}.png")) else None)
+
+
+@app.post("/api/character/thumbs")
+def make_thumbs(body: dict = None):
+    """Take the missing pictures of the wardrobe, in one Blender run, in the background.
+
+    They are the studio's way of offering looks instead of a dropdown, so this runs on its own the first
+    time the studio is opened; nothing waits for it, and the pictures appear as they are taken."""
+    if thumbs_state["running"]:
+        return {"started": False, "message": "already being taken"}
+
+    def run():
+        try:
+            subprocess.run([config.BLENDER, "-b", "--factory-startup",
+                            "-P", os.path.join(ROOT, "blender", "preview_thumbs.py"), "--",
+                            "--out", THUMBS], capture_output=True, text=True, cwd=ROOT)
+        finally:
+            thumbs_state["running"] = False
+
+    thumbs_state["running"] = True
+    os.makedirs(THUMBS, exist_ok=True)
+    threading.Thread(target=run, daemon=True).start()
+    return {"started": True}
+
+
+@app.get("/api/character/looks")
+def character_looks():
+    """Every look the studio can offer, with its picture: what a person picks from.
+
+    Built from the one wardrobe (core/appearance.py), so a style added there shows up here with no other
+    change. A look whose picture has not been taken yet simply has none, and the tile shows its name."""
+    def tiles(pairs, folder):
+        return [{"value": value, "asset": asset, "thumb": thumb_url(folder, asset)} for value, asset in pairs]
+
+    beards = [(name, pieces[0]) for name, pieces in look.BEARDS.items()]
+    return {
+        "hair": tiles([(k, v) for k, v in look.HAIR_STYLES.items() if v and v != "none"], "hair"),
+        "eyebrows": tiles(list(look.EYEBROWS.items()), "eyebrows"),
+        "beard": tiles(beards, "clothes"),
+        "hat": tiles(list(look.HATS.items()), "clothes"),
+        "outfit": tiles([(k, v["male"]) for k, v in look.OUTFITS.items()], "clothes"),
+        "garment": tiles(list(look.BOTTOMS.items()) + [("dress", look.DRESS)], "clothes"),
+        "taking": thumbs_state["running"],
+    }
+
+
 def build_worn(folder, asset):
     """Export one worn thing for the live view if it is not already there. Returns (ok, where, message)."""
     if asset not in look.known_assets() or folder not in ("hair", "eyebrows", "eyes", "clothes"):
@@ -1228,6 +1282,7 @@ app.mount("/media", StaticFiles(directory=MOVIES), name="media")
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
 app.mount("/library-media", StaticFiles(directory=LIBRARY), name="library-media")
 os.makedirs(os.path.join(LIBRARY, "preview_kits"), exist_ok=True)
+os.makedirs(os.path.join(LIBRARY, "preview_kits", "thumbs"), exist_ok=True)
 app.mount("/preview-kit", StaticFiles(directory=os.path.join(LIBRARY, "preview_kits")), name="preview-kit")
 
 

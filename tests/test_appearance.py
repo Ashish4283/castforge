@@ -134,3 +134,41 @@ def test_every_hair_style_names_an_asset():
     assert appearance.HAIR_STYLES["none"] == "none"
     # a design that names a raw MPFB asset still works: the lookup falls back to what it was given
     assert appearance.HAIR_STYLES.get("ponytail01", "ponytail01") == "ponytail01"
+
+
+def test_everything_the_wardrobe_can_offer_can_also_be_exported():
+    # the studio offers looks from these tables and the live view exports them by name; a name the
+    # exporter refuses would be a tile that silently does nothing
+    known = appearance.known_assets()
+    for table in (appearance.HAIR_STYLES, appearance.EYEBROWS, appearance.HATS, appearance.TOPS,
+                  appearance.BOTTOMS):
+        for value in table.values():
+            if value and value != "none":
+                assert value in known, value
+    for pieces in appearance.BEARDS.values():
+        for asset in pieces:
+            assert asset in known, asset
+    for per_sex in appearance.OUTFITS.values():
+        for asset in per_sex.values():
+            assert asset in known, asset
+    assert appearance.DRESS in known and appearance.SHOES in known and appearance.BOOTS in known
+
+
+def test_a_design_only_ever_wears_things_that_can_be_exported():
+    known = appearance.known_assets()
+    for design in ({"gender": "male", "beard": "santa", "hat": "santa"},
+                   {"gender": "female", "outfit": {"style": "robe"}},
+                   {"gender": "female", "outfit": {"garment": "dress"}},
+                   {"gender": "male", "hair": {"style": "afro"}, "costume": {"boots": "#000000"}},
+                   {}, None):
+        for item in appearance.wearables(design):
+            assert item["asset"] in known, item
+
+
+def test_a_hat_takes_the_hair_off():
+    # the build leaves the hair off under a hat, and the live view must agree or they show different people
+    worn = {w["role"] for w in appearance.wearables({"gender": "male", "hat": "fedora",
+                                                     "hair": {"style": "afro"}})}
+    assert "hat" in worn and "hair" not in worn
+    bare = {w["role"] for w in appearance.wearables({"gender": "male", "hair": {"style": "afro"}})}
+    assert "hair" in bare and "hat" not in bare

@@ -65,6 +65,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | the app (React 18 + TS + Vite, sidebar layout) | `web/src/`: `main.tsx` routes, `app/store.tsx` (movies, GPU, jobs, toasts, hash route), `app/episode.tsx` (open scene model: `update`, `save`, `scene()`, `cast()`), `components/ui.tsx` (Button, Card, Field...), `components/ParamInput.tsx` (any schema parameter), `pages/*`; design tokens at the top of `styles.css`. Old page at `/classic` (`app/index.html`, `static/app.js`) until removed |
 | Overview page (next step, progress) | `server.py` `/api/movie/progress`; `web/src/pages/Studio.tsx` |
 | 3D scene editor (view, timeline, drag spots) | `web/src/pages/episodes/viewer.ts` (three.js) + `Editor3D.tsx`; export `scene_kit.py` `if args.preview3d`; job `--preview3d` |
+| the studio's steps, look pickers, thumbnails | steps `web/src/pages/characters/steps.ts`; tiles `LookPicker.tsx`; pictures `blender/preview_thumbs.py` -> `library/preview_kits/thumbs/`; routes `/api/character/looks` (what to offer) and `/api/character/thumbs` (take the missing ones) |
 | what the live view wears (hair, beard, clothes) | export `blender/preview_wear.py` -> `library/preview_kits/worn/<folder>-<asset>/`; the wardrobe itself `appearance.wearables` (pure, tested); route `/api/character/wear`; drawing `bodyview.setWearing` |
 | the designer's live body (morphs as the sliders move) | export `blender/preview_kit.py` -> `library/preview_kits/<sex>-<age>-<build>-<height>/kit.json+bin`; what is needed and whether it is there `core/preview_kit.py` (pure, tested, `VERSION`); route `/api/character/preview-kit`; drawing `web/src/pages/characters/bodyview.ts` + `LivePreview.tsx` |
 | what a face or body can be shaped into (sliders) | `core/appearance.py` (pure, tested: `FACE`, `BODY`, `targets_for`, `photo_vars`, hair styles, eyebrows). One table: `schema.CHARACTER` grows from it, the app groups from `face_groups`/`body_groups`, the build applies it |
@@ -112,6 +113,11 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - MPFB ships 1258 morph targets INSIDE the addon (`<addon>/data/targets/…`), not in the user asset library,
   which only carries expressions and visemes. `TargetService.target_full_path(name)` finds one by bare name
   (`chin-width-incr`) and `load_target` adds it as a weighted shape key. Paired features are `l-`/`r-`.
+- Any script that RENDERS under `--factory-startup` must delete the startup objects first, or Blender's
+  default cube stands in the picture (it cost the asset catalogue once and the look thumbnails again).
+- Putting a garment on adds a mask modifier to the body. When taking it off again, remove only the
+  modifiers that asset added - never the body's own "Hide helpers", or the helper cages render as a white
+  slab across everything.
 - A MakeHuman asset already carries its own fitting: `Mhclo.verts[i]` gives 3 body vertices, 3 weights and
   an offset, and `x_scale`/`y_scale`/`z_scale` give the spans that offset is measured against. Rebuilding a
   garment is that weighted sum plus offset x span - exact to 0.0002 mm on any body, which is why the live

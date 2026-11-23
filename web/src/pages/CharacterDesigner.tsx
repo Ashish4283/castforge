@@ -1,12 +1,15 @@
 // The character designer: every design key (core/schema.py CHARACTER) as a control, ready-made looks, the
 // front/side/back previews, and Rebuild. Photo characters keep their face and body from the photo.
 import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {ChevronRight, Dumbbell, Hammer, RotateCcw, Shirt, Sparkles, UserRound, Wand2} from "lucide-react";
+import {ArrowLeft, ArrowRight, ChevronRight, Dumbbell, Hammer, ListChecks, RotateCcw, Shirt, Sparkles,
+        UserRound, Wand2} from "lucide-react";
 import {api, CharacterDetail, Json, label, ParamDef, post, q} from "../api";
 import {useStore} from "../app/store";
 import {Badge, Button, ColorField, Field, Notice, PageHead, Segmented, Select, Switch} from "../components/ui";
 // three.js is 500 kB: it loads the first time someone opens the live body, not with the app
 const LivePreview = lazy(() => import("./characters/LivePreview").then(m => ({default: m.LivePreview})));
+import {Look, LookPicker, Swatches} from "./characters/LookPicker";
+import {STEPS} from "./characters/steps";
 
 const SECTIONS: {title: string; text: string; keys: string[]}[] = [
   {title: "Body", text: "Who they are. Age and build shape the whole body.", keys: ["gender", "age", "height_cm", "build"]},
@@ -40,6 +43,9 @@ export function CharacterDesigner({name}: {name: string}) {
   const [stage, setStage] = useState<"live" | "built">("live");     // the shape as it is now, or the last build
   const [focus, setFocus] = useState<"whole" | "face" | "body">("whole");
   const [usePhoto, setUsePhoto] = useState(true);
+  const [step, setStep] = useState(0);                              // where we are in the studio
+  const [mode, setMode] = useState<"studio" | "all">("studio");     // one step at a time, or every control
+  const [looks, setLooks] = useState<Record<string, Look[]> | null>(null);
   const [busy, setBusy] = useState(false);
   const wasBuilding = useRef(false);
 
@@ -60,6 +66,23 @@ export function CharacterDesigner({name}: {name: string}) {
     }
   }, [movie, name]);
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {                   // the pictures the studio offers; taken on the first visit ever
+    (async () => {
+      try {
+        const got = await api<Record<string, Look[]> & {taking: boolean}>("/api/character/looks");
+        setLooks(got);
+        const missing = Object.entries(got).some(([, v]) => Array.isArray(v) && v.some(l => !l.thumb));
+        if (missing && !got.taking) {
+          await post("/api/character/thumbs", {});
+          setTimeout(async () => { try { setLooks(await api("/api/character/looks")); } catch { /* later */ } }, 50000);
+        }
+      } catch { /* the studio still works without pictures: the tiles show names */ }
+    })();
+  }, []);
+
+  const here = STEPS[Math.min(step, STEPS.length - 1)];
+  useEffect(() => { setStage("live"); setFocus(here.look); }, [here.id]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const job = jobs.find(j => j.movie === movie && j.name === name && j.state === "building");
   useEffect(() => {          // a build of this character finished: show the new previews
@@ -129,6 +152,100 @@ export function CharacterDesigner({name}: {name: string}) {
           )}
         </div>
         <div className="card">
+          <div className="studio-top">
+            <Segmented value={mode} onChange={setMode}
+                       options={[["studio", "Step by step"], ["all", "Everything"]]} />
+          </div>
+          {mode === "studio" && (
+            <>
+              <div className="steps-rail">
+                {STEPS.map((st, i) => (
+                  <button type="button" key={st.id}
+                          className={`step-dot ${i === step ? "on" : ""} ${i < step ? "done" : ""}`}
+                          onClick={() => setStep(i)} title={st.title}>
+                    <span>{i + 1}</span><b>{st.title}</b>
+                  </button>
+                ))}
+              </div>
+              <div className="design-section">
+                <h3>{here.title}</h3>
+                <p>{here.text}</p>
+                {here.looks?.map(row => (
+                  <LookPicker key={row.key} title={row.title} none={row.none}
+                              looks={looks?.[row.from] || []} value={get(design, row.key)}
+                              onPick={v => change(row.key, v)} />
+                ))}
+                {here.colours?.map(row => (
+                  <Swatches key={row.key} title={row.title} swatches={row.swatches}
+                            value={get(design, row.key)} onPick={v => change(row.key, v)} />
+                ))}
+                {here.keys && here.keys.length > 0 && (
+                  <div className="form-grid">
+                    {here.keys.filter(k => schema.character[k]).map(k => (
+                      <DesignField key={k} k={k} def={schema.character[k]} value={get(design, k)}
+                                   onChange={v => change(k, v)} />
+                    ))}
+                  </div>
+                )}
+                {here.sliders && Object.entries(
+                  (here.sliders === "face" ? schema.face_groups : schema.body_groups) || {}).map(([group, keys]) => (
+                  <details key={group} className="slider-group" open={groupTouched(here.sliders!, keys)}
+                           onToggle={e => { if ((e.target as HTMLDetailsElement).open) { setStage("live"); setFocus(here.look); } }}>
+                    <summary>
+                      <span>{group}</span>
+                      {groupTouched(here.sliders!, keys) && <Badge>changed</Badge>}
+                      <span className="spacer" />
+                      <button className="btn ghost sm"
+                              onClick={e => { e.preventDefault(); resetGroup(here.sliders!, keys); }}>Reset</button>
+                    </summary>
+                    <div className="sliders">
+                      {keys.filter(k => schema.character[`${here.sliders}.${k}`]).map(k => (
+                        <SliderField key={k} name={k} def={schema.character[`${here.sliders}.${k}`]}
+                                     range={schema.slider_range || [-1, 1]}
+                                     value={Number(get(design, `${here.sliders}.${k}`) || 0)}
+                                     onChange={v => { setStage("live"); setFocus(here.look); change(`${here.sliders}.${k}`, v || null); }} />
+                      ))}
+                    </div>
+                  </details>
+                ))}
+                {here.id === "costume" && (
+                  <div style={{marginTop: 14}}>
+                    <h3 style={{marginBottom: 4}}><Sparkles size={15} color="var(--accent-2)" />Ready-made looks</h3>
+                    <div className="presets">
+                      {Object.entries(schema.costumes).map(([id, ready]) => (
+                        <button key={id} className="preset" onClick={() => applyLook(ready)}>
+                          <Shirt size={16} />
+                          <b style={{textTransform: "capitalize"}}>{id.replace(/_/g, " ")}</b>
+                          <span className="swatches">{Object.values(ready).filter(v => /^#/.test(v)).slice(0, 5).map((c, i) => <i key={i} style={{background: c}} />)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {here.id === "build" && (
+                  <div className="ready">
+                    {problems.length > 0
+                      ? <Notice kind="warn">Still needed: {problems.join(", ")}</Notice>
+                      : <Notice kind="ok">Everything is set. Building takes about four minutes.</Notice>}
+                    <Button variant="primary" icon={<Hammer size={15} />} busy={busy}
+                            disabled={!!job || problems.length > 0} onClick={rebuild}>
+                      {isNew ? "Build this character" : "Rebuild with these changes"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+              <div className="step-bar">
+                <Button variant="ghost" icon={<ArrowLeft size={15} />} disabled={step === 0}
+                        onClick={() => setStep(x => x - 1)}>Back</Button>
+                <span className="muted small">{step + 1} of {STEPS.length}</span>
+                <span className="spacer" />
+                {step < STEPS.length - 1
+                  ? <Button variant="primary" onClick={() => setStep(x => x + 1)}>Next<ArrowRight size={15} /></Button>
+                  : <Button variant="ghost" icon={<ListChecks size={15} />} onClick={() => setMode("all")}>See everything</Button>}
+              </div>
+            </>
+          )}
+          {mode === "all" && <>
           <div className="design-section">
             <h3><Sparkles size={15} color="var(--accent-2)" />Ready-made looks</h3>
             <p>One click sets the costume pieces and colours; adjust anything afterwards.</p>
@@ -200,6 +317,7 @@ export function CharacterDesigner({name}: {name: string}) {
               </div>
             </div>
           ))}
+          </>}
           <div className="sticky-bar">
             {problems.length > 0 ? <Notice kind="warn">Fill in: {problems.join(", ")}</Notice>
               : <span className="muted small">{job ? "Building… you can keep editing." : dirty ? "Changes are not built yet." : "Up to date with the last build."} A build takes about 4 minutes on the GPU.</span>}
