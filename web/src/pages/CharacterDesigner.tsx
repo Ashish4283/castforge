@@ -14,7 +14,7 @@ import {STEPS} from "./characters/steps";
 const SECTIONS: {title: string; text: string; keys: string[]}[] = [
   {title: "Body", text: "Who they are. Age and build shape the whole body.", keys: ["gender", "age", "height_cm", "build"]},
   {title: "Face and hair", text: "A hat hides the hair; a beard takes the hair colour. A hair style overrides the length.",
-   keys: ["skin", "eyes", "hair.length", "hair.style", "hair.color", "eyebrows", "beard", "hat"]},
+   keys: ["skin", "eyes", "hair.length", "hair.style", "hair.color", "eyebrows", "beard", "hat", "hat_size"]},
   {title: "Outfit", text: "The base clothes, coloured to your choice. A style other than casual is one whole-body outfit.",
    keys: ["outfit.style", "outfit.garment", "outfit.sleeves", "outfit.top", "outfit.bottom", "outfit.shoes"]},
   {title: "Costume", text: "Pieces over the outfit: a long coat, fur trim, a belt, gloves and boots. Leave a colour empty to leave the piece out.",
@@ -188,6 +188,16 @@ export function CharacterDesigner({name}: {name: string}) {
                     ))}
                   </div>
                 )}
+                {here.scales && here.scales.length > 0 && (
+                  <div className="sliders" style={{marginTop: 10}}>
+                    {here.scales.filter(row => schema.character[row.key]).map(row => (
+                      <SliderField key={row.key} name={row.key} label={row.title}
+                                   def={schema.character[row.key]} range={row.range} middle={row.middle}
+                                   value={Number(get(design, row.key) ?? row.middle)}
+                                   onChange={v => change(row.key, v)} />
+                    ))}
+                  </div>
+                )}
                 {here.sliders && Object.entries(
                   (here.sliders === "face" ? schema.face_groups : schema.body_groups) || {}).map(([group, keys]) => (
                   <details key={group} className="slider-group" open={groupTouched(here.sliders!, keys)}
@@ -341,15 +351,21 @@ function title(k: string) {
 
 // One feature, from one end to the other, with the middle marked. The number says where it is so a look can
 // be written down and repeated; double-click the handle (or Reset above) to come back to the middle.
-function SliderField({name, def, range, value, onChange}:
-                     {name: string; def: ParamDef; range: readonly [number, number] | number[]; value: number; onChange: (v: number) => void}) {
+function SliderField({name, def, range, value, onChange, middle = 0, label}:
+                     {name: string; def: ParamDef; range: readonly [number, number] | number[]; value: number;
+                      onChange: (v: number) => void; middle?: number; label?: string}) {
   const [lo, hi] = range as [number, number];
+  // most of these sliders sit at nothing in the middle (a face is ordinary at 0); a size sits at 1, so
+  // "changed" and the double-click that puts it back are both measured from wherever the middle is
+  const moved = Math.abs(value - middle) > 1e-9;
   return (
-    <label className={`slider-row ${value ? "set" : ""}`} title={def.help}>
-      <span className="slider-name">{title(name)}</span>
+    <label className={`slider-row ${moved ? "set" : ""}`} title={def.help}>
+      <span className="slider-name">{label || title(name)}</span>
       <input type="range" min={lo} max={hi} step={0.05} value={value}
-             onChange={e => onChange(Number(e.target.value))} onDoubleClick={() => onChange(0)} />
-      <span className="slider-value">{value ? (value > 0 ? "+" : "") + value.toFixed(2) : "0"}</span>
+             onChange={e => onChange(Number(e.target.value))} onDoubleClick={() => onChange(middle)} />
+      <span className="slider-value">
+        {middle === 0 ? (moved ? (value > 0 ? "+" : "") + value.toFixed(2) : "0") : `x${value.toFixed(2)}`}
+      </span>
     </label>
   );
 }

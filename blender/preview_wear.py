@@ -134,13 +134,16 @@ hides = np.array(sorted(mhclo.delverts or []), dtype=np.uint32)   # body the gar
 # colour, which reads the same. The bands are topological - so many metres along the surface from an
 # opening - so they are the same on every body and can be measured once, here. One bit per band, so a
 # vertex on both the hem and a cuff is not an argument.
-BANDS = {"hem": 1, "collar": 2, "cuff": 4, "boot": 8}
+BANDS = {"hem": 1, "collar": 2, "cuff": 4, "boot": 8, "rim": 16}
 polys = [tuple(p.vertices) for p in me.polygons]
 rest_co = [tuple(v) for v in truth]
 regions = np.zeros(n_v, dtype=np.uint8)
 found = {}
 if args.folder == "clothes":
-    if args.asset in (appearance.SHOES, appearance.BOOTS):
+    if args.asset in appearance.HATS.values():
+        # a hat grows away from its opening, and the opening has to be found on the real mesh
+        bands = {"rim": set(costume.rim_of(rest_co, polys))}
+    elif args.asset in (appearance.SHOES, appearance.BOOTS):
         bands = costume.boot_bands(rest_co, polys, 0.0)
     else:
         bands = costume.trim_bands(rest_co, polys, 0.0, sleeves="long")        # cuffs too: the app chooses

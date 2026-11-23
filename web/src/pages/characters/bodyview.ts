@@ -84,6 +84,37 @@ function liftOffSurface(material: THREE.Material, metres: number) {
   material.needsUpdate = true;
 }
 
+/** Make a hat bigger without lifting it off the head: the same growth the build applies.
+ *
+ *  Mirrors `costume.grow_hat` (blender/costume.py, where it is explained and tested). `rim` is the hat's
+ *  opening, marked when the hat was exported: those vertices do not move at all, because they are what
+ *  holds the hat on. Everything else grows away from the opening's centre, in full at the crown and less
+ *  as it comes back down to the brim. `pos` is the hat's live vertices, y up, changed in place. */
+function growHat(pos: Float32Array, scale: number, rim: number[]) {
+  if (Math.abs(scale - 1) < 1e-6 || !pos.length || !rim.length) return;
+  const c = [0, 0, 0];
+  for (const v of rim) for (let k = 0; k < 3; k++) c[k] += pos[v * 3 + k] / rim.length;
+  const n = pos.length / 3;
+  const away = new Float32Array(n);
+  let far = 0;
+  for (let i = 0; i < n; i++) {
+    let best = Infinity;
+    for (const v of rim) {
+      const dx = pos[i * 3] - pos[v * 3], dy = pos[i * 3 + 1] - pos[v * 3 + 1], dz = pos[i * 3 + 2] - pos[v * 3 + 2];
+      const d = dx * dx + dy * dy + dz * dz;
+      if (d < best) best = d;
+    }
+    away[i] = Math.sqrt(best);
+    if (away[i] > far) far = away[i];
+  }
+  if (!far) return;
+  for (let i = 0; i < n; i++) {
+    const t = away[i] / far;
+    const grow = 1 + (scale - 1) * (t * t * (3 - 2 * t));   // smooth: no crease where it meets the brim
+    for (let k = 0; k < 3; k++) pos[i * 3 + k] = c[k] + (pos[i * 3 + k] - c[k]) * grow;
+  }
+}
+
 type Grab = null | "orbit" | "spin" | "tip";
 
 export class BodyView {
@@ -96,11 +127,13 @@ export class BodyView {
   private shapes = new Map<string, {idx: Uint32Array; d: Float32Array}>();
   private rings = new THREE.Group();
   private wearing: {worn: Worn; mesh: THREE.Mesh; idx: Uint32Array; weight: Float32Array;
-                    off: Float32Array; pos: Float32Array; hides: Uint32Array; scale: Float32Array}[] = [];
+                    off: Float32Array; pos: Float32Array; hides: Uint32Array; scale: Float32Array;
+                    rim: number[]}[] = [];
   private tris: Uint32Array | null = null;   // the body's triangles, which garments are pinned to
   private hands: Uint32Array = new Uint32Array(0);     // the skin a glove covers
   private joints: Record<string, [number, number, number]> = {};
   private costume: CostumeLook = {};
+  private hatSize = 1;                                 // these assets come in one size, and it is small
   private pieces: THREE.Mesh[] = [];                   // the costume drawn over the clothes
   private spinRing!: THREE.Mesh;
   private tipRing!: THREE.Mesh;
@@ -239,10 +272,18 @@ export class BodyView {
                            + off[i * 3 + k] * scale[k];
         }
       }
+      if (w.worn.spec.role === "hat") growHat(pos, this.hatSize, w.rim);
       const attr = w.mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
       attr.needsUpdate = true;
       w.mesh.geometry.computeVertexNormals();
     }
+  }
+
+  /** How big the hat is: 1 is the asset as it comes, which for a Santa cap is a child's. */
+  setHatSize(size: number) {
+    this.hatSize = size > 0 ? size : 1;
+    this.dress();
+    this.buildCostume();
   }
 
   /** Leave the skin undrawn where a garment covers it.
@@ -305,7 +346,13 @@ export class BodyView {
       const mesh = new THREE.Mesh(g, mat);
       mesh.renderOrder = 1;
       this.scene.add(mesh);
-      this.wearing.push({worn, mesh, idx, weight, off, pos, hides, scale: new Float32Array(3)});
+      const rim: number[] = [];                  // a hat's opening, so it can be grown without being lifted
+      if (spec.regions?.count) {
+        const bits = new Uint8Array(bin, spec.regions.at, spec.regions.count);
+        const bit = spec.band_bits?.rim ?? 16;
+        for (let v = 0; v < bits.length; v++) if (bits[v] & bit) rim.push(v);
+      }
+      this.wearing.push({worn, mesh, idx, weight, off, pos, hides, scale: new Float32Array(3), rim});
     }
     this.dress();
     this.hideCovered();

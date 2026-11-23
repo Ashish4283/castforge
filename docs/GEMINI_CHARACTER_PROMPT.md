@@ -21,6 +21,8 @@ no explanation. Format:
   "eyebrows": "style_1" ... "style_12",
   "beard": "none" | "scruffy" | "full" | "long" | "faun" | "moustache" | "santa",
   "hat": "none" | "santa" | "newsboy" | "fedora" | "cloche" | "flat_cap",
+  "hat_size": 1.0,                      // 0.7 small, 1 as the asset comes, 1.6 oversized.
+                                        // The assets are cut small: a Santa cap wants about 1.35.
   "eyes": "brown" | "brownlight" | "green" | "grey" | "blue" | "bluegreen" | "deepblue" | "lightblue" | "ice",
   "outfit": {"garment": "trousers" | "shorts" | "skirt" | "dress", "sleeves": "short" | "long",
              "top": "#rrggbb", "bottom": "#rrggbb", "shoes": "#rrggbb"},

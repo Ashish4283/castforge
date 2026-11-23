@@ -2,6 +2,8 @@ import math
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "blender"))
 import costume as kit  # noqa: E402
 
@@ -195,3 +197,30 @@ def test_boot_bands_take_the_highest_opening_on_each_side():
     bands = kit.boot_bands(co, faces)
     assert max(co[v][2] for v in bands["boot"]) == 0.2
     assert min(co[v][2] for v in bands["boot"]) >= 0.2 - kit.TRIM_WIDTHS["boot"]
+
+
+def test_a_bigger_hat_keeps_its_opening_exactly_where_it_was():
+    co, faces = tube(rings=4, n=8, radius=0.1, step=0.05, z0=1.8)    # opening at 1.65, crown at 1.8
+    rim = kit.rim_of(co, faces)
+    assert kit.centroid(co, rim)[2] == pytest.approx(1.65)           # the lower of the two openings
+    big = kit.grow_hat(co, 1.5, rim)
+    for v in rim:
+        assert big[v] == pytest.approx(co[v], abs=1e-9)              # what grips the head does not move
+    top = max(range(len(co)), key=lambda v: co[v][2])
+    assert big[top][2] > co[top][2]                                  # and the crown is taller
+    assert abs(big[top][0] - kit.centroid(co, rim)[0]) > abs(co[top][0] - kit.centroid(co, rim)[0])
+
+
+def test_a_tilted_hat_is_not_stretched_off_the_forehead():
+    """A hat worn at an angle: growing it must leave the whole opening alone, high side included."""
+    co, faces = tube(rings=3, n=8, radius=0.1, step=0.05, z0=1.8)
+    co = [(x, y, z + 0.04 * y) for x, y, z in co]                    # tip it back
+    rim = kit.rim_of(co, faces)
+    big = kit.grow_hat(co, 1.4, rim)
+    for v in rim:
+        assert big[v] == pytest.approx(co[v], abs=1e-9)
+
+
+def test_a_hat_left_at_its_own_size_is_untouched():
+    co, faces = tube(rings=3, radius=0.1, step=0.05, z0=1.8)
+    assert kit.grow_hat(co, 1.0, kit.rim_of(co, faces)) == [tuple(p) for p in co]

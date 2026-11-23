@@ -12,6 +12,7 @@ export interface Step {
   sliders?: "face" | "body";         // the grouped sliders of one half of the table
   looks?: {key: string; from: string; title: string; none?: string}[];   // pick-a-picture rows
   colours?: {key: string; title: string; swatches: string[]}[];
+  scales?: {key: string; title: string; range: [number, number]; middle: number}[];   // a plain dial
 }
 
 const SKIN = ["#f6ded0", "#edc8ab", "#dcab86", "#c58d64", "#a46a45", "#7d4a2e", "#563021"];
@@ -46,11 +47,12 @@ export const STEPS: Step[] = [
    sliders: "body"},
 
   {id: "clothes", title: "Clothes", look: "whole",
-   text: "A whole outfit, or a top and something below. Pick the shapes here and the colours underneath.",
+   text: "A whole outfit, or a top and something below. Pick the shapes here and the colours underneath. These hats are cut small - a Santa cap wants about 1.35.",
    looks: [{key: "outfit.style", from: "outfit", title: "Outfit", none: "Separates"},
            {key: "outfit.garment", from: "garment", title: "Below the waist"},
            {key: "hat", from: "hat", title: "Hat", none: "No hat"}],
    keys: ["outfit.sleeves"],
+   scales: [{key: "hat_size", title: "Hat size", range: [0.7, 1.6], middle: 1}],
    colours: [{key: "outfit.top", title: "Top", swatches: CLOTH},
              {key: "outfit.bottom", title: "Trousers or skirt", swatches: CLOTH},
              {key: "outfit.shoes", title: "Shoes", swatches: CLOTH}]},

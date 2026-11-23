@@ -52,7 +52,7 @@ export function LivePreview({design, schema, focus}: {design: Json; schema: Sche
     boots: !!get(design, "costume.boots"), sleeves: (get(design, "outfit.sleeves") as string) || null,
   };
   const colourKey = JSON.stringify([get(design, "skin"), get(design, "hair.color"), get(design, "outfit.top"),
-                                    get(design, "outfit.bottom"), get(design, "outfit.shoes"), costume]);
+                                    get(design, "outfit.bottom"), get(design, "outfit.shoes"), get(design, "hat_size"), costume]);
   // the body underneath the sliders: only these three change it, so only these three fetch a new one
   const shape = [get(design, "gender") || "female", get(design, "age") || 30,
                  get(design, "build") || "average", get(design, "height_cm") || 170].join("|");
@@ -128,6 +128,7 @@ export function LivePreview({design, schema, focus}: {design: Json; schema: Sche
     view.current?.setWearing(wornRef.current.map(w => ({
       spec: w.spec, bin: w.bin, texture: w.texture, colour: tintOf(design, w.spec.tint),
     } as Worn)));
+    view.current?.setHatSize(Number(get(design, "hat_size") || 1));
     view.current?.setCostume(costume);              // after the clothes: the costume is drawn over them
   };
   useEffect(() => { paint(); }, [colourKey]);   // eslint-disable-line react-hooks/exhaustive-deps

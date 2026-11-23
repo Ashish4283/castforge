@@ -545,6 +545,20 @@ hat = (DESIGN or {}).get("hat", "none")
 if hat in HATS:
     hat_obj = asset(f"{HATS[hat]}/{HATS[hat]}.mhclo", "clothes", "Clothes")
     log("hat", hat)
+    # These assets come in one size, and it is a small one - a Santa cap off the shelf is a child's. A hat
+    # grows from its brim (blender/costume.py), so the opening keeps its grip on the head and only the
+    # crown rises and widens. Done to the mesh itself, so the fit, the weights and the rig are untouched.
+    hat_size = float((DESIGN or {}).get("hat_size") or 1.0)
+    if hat_obj and abs(hat_size - 1.0) > 1e-6:
+        sys.path.insert(0, HERE)
+        import costume as _kit
+        hat_co = [tuple(v.co) for v in hat_obj.data.vertices]
+        hat_faces = [tuple(f.vertices) for f in hat_obj.data.polygons]
+        rim = _kit.rim_of(hat_co, hat_faces)          # the opening holds it on: that is what stays put
+        grown = _kit.grow_hat(hat_co, hat_size, rim)
+        hat_obj.data.vertices.foreach_set("co", [c for p_ in grown for c in p_])
+        hat_obj.data.update()
+        log(f"hat size x{hat_size:.2f}")
 COSTUME = (DESIGN or {}).get("costume") or {}     # coat, trim, belt, buckle, gloves, boots (core/schema.py)
 
 # plain garments (CC0 packs) whose textures recolour cleanly; picked from what the photo shows

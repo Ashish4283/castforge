@@ -200,6 +200,14 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   SHAPED body (`preview_mesh.joint_centres(human, coords)`) or a tall person's wrist lands in the wrong
   place; the kit carries them so the live view knows a waist from a shoulder without having a rig.
 
+- These hat assets come in ONE size and it is a child's; `hat_size` grows them (`costume.grow_hat`, the
+  build applies it to the hat mesh so the fit, the weights and the rig are untouched; the live view
+  mirrors it in `bodyview.growHat`). It must grow away from the hat's OPENING, whose vertices do not move
+  at all (`costume.rim_of`, exported as a region bit). Both obvious alternatives look wrong and were
+  tried: scaling the whole hat lifts the brim clear of the skull all round, and scaling about a horizontal
+  plane through the lowest vertex stretches the front of the brim up off the forehead, because these hats
+  are worn tilted back.
+
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).
 Scene vocabulary for Gemini: `docs/GEMINI_SCENE_PROMPT.md`.

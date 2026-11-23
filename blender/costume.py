@@ -341,3 +341,39 @@ def beyond(co, verts, origin, towards, reach=1.6):
     far = reach * length
     return {v for v in verts
             if sum(co[v][i] * axis[i] for i in range(3)) >= at and math.dist(co[v], origin) <= far}
+
+
+def rim_of(co, faces):
+    """The hat's opening: the boundary loop whose centre is lowest - the edge that grips the head."""
+    loops = boundary_loops(faces)
+    return min(loops, key=lambda l: centroid(co, l)[2]) if loops else []
+
+
+def grow_hat(co, scale, rim=()):
+    """A hat made bigger (or smaller) without lifting it off the head.
+
+    `rim` is its opening (`rim_of`), and that is what holds it on: those vertices do not move at all.
+    Everything else grows away from the opening's centre, by the full `scale` where it is furthest from
+    the opening - the crown - and by less as it comes back down to the brim.
+
+    The two obvious ways both fail, and both look wrong on a Santa cap: scaling the whole hat lifts the
+    brim clear of the skull on every side, and scaling about a horizontal plane through the lowest vertex
+    stretches the front of the brim up off the forehead, because these hats are worn at an angle.
+
+    `co` is the hat's vertices (z up); the answer is a new list in the same order."""
+    if abs(scale - 1.0) < 1e-6 or not co:
+        return [tuple(p) for p in co]
+    rim = list(rim)
+    if not rim:                                   # no opening to hold on by: grow it whole
+        c = centroid(co, range(len(co)))
+        return [tuple(c[i] + (p[i] - c[i]) * scale for i in range(3)) for p in co]
+    c = centroid(co, rim)
+    edge = [co[v] for v in rim]
+    away = [min(math.dist(p, e) for e in edge) for p in co]
+    far = max(away) or 1.0
+    out = []
+    for p, d in zip(co, away):
+        t = d / far
+        grow = 1.0 + (scale - 1.0) * (t * t * (3 - 2 * t))      # smooth: no crease where it meets the brim
+        out.append(tuple(c[i] + (p[i] - c[i]) * grow for i in range(3)))
+    return out
