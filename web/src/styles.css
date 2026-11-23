@@ -495,3 +495,6 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
 .swatch.on { box-shadow: 0 0 0 2px var(--accent); }
 .swatch.custom { background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red); position: relative; overflow: hidden; }
 .swatch.custom input { position: absolute; inset: -6px; opacity: 0; cursor: pointer; }
+.steps-rail { position: relative; mask-image: linear-gradient(90deg, #000 0, #000 92%, transparent 100%); }
+.steps-rail::-webkit-scrollbar { height: 5px; }
+.steps-rail::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }

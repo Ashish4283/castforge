@@ -50,6 +50,7 @@ export function CharacterDesigner({name}: {name: string}) {
   const wasBuilding = useRef(false);
 
   const load = useCallback(async () => {
+    if (!movie) return;        // the store has not said which movie yet: asking now only gets a 400
     try {
       const d = await api<CharacterDetail>(`/api/character?${q({movie, name})}`);
       setDetail(d);
@@ -318,13 +319,13 @@ export function CharacterDesigner({name}: {name: string}) {
             </div>
           ))}
           </>}
-          <div className="sticky-bar">
+          {mode === "all" && <div className="sticky-bar">
             {problems.length > 0 ? <Notice kind="warn">Fill in: {problems.join(", ")}</Notice>
               : <span className="muted small">{job ? "Building… you can keep editing." : dirty ? "Changes are not built yet." : "Up to date with the last build."} A build takes about 4 minutes on the GPU.</span>}
             <div className="spacer" />
             <Button variant="ghost" onClick={() => go("characters")}>Back</Button>
             <Button variant="primary" icon={<Hammer size={15} />} busy={busy} disabled={!!job || problems.length > 0} onClick={rebuild}>{isNew ? "Build character" : "Rebuild"}</Button>
-          </div>
+          </div>}
         </div>
       </div>
     </div>

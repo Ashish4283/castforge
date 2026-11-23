@@ -21,13 +21,42 @@ export const RING_TIP = "#e4564a";           // red: tip it up and down
 
 export interface WornSpec {                  // one thing being worn, as the server hands it over
   role: string; asset: string; tint: string | null;
-  vertices: number; triangles: number; texture: string | null;
+  vertices: number; triangles: number; texture: string | null; median: number;
   x_scale: [number, number, number]; y_scale: [number, number, number]; z_scale: [number, number, number];
   verts: {at: number; count: number}; weights: {at: number; count: number};
   offsets: {at: number; count: number}; uv: {at: number; count: number};
   indices: {at: number; count: number}; hides: {at: number; count: number};
 }
 export interface Worn { spec: WornSpec; bin: ArrayBuffer; colour?: string; texture?: THREE.Texture | null }
+
+/** Colour a garment the way the build colours it.
+ *
+ *  Not colour x texture - that turns a dark knit black, which is what the live view used to do. The build
+ *  uses colour x (luminance / the texture's median luminance), so the weave reads as light and shade
+ *  AROUND the colour asked for; and it keeps less of that contrast for pale colours, or white cloth comes
+ *  out grey. `median` is measured when the garment is exported (blender/preview_wear.py). */
+function tintLikeTheBuild(material: THREE.MeshStandardMaterial, median: number) {
+  const linear = material.color.clone().convertSRGBToLinear();
+  const light = 0.2126 * linear.r + 0.7152 * linear.g + 0.0722 * linear.b;
+  const keep = 1 - 0.75 * Math.min(light / 0.6, 1);
+  material.onBeforeCompile = shader => {
+    shader.uniforms.cfMedian = {value: Math.max(median, 0.02)};
+    shader.uniforms.cfKeep = {value: keep};
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>",
+               ["#include <common>", "uniform float cfMedian;", "uniform float cfKeep;"].join("\n"))
+      .replace("#include <map_fragment>", [
+        "#ifdef USE_MAP",
+        "  vec4 cfTexel = texture2D( map, vMapUv );",
+        "  float cfLum = dot( cfTexel.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );",
+        "  float cfDetail = cfKeep * ( cfLum / cfMedian ) + ( 1.0 - cfKeep );",
+        "  diffuseColor.rgb *= cfDetail;",
+        "  diffuseColor.a *= cfTexel.a;",
+        "#endif",
+      ].join("\n"));
+  };
+  material.needsUpdate = true;
+}
 
 type Grab = null | "orbit" | "spin" | "tip";
 
@@ -239,6 +268,7 @@ export class BodyView {
         alphaTest: hairy ? 0.35 : 0,
         side: hairy ? THREE.DoubleSide : THREE.FrontSide,
       });
+      if (worn.colour && worn.texture) tintLikeTheBuild(mat, spec.median ?? 0.5);
       const mesh = new THREE.Mesh(g, mat);
       mesh.renderOrder = 1;
       this.scene.add(mesh);

@@ -113,6 +113,13 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - MPFB ships 1258 morph targets INSIDE the addon (`<addon>/data/targets/…`), not in the user asset library,
   which only carries expressions and visemes. `TargetService.target_full_path(name)` finds one by bare name
   (`chin-width-incr`) and `load_target` adds it as a weighted shape key. Paired features are `l-`/`r-`.
+- The app CAN be looked at: Playwright + headless Chromium works here (WebGL 2.0 via SwiftShader). Install
+  it in a scratch folder, not in `web/`. Use `waitUntil: "domcontentloaded"` - the app polls, so networkidle
+  never comes - give `page.screenshot` its own long timeout (it waits on fonts), and log responses with
+  status >= 400: a console "400" says nothing about which request it was.
+- The build does NOT tint a garment by multiplying its texture: that turns a dark knit black. It uses
+  colour x (luminance / the texture's MEDIAN luminance), with less of that contrast for pale colours
+  (`build_character.recolour`). The live view does the same in a shader, from the median measured at export.
 - Any script that RENDERS under `--factory-startup` must delete the startup objects first, or Blender's
   default cube stands in the picture (it cost the asset catalogue once and the look thumbnails again).
 - Putting a garment on adds a mask modifier to the body. When taking it off again, remove only the

@@ -127,7 +127,7 @@ if me.uv_layers:
 
 hides = np.array(sorted(mhclo.delverts or []), dtype=np.uint32)   # body the garment covers
 
-texture = None
+texture, median = None, 0.5
 os.makedirs(args.out, exist_ok=True)
 for mat in obj.data.materials:
     if not mat or not mat.use_nodes:
@@ -142,6 +142,13 @@ for mat in obj.data.materials:
             image.filepath_raw = os.path.join(args.out, "tex.png")
             image.save()
             texture = "tex.png"
+            # The build does not multiply a colour by the texture - that turns a dark knit black. It uses
+            # colour x (luminance / the texture's median luminance), so the weave shows as light and shade
+            # around the colour asked for, whatever the cloth happens to be. The browser needs the median
+            # to do the same, and it is measured here, once, on the pixels that are actually opaque.
+            px = np.array(image.pixels[:], dtype=np.float32).reshape(-1, 4)
+            lit = px[px[:, 3] > 0.5] if (px[:, 3] > 0.5).any() else px
+            median = float(np.median(lit[:, :3] @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)))
             break
     if texture:
         break
@@ -162,6 +169,7 @@ with open(os.path.join(args.out, "wear.bin"), "wb") as fh:
         fh.write(blob)
 json.dump({"version": preview_kit.VERSION, "asset": args.asset, "folder": args.folder,
            "vertices": n_v, "triangles": len(faces), "texture": texture,
+           "median": round(max(median, 0.02), 4),
            "x_scale": list(mhclo.x_scale), "y_scale": list(mhclo.y_scale), "z_scale": list(mhclo.z_scale),
            "error_microns": round(err * 1e6, 1), **where},
           open(os.path.join(args.out, "wear.json"), "w", encoding="utf-8"))
