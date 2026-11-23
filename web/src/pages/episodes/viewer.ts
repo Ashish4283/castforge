@@ -1,5 +1,6 @@
 // The 3D scene viewer (three.js): the scene's preview.glb with its animation, plus markers for where each person
-// starts (disc) and walks to (rings). Stage spots are [x, y] metres; glTF is Y-up (Blender x, y, z -> three x, z, -y).
+// starts (disc), walks to (rings) and props (squares; faint while they still stand where the set put them).
+// Stage spots are [x, y] metres; glTF is Y-up (Blender x, y, z -> three x, z, -y).
 import * as THREE from "three";
 import {GLTFLoader} from "three/examples/jsm/loaders/GLTFLoader.js";
 import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
@@ -10,6 +11,7 @@ export interface Meta {
   fps: number; frames: number; origin: [number, number];
   cast: Record<string, {start: [number, number]; rig: string}>;
   steps: {n: number; who?: string; do: string; f0: number; f1: number}[];
+  props?: {id: string; position: [number, number]; rotation?: number; on?: string; make?: string; from_set?: boolean}[];
   lines?: {who: string; text: string; start: number; end: number}[];
 }
 export interface Hooks {
@@ -20,6 +22,8 @@ export interface Hooks {
   note: (text: string) => void;
   select: (who: string | null, n?: number) => void;
   drop: (kind: "start" | "to", who: string, n: number | undefined, spot: [number, number]) => void;
+  props: () => {id: string; position: [number, number]; on?: string; make?: string; from_set?: boolean}[];
+  dropProp: (id: string, spot: [number, number], fromSet: boolean) => void;
   playing: (on: boolean) => void;
 }
 
@@ -45,6 +49,9 @@ export class SceneViewer {
   private observer: ResizeObserver;
   private fixed = new Map<THREE.Bone, THREE.Quaternion>();   // bones held by a pose-fix preview
   private fixTurn = new THREE.Quaternion();                  // the turn that preview applies
+  private sun!: THREE.DirectionalLight;
+  private sky!: THREE.HemisphereLight;
+  private rim!: THREE.DirectionalLight;
 
   constructor(private host: HTMLElement, private hooks: Hooks) {
     this.renderer = new THREE.WebGLRenderer({antialias: true});
@@ -58,10 +65,14 @@ export class SceneViewer {
     this.controls.enableDamping = true;
     const sun = new THREE.DirectionalLight(0xffffff, 1.8);
     sun.position.set(3, 6, 5);
+    this.sun = sun;
+    this.sky = new THREE.HemisphereLight(0xffffff, 0x3a3f4a, 2.4);
+    this.rim = new THREE.DirectionalLight(0xffffff, 0.0);
+    this.rim.position.set(-4, 3, -5);
     const grid = new THREE.GridHelper(30, 30, 0x3a4152, 0x232836);
     (grid.material as THREE.Material).transparent = true;
     (grid.material as THREE.Material).opacity = 0.6;
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3f4a, 2.4), sun, grid, this.markers);
+    this.scene.add(this.sky, sun, this.rim, grid, this.markers);
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(host);
     this.resize();
@@ -183,6 +194,14 @@ export class SceneViewer {
     m.renderOrder = 2;
     return m;
   }
+  private pad(color: string, fromSet: boolean) {
+    const g = new THREE.RingGeometry(0.17, 0.23, 4);
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial(
+      {color, transparent: true, opacity: fromSet ? 0.5 : 0.95, depthTest: false}));
+    m.rotation.x = -Math.PI / 2;
+    m.renderOrder = 2;
+    return m;
+  }
   private label(text: string, color: string) {
     const c = document.createElement("canvas"), g = c.getContext("2d")!;
     c.width = 256; c.height = 64;
@@ -220,6 +239,27 @@ export class SceneViewer {
         line.renderOrder = 1;
         this.markers.add(line);
       }
+    }
+    this.drawProps();
+  }
+
+  /** Prop markers: a scene prop is solid, one that came with the set is faint until it is moved here. */
+  private drawProps() {
+    const live = new Map(this.hooks.props().map(pr => [pr.id, pr]));
+    const all = [...(this.meta?.props || [])];
+    for (const pr of live.values()) if (!all.some(x => x.id === pr.id)) all.push(pr as never);
+    for (const built of all) {
+      const pr = {...built, ...(live.get(built.id) || {})};
+      if (!Array.isArray(pr.position) || pr.on) continue;        // one standing on another is placed by its host
+      const color = pr.from_set ? "#8aa0c0" : "#d7b36a";
+      const pad = this.pad(color, !!pr.from_set && !live.has(pr.id));
+      pad.position.copy(this.toThree(pr.position as [number, number]));
+      pad.position.y = 0.012;
+      pad.userData = {kind: "prop", id: pr.id, fromSet: !!pr.from_set};
+      const tag = this.label(pr.id, color);
+      tag.position.copy(pad.position).add(new THREE.Vector3(0, 0.55, 0));
+      tag.scale.set(0.7, 0.18, 1);
+      this.markers.add(pad, tag);
     }
   }
 
@@ -261,6 +301,33 @@ export class SceneViewer {
     return !!this.boneOf(who, part);
   }
 
+  // --- the scene's own light, so the editor is not lit differently from the render --------------------------
+  /** Light the preview the way the scene's lighting mood and weather will light the render (schema LIGHTING:
+   * each entry is [strength, [r, g, b]]). `null` puts the plain editor light back. */
+  setLook(preset: Record<string, [number, [number, number, number]]> | null, weather?: string) {
+    const col = (c: [number, number, number]) => new THREE.Color(c[0], c[1], c[2]).convertSRGBToLinear();
+    if (!preset) {
+      this.sun.intensity = 1.8; this.sun.color.setHex(0xffffff);
+      this.sky.intensity = 2.4; this.sky.color.setHex(0xffffff);
+      this.rim.intensity = 0;
+      this.scene.background = new THREE.Color(0x101318);
+      return;
+    }
+    const [ks, kc] = preset.key || [1, [1, 1, 1]];
+    const [fs, fc] = preset.fill || [1, [1, 1, 1]];
+    const [rs, rc] = preset.rim || [1, [1, 1, 1]];
+    const [ws, wc] = preset.world || [1, [1, 1, 1]];
+    const dim = weather === "rain" ? 0.75 : weather === "snow" ? 0.9 : 1.0;
+    this.sun.intensity = 1.8 * ks * dim;
+    this.sun.color.copy(col(kc));
+    this.sky.intensity = 1.6 * fs * dim + 0.5;              // never fully black: the editor must stay readable
+    this.sky.color.copy(col(fc));
+    this.rim.intensity = 0.9 * rs * dim;
+    this.rim.color.copy(col(rc));
+    const bg = col(wc).multiplyScalar(Math.min(1, 0.1 + 0.16 * ws));
+    this.scene.background = bg;
+  }
+
   private pointer(e: PointerEvent) {
     const r = this.renderer.domElement.getBoundingClientRect();
     this.ray.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), this.camera);
@@ -271,6 +338,12 @@ export class SceneViewer {
     const hit = this.ray.intersectObjects(this.markers.children.filter(m => m.userData.kind), false)[0];
     if (hit) {
       const {kind, who, n} = hit.object.userData;
+      if (kind === "prop") {
+        e.stopPropagation();
+        this.controls.enabled = false;
+        this.dragging = {marker: hit.object, from: hit.object.position.clone()};
+        return;
+      }
       const seat = this.hooks.seat(who);
       if (kind === "start" && seat) {                 // the seat decides where a seated person starts
         this.select(who);
@@ -299,9 +372,10 @@ export class SceneViewer {
     this.pointer(e);
     const p = new THREE.Vector3();
     if (this.ray.ray.intersectPlane(this.floor, p)) {
-      this.dragging.marker.position.set(p.x, 0.01, p.z);
-      const {kind, who} = this.dragging.marker.userData;
-      this.hooks.note(`${who}: ${kind === "start" ? "starts at" : "walks to"} [${this.toStage(p).join(", ")}]`);
+      const {kind, who, id} = this.dragging.marker.userData;
+      this.dragging.marker.position.set(p.x, kind === "prop" ? 0.012 : 0.01, p.z);
+      this.hooks.note(kind === "prop" ? `${id}: [${this.toStage(p).join(", ")}]`
+        : `${who}: ${kind === "start" ? "starts at" : "walks to"} [${this.toStage(p).join(", ")}]`);
     }
   };
   private up = () => {
@@ -310,7 +384,8 @@ export class SceneViewer {
     this.dragging = null;
     this.controls.enabled = true;
     if (marker.position.distanceTo(from) < 0.02) return;
-    const {kind, who, n} = marker.userData;
+    const {kind, who, n, id, fromSet} = marker.userData;
+    if (kind === "prop") return this.hooks.dropProp(id, this.toStage(marker.position), fromSet);
     this.hooks.drop(kind, who, n, this.toStage(marker.position));
   };
 

@@ -8,7 +8,7 @@ import {useEpisode} from "../../app/episode";
 import {Badge, Button, Card, Notice, Select} from "../../components/ui";
 import {Meta, SceneViewer} from "./viewer";
 
-type Edit = {kind: "start" | "to"; who: string; n?: number; prev: Json};
+type Edit = {kind: "start" | "to" | "prop"; who: string; n?: number; prev: Json};
 
 export function Editor3D() {
   const {movie, toast, schema} = useStore();
@@ -42,6 +42,7 @@ export function Editor3D() {
     const v = new SceneViewer(host.current!, {
       start: who => live(who).position || viewer.current?.meta?.cast?.[who]?.start || [0, 0],
       script: () => (Array.isArray(e().scene()?.script) ? e().scene().script : []),
+      props: () => (Array.isArray(e().scene()?.props) ? e().scene().props : []),
       seat: who => live(who).sit,
       frame: (f, m) => {
         if (scrub.current) { scrub.current.max = String(m.frames); scrub.current.value = String(Math.round(f)); }
@@ -62,6 +63,19 @@ export function Editor3D() {
         setUndoCount(undo.current.length);
         setNote(`${who} ${kind === "start" ? "now starts at" : "now walks to"} [${spot.join(", ")}]. Save, then Build 3D preview to see the new movement.`);
       },
+      dropProp: (id, spot, fromSet) => {
+        e().update(m => {
+          const sc = e().scene();
+          if (!Array.isArray(sc.props)) sc.props = [];
+          let prop = sc.props.find((x: Json) => x?.id === id);
+          undo.current.push({kind: "prop", who: id, prev: prop ? prop.position : undefined});
+          if (!prop) { prop = {id}; sc.props.push(prop); }        // a set object: the scene moves it in place
+          prop.position = spot;
+          void m;
+        });
+        setUndoCount(undo.current.length);
+        setNote(`${id} moved to [${spot.join(", ")}]${fromSet ? " (it came with the set; this scene now places it)" : ""}. Save, then Build 3D preview.`);
+      },
     });
     viewer.current = v;
     (window as Json).cf3d = {loaded: () => !!v.meta, frame: () => v.frame, screenOf: (who: string) => v.screenOf(who)};
@@ -75,12 +89,27 @@ export function Editor3D() {
   }, [preview?.glb]);      // reload only when the preview file itself changes
 
   useEffect(() => { viewer.current?.redraw(); }, [ep.rev]);
+  useEffect(() => {              // light the editor the way the scene's mood will light the render
+    const sc = ep.scene() || {};
+    const look = (schema as Json)?.lights?.[sc.lighting as string] || null;
+    viewer.current?.setLook(look, sc.weather);
+  }, [ep.rev, schema]);
   useEffect(() => { viewer.current?.previewFix(sel.who, part, turn); }, [sel.who, part, turn]);
 
   const doUndo = () => {
     const u = undo.current.pop();
     if (!u) return;
     ep.update(() => {
+      if (u.kind === "prop") {
+        const props: Json[] = ep.scene().props || [];
+        const at = props.findIndex((x: Json) => x?.id === u.who);
+        if (at < 0) return;
+        if (u.prev === undefined) {                 // it was only ever in the set: take the override away again
+          if (Object.keys(props[at]).length <= 2) props.splice(at, 1);
+          else delete props[at].position;
+        } else props[at].position = u.prev;
+        return;
+      }
       const target = u.kind === "start" ? ep.castEntry(u.who) : ep.scene().script[u.n!];
       const key = u.kind === "start" ? "position" : "to";
       if (u.prev === undefined) delete target[key]; else target[key] = u.prev;
@@ -142,7 +171,7 @@ export function Editor3D() {
   const lanes = meta ? [...Object.keys(meta.cast), null] : [];
   const span = meta ? Math.max(1, meta.frames - 1) : 1;
   return (
-    <Card title="3D scene editor" text="Orbit with the mouse, scrub or play, click a step. Drag the discs (where people start) and rings (where they walk to)."
+    <Card title="3D scene editor" text="Orbit with the mouse, scrub or play, click a step. Drag the discs (where people start), rings (where they walk to) and squares (props, including the ones that came with the set)."
           actions={<div className="row nowrap">
             <Button icon={<Undo2 size={15} />} disabled={!undoCount} onClick={doUndo} title="Undo (Ctrl+Z)">Undo</Button>
             <Button icon={<Save size={15} />} disabled={!ep.dirty} onClick={save}>Save</Button>

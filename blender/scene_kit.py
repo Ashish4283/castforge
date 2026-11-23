@@ -2772,6 +2772,9 @@ if args.preview3d:
                "steps": [{"n": i, "who": st.get("who"), "do": st["do"], "f0": f0, "f1": f1,
                           **({"to": st["to"]} if isinstance(st.get("to"), list) else {})}
                          for i, (st, (f0, f1)) in enumerate(zip(spec["script"], step_frames))],
+               "props": [{"id": pr["id"], "position": [round(float(v), 3) for v in pr.get("position", [0, 0])],
+                          **{k: pr[k] for k in ("rotation", "on", "make", "from_set") if pr.get(k) is not None}}
+                         for pr in spec.get("props", []) if isinstance(pr, dict) and pr.get("id")],
                "lines": timeline["lines"], "shots": timeline["shots"]},
               open(os.path.join(os.path.dirname(out), "preview.json"), "w", encoding="utf-8"), indent=1)
     log(f"3D preview: {os.path.getsize(glb) / 1e6:.1f} MB")

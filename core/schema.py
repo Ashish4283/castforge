@@ -387,7 +387,7 @@ def describe():
             "props": {k: {"size": v[0], "material": v[1], "blocks": v[2], "help": v[3]} for k, v in PROP_TYPES.items()},
             "materials": list(MATERIALS), "voices": VOICES, "floors": FLOORS, "expressions": EXPRESSIONS,
             "gestures": GESTURES, "postures": POSTURES, "paces": PACES, "voice_fx": VOICE_FX, "grades": GRADES,
-            "transitions": TRANSITIONS, "lighting": list(LIGHTING), "weather": WEATHER, "shots": SHOT_KINDS,
+            "transitions": TRANSITIONS, "lighting": list(LIGHTING), "lights": {k: v for k, v in LIGHTING.items() if v}, "weather": WEATHER, "shots": SHOT_KINDS,
             "moves": CAMERA_MOVES, "qualities": QUALITIES, "aspects": ASPECTS, "seats": SEAT_TYPES,
             "character": CHARACTER, "costumes": COSTUMES, "fix_parts": sorted(acting.FIX_PARTS),
             "library": library()}
