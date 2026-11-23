@@ -41,6 +41,8 @@ user (free Adobe account) and must not be redistributed: `motions/` is git-ignor
 
 | GPU queue | asking for a second GPU job while one is running queues it instead of refusing it: it starts on its own when the GPU frees up, the sidebar lists what is waiting with a way to drop it, and an episode waiting its turn says so (`/api/gpu`, `/api/gpu/cancel`) | v1 done 2026-11-23 |
 
+| Quality pass | what a scene inherits from a set is one tested function (`sets.use_set`) instead of ten lines inside scene_kit; the Gemini prompts are now checked against every scene key and every design key, not just actions and props; README brought up to date | done 2026-11-23 |
+
 ## Maintenance
 Check character skin/highlights under `Standard`; assemble acts into one film (`movies/<m>/film.json`);
 disk clean-up command.

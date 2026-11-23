@@ -615,17 +615,8 @@ def heading_towards(a, b):
 # --- a built set, when the scene names one: its picture, its depth and everything standing in it ------
 SET_FOLDER = path(spec["set_folder"]) if spec.get("set_folder") else None
 if SET_FOLDER:
-    blueprint = sets.read_blueprint(SET_FOLDER)
-    set_picture = sets.picture(SET_FOLDER, blueprint.get("image"))
-    if not set_picture:
-        raise ValueError(f"the set {spec['set_folder']} has no picture")
-    # the empty version when the set has one: its furniture is 3D now, so the painted copies must go
-    empty_picture = sets.empty_picture(SET_FOLDER, blueprint)
-    spec.setdefault("background", empty_picture or set_picture)      # the scene may still name its own
-    blueprint_props = sets.resolve_paths(blueprint["props"], SET_FOLDER)
-    spec["props"] = sets.merge_props(blueprint_props, spec.get("props"))
-    log(f"set {os.path.basename(SET_FOLDER)}: {len(blueprint_props)} object(s) from the set, "
-        f"{len(spec['props'])} in all" + (", in the empty room" if empty_picture else ""))
+    spec["background"], spec["props"], note = sets.use_set(SET_FOLDER, spec)
+    log(note)
 
 # --- 3D set from the background image (default): relief mesh + walkable floor map ---------------------
 SET = None

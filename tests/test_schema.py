@@ -195,6 +195,8 @@ def test_gemini_scene_prompt_teaches_every_action_and_prop():
     for prop in schema.PROP_TYPES:
         if prop not in ("seat", "picture_road"):
             assert prop in prompt, prop
+    for key in schema.SCENE_KEYS:                  # a new scene setting must be taught here too
+        assert key in prompt, key
 
 
 def test_finishing_settings_never_change_the_render_key(tmp_path):
@@ -264,3 +266,9 @@ def test_a_pose_fix_changes_the_render_key(tmp_path):
     fixed = {**base, "fixes": [{"who": "Arthur", "part": "head", "at": 1.0, "rotate": [0, 0, 10]}]}
     key = config.render_key(base, "blocking", str(tmp_path), schema.FINISH_KEYS)
     assert key != config.render_key(fixed, "blocking", str(tmp_path), schema.FINISH_KEYS)
+
+
+def test_the_gemini_character_prompt_teaches_every_design_key():
+    prompt = (Path(__file__).parent.parent / "docs" / "GEMINI_CHARACTER_PROMPT.md").read_text(encoding="utf-8")
+    for key in schema.CHARACTER:
+        assert key.split(".")[-1] in prompt, key       # a new look (a hood, a cape) must be taught here too

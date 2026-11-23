@@ -6,7 +6,7 @@ Goal: a very easy tool for making animation. Every step is a script, so the web 
 **Free and local.** Everything runs on the laptop (RTX 3050 4 GB) with free tools and CC0 assets. Nothing uses AWS
 or paid GPUs.
 
-## Status (2026-11-02)
+## Status (2026-11-23)
 
 | Stage | State |
 |---|---|
@@ -18,10 +18,11 @@ or paid GPUs.
 | 5b. Set-to-props (`generate/set_props.py`) | Camera-matched floor props from marked image-space paths; the generated road mesh uses the background's UV texture and is cut out of the relief to prevent overlapping surfaces. Photographed doors can be fitted as hinged picture props. |
 | 5c. User-directed set assets (`app` → Sets) | Image-guided forms let users mark an image region, choose a procedural 3D object and its dimensions, and link a door to another set. **Build 3D set** creates a reusable `.blend` and preview without changing movie scenes. This is a depth-relief background plus modeled objects, not full automatic reconstruction of every pixel into 3D. |
 | 5d. Reusable image-guided props (`app` → Props) | Choose a supported procedural prop, enter dimensions/material/color, and upload a reference image. CastForge builds a reusable `.blend` and preview; the image is kept in Blender as an editing reference, not converted into geometry or a texture. |
-| 5e. Shared city asset library (`app` → Library) | Reusable procedural buildings, event arenas, landscapes, trees, vehicles, and road modules can be customized and used across movies. |
+| 5e. Shared city asset library (`app` → Library) | Reusable procedural buildings, event arenas, landscapes, trees, vehicles, road modules and street furniture (fence, bus shelter, billboard, fountain) can be customized and used across movies. |
 | 5. Scene kit (`blender/scene_kit.py`) | **Working.** scene.json → set picture shown true to its source (D12 fix: within ~6/255), cast, walk with pace (planted feet), face, look, say/think/narrate (Rhubarb or exact TTS lip-sync), facial expressions on the 52 ARKit shapes, eye contact with saccades, gestures (wave, point, shrug, nod, bow, ...), posture, doors, sitting; lighting moods matched to the picture's brightness, snow/rain/fog, 40 prop types with flickering firelight; an automatic director (establishing wide, medium then close, two-shots, reaction cutaways, push-ins) plus explicit camera steps; dialogue levelled and cleaned, voice effects, music/ambience ducking, stereo-placed footsteps and effects; float stereo mix |
 | 5f. Finishing (`core/finish.py`) | **Working.** Without re-rendering: title card, scrolling credits, transitions (cut, fade, dissolve, wipes...), colour grade per scene, vignette and grain, subtitles (selectable track or burnt in, SRT/VTT), chapters, poster, loudness mastering (-16 LUFS, peak -1.5). Output: BT.709-tagged H.264, 48 kHz AAC 320k, fast-start MP4 |
-| 6. Web app | **Working.** Schema-driven scene, cast, prop, action and finishing forms; dialogue with "Hear it" voice previews and WAV uploads; Storyboard, Render, Stop and Finish-only buttons; storyboard and download links; sets, props and the city library |
+| 5g. Reusable sets (`core/sets.py`, `app` → Sets) | **Working.** A set folder holds the picture, what stands in the room and the room's shape, derived once. A scene names it with `set_folder` and inherits all three; a scene prop with a set object's id moves that object instead of adding another. The picture can be emptied of the furniture that is now 3D (painted out here, or an empty version made elsewhere) so nothing shows twice |
+| 6. Web app | **Working.** Schema-driven scene, cast, prop, action and finishing forms; dialogue with "Hear it" voice previews and WAV uploads; Storyboard, Render, Stop and Finish-only buttons; storyboard and download links; sets, props and the city library. The 3D editor drags people's starts, their walk targets and props (including the ones that came with the set) and lights itself with the scene's own lighting mood. One GPU job runs at a time and the rest queue: asking for a second starts it when the first is done |
 | 7. YouTube upload | not started |
 
 Validated on three internal example photos. Their images and generated renders are not included in this

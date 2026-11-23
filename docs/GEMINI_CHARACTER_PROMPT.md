@@ -25,7 +25,8 @@ no explanation. Format:
   "outfit.style": "casual" | "suit" | "formal" | "work" | "robe" | "tunic",
   "costume": {"coat": "none" | "long", "fabric": "garment" | "velvet" | "leather" | "cotton",
               "trim": "#rrggbb", "belt": "#rrggbb", "buckle": "#rrggbb", "gloves": "#rrggbb",
-              "boots": "#rrggbb", "cape": "#rrggbb", "armour": "#rrggbb"}
+              "boots": "#rrggbb", "cape": "#rrggbb", "cape_length": 0.75, "armour": "#rrggbb",
+              "hood": "#rrggbb"}
 }
 
 Rules:

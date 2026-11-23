@@ -104,6 +104,25 @@ def merge_props(set_props, scene_props):
     return out
 
 
+def use_set(folder, scene):
+    """What a scene standing on this set ends up with: (background, props, note).
+
+    The whole decision in one tested place: the empty version of the picture when the set has one, else
+    the picture itself (a scene that names its own background keeps it), the set's objects with the
+    scene's own added after, and a line to log. Raises ValueError when the set has no picture at all."""
+    blueprint = read_blueprint(folder)
+    original = picture(folder, blueprint.get("image"))
+    if not original:
+        raise ValueError(f"the set {os.path.basename(folder)} has no picture")
+    empty = empty_picture(folder, blueprint)
+    background = scene.get("background") or empty or original
+    from_set = resolve_paths(blueprint["props"], folder)
+    props = merge_props(from_set, scene.get("props"))
+    note = (f"set {os.path.basename(folder)}: {len(from_set)} object(s) from the set, {len(props)} in all"
+            + (", in the empty room" if background == empty else ""))
+    return background, props, note
+
+
 def geometry_dir(folder):
     """Where the set's shared depth geometry lives (built once, used by every scene on this set)."""
     return os.path.join(folder, GEOMETRY_DIR)

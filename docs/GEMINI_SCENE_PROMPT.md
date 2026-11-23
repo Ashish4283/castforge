@@ -43,6 +43,13 @@ Rules:
 - Only mention things the audience can see or hear: if a line talks about an object (a window, a
   door, a table), add it as a prop.
 - floor is one of: wood, concrete, carpet, tile.
+- A scene can stand on a set that was built already: write "set_folder": "../sets/<name>" instead of
+  "background", and it inherits the picture, the room's shape and everything standing in it. A prop with
+  the same "id" as something in the set moves that object instead of adding another one.
+- Optional sound settings, only when they matter: "ambience_width" (0 centred to 0.5 wide),
+  "ambience_duck_db" and "music_duck_db" (how far the background and music dip under dialogue, in dB).
+- Optional "aspect": "16:9" (default), "2.39:1" for a widescreen look, "9:16" for phones.
+- Optional "gaze": false turns off people glancing at each other on their own.
 - voice is one of: af_heart, af_bella, af_nicole, am_michael, am_adam, am_eric (American),
   bf_emma, bf_isabella, bm_george, bm_lewis (British), hf_alpha, hf_beta, hm_omega, hm_psi (Hindi).
   Pick a voice that fits each character's gender and age.

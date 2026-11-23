@@ -2,6 +2,8 @@
 import json
 import os
 
+import pytest
+
 from core import sets
 
 
@@ -98,3 +100,42 @@ def test_a_set_can_name_an_empty_version_made_elsewhere(tmp_path):
     blueprint = {"image": "room.png", "empty_image": "cleared.png", "props": []}
     (folder / "set_blueprint.json").write_text(json.dumps(blueprint), encoding="utf-8")
     assert sets.empty_picture(str(folder), blueprint) == os.path.join(str(folder), "cleared.png")
+
+
+def _set_folder(tmp_path, props, empty=False, scene_image="room.png"):
+    folder = tmp_path / "cabin"
+    folder.mkdir(exist_ok=True)
+    (folder / scene_image).write_bytes(b"x")
+    if empty:
+        (folder / sets.EMPTY).write_bytes(b"x")
+    (folder / "set_blueprint.json").write_text(json.dumps({"props": props}), encoding="utf-8")
+    return str(folder)
+
+
+def test_a_scene_on_a_set_gets_its_picture_its_objects_and_a_line_to_log(tmp_path):
+    folder = _set_folder(tmp_path, [{"id": "set_table", "make": "table", "position": [1, 0]}])
+    background, props, note = sets.use_set(folder, {"props": [{"id": "own_barrel", "make": "barrel"}]})
+    assert background == os.path.join(folder, "room.png")
+    assert [p["id"] for p in props] == ["set_table", "own_barrel"]
+    assert props[0]["from_set"] and "from_set" not in props[1]
+    assert note == "set cabin: 1 object(s) from the set, 2 in all"
+
+
+def test_a_scene_on_an_emptied_set_stands_in_the_empty_room(tmp_path):
+    folder = _set_folder(tmp_path, [], empty=True)
+    background, _, note = sets.use_set(folder, {})
+    assert background == os.path.join(folder, sets.EMPTY) and "in the empty room" in note
+
+
+def test_a_scene_keeps_a_background_of_its_own(tmp_path):
+    folder = _set_folder(tmp_path, [], empty=True)
+    background, _, note = sets.use_set(folder, {"background": "my_own.png"})
+    assert background == "my_own.png" and "empty room" not in note
+
+
+def test_a_set_without_a_picture_is_refused(tmp_path):
+    folder = tmp_path / "empty_set"
+    folder.mkdir()
+    (folder / "set_blueprint.json").write_text(json.dumps({"props": []}), encoding="utf-8")
+    with pytest.raises(ValueError):
+        sets.use_set(str(folder), {})
