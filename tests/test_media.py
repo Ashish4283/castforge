@@ -112,3 +112,12 @@ def test_a_silent_failure_is_retried_but_a_real_error_is_not(monkeypatch):
     with pytest.raises(RuntimeError, match="No such file"):
         media.run(["ffprobe", "y"])
     assert len(calls) == 1                                     # a real error is reported at once
+
+
+def test_a_sound_gets_quieter_with_distance_but_never_disappears():
+    assert media.distance_gain(0) == 1.0
+    assert media.distance_gain(None) == 1.0                       # no place: no falloff
+    near, far = media.distance_gain(2), media.distance_gain(8)
+    assert 0.5 < near < 1.0 and near > far
+    assert abs(far - 10 ** (-6 / 20)) < 1e-9                      # the full drop at the far end
+    assert media.distance_gain(40) == far                         # and no further: it is still audible

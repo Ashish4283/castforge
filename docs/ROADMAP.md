@@ -37,6 +37,8 @@ from the clip name, or the `hands` parameter). Since 2026-11-14 the root rides t
 camera and gaze track it) and a measured counter-shift holds the grounded foot still (the clip says when a foot is planted; the character's own foot is measured and the drift keyed away). Mixamo files are downloaded by the
 user (free Adobe account) and must not be redistributed: `motions/` is git-ignored.
 
+| Sound mix v2 | effects fade with distance from the camera like footsteps do (`media.distance_gain`, one place for both); the background bed is spread left and right instead of sitting dead centre (`ambience_width`); how far music and background dip under dialogue is a scene setting (`music_duck_db`, `ambience_duck_db`) | v2 done 2026-11-23 |
+
 ## Maintenance
 Check character skin/highlights under `Standard`; one GPU job queue (character, set, SFX builds bypass
 `.render.lock`); assemble acts into one film (`movies/<m>/film.json`); disk clean-up command.

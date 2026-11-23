@@ -2563,6 +2563,13 @@ def radio(src):
     return out_
 
 
+def far_from_cam(where):
+    """How far a sound's source is from the camera, on the floor (None when it has no place)."""
+    if where is None:
+        return None
+    return (Vector((where[0], where[1], 0)) - Vector((cam.location[0], cam.location[1], 0))).length
+
+
 def pan_of(where, width):
     """Stereo position of a sound from where its source is in the wide shot (stable across cuts)."""
     if where is None:
@@ -2581,8 +2588,9 @@ for ln in sorted(lines, key=lambda x: x["f0"]):
 DUCK = spec.get("duck", True)
 
 
-def lay_bed(name, channel, volume, start=1, stop=None, fade=0.0, duck_db=0.0):
-    """Loop a bed from start to stop (or the end), fading in/out, dipping by duck_db under dialogue."""
+def lay_bed(name, channel, volume, start=1, stop=None, fade=0.0, duck_db=0.0, width=0.0):
+    """Loop a bed from start to stop (or the end), fading in/out, dipping by duck_db under dialogue.
+    `width` spreads its loops left and right so the room has some size to it."""
     stop = stop or scene.frame_end
     pieces, f = [], start
     while f < stop:
@@ -2600,23 +2608,28 @@ def lay_bed(name, channel, volume, start=1, stop=None, fade=0.0, duck_db=0.0):
     if stop < scene.frame_end:
         keys += [(stop - int(max(fade, 0.5) * FPS), 1.0), (stop, 0.0)]
     keys.sort()
-    for s in pieces:
+    for n_piece, s in enumerate(pieces):
+        if width:                       # a room tone that is dead centre sounds like a speaker, not a room
+            s.pan = width * (1 if n_piece % 2 else -1)
         for f, k in keys:
             s.volume = volume * k
             s.keyframe_insert("volume", frame=max(f, 1))
 
 
 if spec.get("ambience"):
-    lay_bed(bed_file(spec["ambience"]), 1, spec.get("ambience_volume", 0.5), duck_db=-4)
+    lay_bed(bed_file(spec["ambience"]), 1, spec.get("ambience_volume", 0.5),
+            duck_db=-float(spec.get("ambience_duck_db", 4)), width=float(spec.get("ambience_width", 0.25)))
 music = spec.get("music")
 if music:
     m = music if isinstance(music, dict) else {"bed": music}
     src = bed_file(m["bed"])
-    lay_bed(radio(src) if m.get("radio") else src, 10, m.get("volume", 0.35), duck_db=-9)
+    lay_bed(radio(src) if m.get("radio") else src, 10, m.get("volume", 0.35),
+            duck_db=-float(spec.get("music_duck_db", 9)))
 for n, (f, bed, volume, fade) in enumerate(music_cues):
     if bed:
         stop = next((g for g, b2, _, _ in music_cues[n + 1:] if g > f), None)
-        lay_bed(bed_file(bed), 11 + n % 2, volume, start=f, stop=stop, fade=fade, duck_db=-9)
+        lay_bed(bed_file(bed), 11 + n % 2, volume, start=f, stop=stop, fade=fade,
+                duck_db=-float(spec.get("music_duck_db", 9)))
 for wav, frame, ch, where in sounds:
     s = strips.new_sound(os.path.basename(wav), wav, ch, frame)
     s.pan = pan_of(where, 0.25)                     # dialogue stays near the centre, as in film mixes
@@ -2668,8 +2681,7 @@ for act in cast.values():
     for f, where in act.footfalls:
         if steps_lib:
             s = strips.new_sound("step", os.path.join(SFX_DIR, rand.choice(steps_lib)), 6 + n % 2, f)
-            far = (Vector((where[0], where[1], 0)) - Vector((cam.location[0], cam.location[1], 0))).length
-            s.volume = spec.get("footstep_volume", 0.5) * rand.uniform(0.8, 1.0) * 10 ** (-6 * min(far / 8, 1) / 20)
+            s.volume = spec.get("footstep_volume", 0.5) * rand.uniform(0.8, 1.0) * media.distance_gain(far_from_cam(where))
             s.pan = pan_of(where, 0.7)
             n += 1
 log(f"footsteps: {n} on {spec.get('floor', 'wood')}")
@@ -2681,7 +2693,7 @@ for k, (name, frame, vol, where) in enumerate(sfx_events):
         take = sfx_lib[name][used.get(name, 0) % len(sfx_lib[name])]
         used[name] = used.get(name, 0) + 1
         s = strips.new_sound(name, os.path.join(SFX_DIR, take), 8 + k % 2, max(frame, 1))
-        s.volume = vol
+        s.volume = vol * media.distance_gain(far_from_cam(where))
         s.pan = pan_of(where, 0.7)
     else:
         log(f"WARNING no '{name}' sound in sfx/library.json (python generate/make_sfx_library.py sfx --missing)")

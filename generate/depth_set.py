@@ -112,7 +112,13 @@ with open(os.path.join(out, "set.obj"), "w") as fh:
     for f in faces:
         fh.write("f " + " ".join(f"{i + 1}/{i + 1}" for i in f) + "\n")
 with open(os.path.join(out, "set.mtl"), "w") as fh:
-    fh.write(f"newmtl set\nmap_Kd {os.path.abspath(img_path)}\n")
+    # relative to the .mtl: Blender reads an absolute map_Kd as relative to the .obj folder and then
+    # cannot find the picture ("Cannot load image file: <obj folder>\\C:\\...")
+    try:
+        texture = os.path.relpath(os.path.abspath(img_path), os.path.abspath(out)).replace("\\", "/")
+    except ValueError:                     # another drive: there is nothing relative to say
+        texture = os.path.abspath(img_path)
+    fh.write(f"newmtl set\nmap_Kd {texture}\n")
 
 # --- floor map: cells seen as floor are walkable; anything 5 cm..1.9 m above the floor blocks ------
 fl = mask & (Y < 25)

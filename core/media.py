@@ -116,3 +116,15 @@ def process_voice(src, fx="clean"):
     run([config.FFMPEG, "-v", "error", "-y", "-i", src,
          "-af", f"{chain},{gain_filter(measured, LINE_LOUDNESS, -3.0)}", "-c:a", "pcm_s16le", out])
     return out
+
+
+def distance_gain(metres, drop_db=6.0, reach=8.0):
+    """How loud a sound is when its source is `metres` from the camera (1.0 at the camera).
+
+    Film sound is not physics: a sound `reach` metres away or further is `drop_db` quieter, and nothing
+    fades to silence, so a door at the back of the room is still heard. One place for footsteps, effects
+    and anything else placed in the room."""
+    if metres is None:
+        return 1.0
+    far = min(max(float(metres), 0.0) / max(reach, 0.001), 1.0)
+    return 10 ** (-drop_db * far / 20)
