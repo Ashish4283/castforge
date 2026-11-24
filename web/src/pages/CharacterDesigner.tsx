@@ -1,7 +1,8 @@
 // The character designer: every design key (core/schema.py CHARACTER) as a control, ready-made looks, the
 // front/side/back previews, and Rebuild. Photo characters keep their face and body from the photo.
 import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {ArrowLeft, ArrowRight, ChevronRight, Dumbbell, Hammer, ListChecks, RotateCcw, Shirt, Sparkles,
+import {ArrowLeft, ArrowRight, ChevronRight, Dumbbell, Hammer, ListChecks, Redo2, RotateCcw, Shirt,
+        Sparkles, Undo2,
         UserRound, Wand2} from "lucide-react";
 import {api, CharacterDetail, Json, label, ParamDef, post, q} from "../api";
 import {useStore} from "../app/store";
@@ -48,6 +49,11 @@ export function CharacterDesigner({name}: {name: string}) {
   const [looks, setLooks] = useState<Record<string, Look[]> | null>(null);
   const [busy, setBusy] = useState(false);
   const wasBuilding = useRef(false);
+  // Every change can be taken back. The two stacks hold whole designs as text, which is small (a few kB)
+  // and cannot go stale the way a list of "what changed" can.
+  const past = useRef<string[]>([]);
+  const future = useRef<string[]>([]);
+  const [steps, setSteps] = useState(0);            // only so the buttons know when to light up
 
   const load = useCallback(async () => {
     if (!movie) return;        // the store has not said which movie yet: asking now only gets a 400
@@ -59,11 +65,13 @@ export function CharacterDesigner({name}: {name: string}) {
       setUsePhoto(start.use_photo ?? (!!d.photo && !start.costume));     // as it was last built
       setDesign(structuredClone(start));
       setSaved(JSON.stringify(start));
+      past.current = []; future.current = [];        // a freshly loaded character has nothing to take back
     } catch {
       setDetail({name, design: {}, photo: null, face: null, previews: {}, log: []});
       setIsNew(true);
       setDesign(structuredClone(BLANK));
       setSaved("");
+      past.current = []; future.current = [];
     }
   }, [movie, name]);
   useEffect(() => { load(); }, [load]);
@@ -92,13 +100,67 @@ export function CharacterDesigner({name}: {name: string}) {
   }, [job, load, reload]);
 
   const dirty = design && JSON.stringify(design) !== saved;
+
+  /** Every design key that differs from the last build, so you can see - and undo - exactly what changed. */
+  const changed = useMemo(() => {
+    if (!design || !saved) return [] as {key: string; was: Json; now: Json}[];
+    const before = JSON.parse(saved);
+    const flat = (d: Json, at = ""): Record<string, Json> => {
+      const out: Record<string, Json> = {};
+      for (const [k, v] of Object.entries((d || {}) as Record<string, Json>)) {
+        const key = at ? `${at}.${k}` : k;
+        if (v && typeof v === "object" && !Array.isArray(v)) Object.assign(out, flat(v, key));
+        else out[key] = v;
+      }
+      return out;
+    };
+    const a = flat(before), b = flat(design);
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    return [...keys].filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k]))
+                    .sort()
+                    .map(k => ({key: k, was: a[k] ?? null, now: b[k] ?? null}));
+  }, [design, saved, steps]);                         // eslint-disable-line react-hooks/exhaustive-deps
   // put a whole group of sliders back to the middle: the quickest way out of a face gone wrong
+  /** Make a change, remembering the design as it was so it can be taken back. */
+  const edit = (make: (d: Json) => Json) => {
+    setDesign((d: Json) => {
+      past.current.push(JSON.stringify(d));
+      if (past.current.length > 80) past.current.shift();
+      future.current = [];
+      return make(d);
+    });
+    setSteps(n => n + 1);
+  };
+  const undo = () => {
+    const was = past.current.pop();
+    if (was === undefined) return;
+    setDesign((d: Json) => { future.current.push(JSON.stringify(d)); return JSON.parse(was); });
+    setSteps(n => n + 1);
+  };
+  const redo = () => {
+    const next = future.current.pop();
+    if (next === undefined) return;
+    setDesign((d: Json) => { past.current.push(JSON.stringify(d)); return JSON.parse(next); });
+    setSteps(n => n + 1);
+  };
+  useEffect(() => {                                  // the shortcuts every tool has
+    const keys = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      const field = (e.target as HTMLElement)?.tagName;
+      if (field === "INPUT" || field === "TEXTAREA") return;          // let a text box have its own undo
+      e.preventDefault();
+      (e.shiftKey ? redo : undo)();
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, []);                                            // eslint-disable-line react-hooks/exhaustive-deps
+
   const resetGroup = (part: string, keys: string[]) =>
-    setDesign((d: Json) => { const n = structuredClone(d); for (const k of keys) set(n, `${part}.${k}`, null); return n; });
+    edit((d: Json) => { const n = structuredClone(d); for (const k of keys) set(n, `${part}.${k}`, null); return n; });
   const groupTouched = (part: string, keys: string[]) => keys.some(k => Number(get(design, `${part}.${k}`) || 0) !== 0);
-  const change = (key: string, value: Json) => setDesign((d: Json) => { const n = structuredClone(d); set(n, key, value); return n; });
+  const change = (key: string, value: Json) => edit((d: Json) => { const n = structuredClone(d); set(n, key, value); return n; });
   const applyLook = (look: Record<string, string>) => {
-    setDesign((d: Json) => { const n = structuredClone(d); for (const [k, v] of Object.entries(look)) set(n, k, v); return n; });
+    edit((d: Json) => { const n = structuredClone(d); for (const [k, v] of Object.entries(look)) set(n, k, v); return n; });
     toast("Look applied: check the colours, then Rebuild.", "info");
   };
   const problems = useMemo(() => {
@@ -126,7 +188,11 @@ export function CharacterDesigner({name}: {name: string}) {
           {isNew && <Badge kind="accent">Not built yet</Badge>}{dirty && !job && <Badge>Unsaved changes</Badge>}</span>}
         text="Change anything, then Rebuild: the character is made again with the same rig, so every scene that uses it picks up the new look."
         actions={<>
-          <Button variant="ghost" icon={<RotateCcw size={15} />} disabled={!dirty} onClick={() => setDesign(JSON.parse(saved || JSON.stringify(BLANK)))}>Discard</Button>
+          <Button variant="ghost" icon={<Undo2 size={15} />} disabled={!past.current.length}
+                  title="Take back the last change (Ctrl+Z)" onClick={undo}>Undo</Button>
+          <Button variant="ghost" icon={<Redo2 size={15} />} disabled={!future.current.length}
+                  title="Put it back (Ctrl+Shift+Z)" onClick={redo}>Redo</Button>
+          <Button variant="ghost" icon={<RotateCcw size={15} />} disabled={!dirty} onClick={() => edit(() => JSON.parse(saved || JSON.stringify(BLANK)))}>Discard</Button>
           <Button variant="primary" icon={<Hammer size={15} />} busy={busy} disabled={!!job || problems.length > 0} onClick={rebuild}>{isNew ? "Build character" : "Rebuild"}</Button>
         </>} />
       <div className="designer">
@@ -330,6 +396,28 @@ export function CharacterDesigner({name}: {name: string}) {
             </div>
           ))}
           </>}
+          {changed.length > 0 && (
+            <details className="changes" open>
+              <summary>
+                <span>What you have changed since the last build</span>
+                <Badge kind="accent">{changed.length}</Badge>
+                <span className="spacer" />
+                <button className="btn ghost sm" onClick={e => { e.preventDefault(); undo(); }}
+                        disabled={!past.current.length}>Undo last</button>
+              </summary>
+              <ul className="change-list">
+                {changed.map(c => (
+                  <li key={c.key}>
+                    <b>{title(c.key)}</b>
+                    <Swatchy value={c.was} /><span className="arrow">-&gt;</span><Swatchy value={c.now} />
+                    <span className="spacer" />
+                    <button className="btn ghost sm" title="Put this one back as it was built"
+                            onClick={() => change(c.key, c.was)}>Put back</button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
           {mode === "all" && <div className="sticky-bar">
             {problems.length > 0 ? <Notice kind="warn">Fill in: {problems.join(", ")}</Notice>
               : <span className="muted small">{job ? "Building… you can keep editing." : dirty ? "Changes are not built yet." : "Up to date with the last build."} A build takes about 4 minutes on the GPU.</span>}
@@ -352,6 +440,17 @@ function title(k: string) {
 
 // One feature, from one end to the other, with the middle marked. The number says where it is so a look can
 // be written down and repeated; double-click the handle (or Reset above) to come back to the middle.
+/** One value as a person reads it: a colour as a dot of that colour, an empty one as "none". */
+function Swatchy({value}: {value: Json}) {
+  if (typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)) {
+    return <span className="swatchy"><i style={{background: value}} />{value}</span>;
+  }
+  if (value === null || value === undefined || value === "") return <span className="swatchy muted">none</span>;
+  if (typeof value === "number") return <span className="swatchy">{Math.round(value * 100) / 100}</span>;
+  if (typeof value === "object") return <span className="swatchy muted">set by hand</span>;
+  return <span className="swatchy">{String(value).replace(/_/g, " ")}</span>;
+}
+
 function SliderField({name, def, range, value, onChange, middle = 0, label}:
                      {name: string; def: ParamDef; range: readonly [number, number] | number[]; value: number;
                       onChange: (v: number) => void; middle?: number; label?: string}) {

@@ -1,11 +1,13 @@
 // The live body beside the sliders: it changes as you drag, so nothing has to be agreed to unseen.
 // It shows the SHAPE only - hair, beard, clothes and skin come from a build - and says so.
 import {useEffect, useRef, useState} from "react";
-import {Check, Loader2, Maximize2, Move3d, RefreshCw, Scaling, X} from "lucide-react";
+import {Camera, Check, Grid3x3, Lightbulb, Loader2, Maximize2, Move3d, RefreshCw, Rotate3d,
+        Scaling, SunMoon, X} from "lucide-react";
 import * as THREE from "three";
 import {api, Json, post, Schema} from "../../api";
 import {Button, Segmented} from "../../components/ui";
-import {BodyView, CostumeLook, Kit, PartSpec, RING_SPIN, RING_TIP, Worn, WornSpec} from "./bodyview";
+import {BodyView, CostumeLook, Kit, PartSpec, RING_SPIN, RING_TIP, ViewLook, Worn, WornSpec}
+  from "./bodyview";
 
 const get = (d: Json, key: string) => key.split(".").reduce((o, k) => (o && typeof o === "object" ? o[k] : undefined), d);
 
@@ -47,6 +49,8 @@ export function LivePreview({design, schema, focus, onParts}: {
   const [rings, setRings] = useState(true);
   const [dressing, setDressing] = useState(false);
   const [picking, setPicking] = useState(false);          // a click chooses a part instead of turning
+  const [look, setLook] = useState<ViewLook>({light: "studio", background: "dark",
+                                              wireframe: false, turntable: false});
   const [draft, setDraft] = useState<PartSpec | null>(null);
   const saved: PartSpec[] = Array.isArray(get(design, "parts")) ? (get(design, "parts") as PartSpec[]) : [];
   const wornRef = useRef<{spec: WornSpec; bin: ArrayBuffer; texture: THREE.Texture | null}[]>([]);
@@ -158,6 +162,17 @@ export function LivePreview({design, schema, focus, onParts}: {
   const keep = () => { if (draft) onParts?.([...saved, draft]); setDraft(null); };
   const drop = (i: number) => onParts?.(saved.filter((_, k) => k !== i));
 
+  useEffect(() => { view.current?.setLook(look); }, [JSON.stringify(look), state]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const takePicture = () => {
+    const png = view.current?.snapshot();
+    if (!png) return;
+    const a = document.createElement("a");
+    a.href = png;
+    a.download = `${String(get(design, "name") || "character")}.png`;
+    a.click();
+  };
+
   useEffect(() => { view.current?.frame(focus); }, [focus]);
   useEffect(() => { view.current?.showRings(rings); }, [rings]);
 
@@ -184,7 +199,8 @@ export function LivePreview({design, schema, focus, onParts}: {
           <div className="live-hint">
             <span><i style={{background: RING_SPIN}} />turn</span>
             <span><i style={{background: RING_TIP}} />tip</span>
-            <span className="muted">drag to turn · wheel to zoom · double-click a part to look at it</span>
+            <span className="muted">drag to turn · right-drag to slide · wheel to zoom in on what you point at ·
+              double-click a part to look at it</span>
             {dressing && <span className="muted">· dressing…</span>}
           </div>
         )}
@@ -222,6 +238,30 @@ export function LivePreview({design, schema, focus, onParts}: {
           )}
         </div>
       )}
+      <div className="view-bar">
+        <span className="view-group" title="The light on the character">
+          <Lightbulb size={13} />
+          {(["studio", "warm", "cool", "flat"] as const).map(l => (
+            <button key={l} className={`view-pip ${look.light === l ? "on" : ""}`}
+                    onClick={() => setLook(v => ({...v, light: l}))}>{l}</button>
+          ))}
+        </span>
+        <span className="view-group" title="What is behind the character">
+          <SunMoon size={13} />
+          {(["dark", "grey", "light"] as const).map(b => (
+            <button key={b} className={`view-pip ${look.background === b ? "on" : ""}`}
+                    onClick={() => setLook(v => ({...v, background: b}))}>{b}</button>
+          ))}
+        </span>
+        <span className="spacer" />
+        <button className={`view-pip ${look.wireframe ? "on" : ""}`} title="See the mesh itself"
+                onClick={() => setLook(v => ({...v, wireframe: !v.wireframe}))}><Grid3x3 size={13} /> mesh</button>
+        <button className={`view-pip ${look.turntable ? "on" : ""}`} title="Turn slowly on its own"
+                onClick={() => setLook(v => ({...v, turntable: !v.turntable}))}><Rotate3d size={13} /> spin</button>
+        <button className="view-pip" title="Save a picture of this view" onClick={takePicture}>
+          <Camera size={13} /> photo
+        </button>
+      </div>
       <div className="live-bar">
         <Segmented value="" onChange={v => view.current?.turnTo(v as "front")}
                    options={[["front", "Front"], ["three_quarter", "3/4"], ["side", "Side"], ["back", "Back"]]} />

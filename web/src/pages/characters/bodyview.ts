@@ -47,6 +47,27 @@ export interface PartSpec {
   scale: number;
 }
 
+/** How the view itself looks: the things a 3D tool is expected to let you change. */
+export interface ViewLook {
+  light: "studio" | "warm" | "cool" | "flat";
+  background: "dark" | "grey" | "light";
+  wireframe: boolean;
+  turntable: boolean;
+}
+
+export const LIGHTS: Record<ViewLook["light"], {hemi: [number, number, number]; key: [number, number];
+                                                 rim: [number, number]}> = {
+  // [sky, ground, strength], [key colour, strength], [rim colour, strength]
+  studio: {hemi: [0xffffff, 0x47506a, 2.1], key: [0xfff2e2, 2.4], rim: [0x9fc4ff, 1.5]},
+  warm:   {hemi: [0xffe9cf, 0x4a3a2c, 1.7], key: [0xffd9a8, 3.0], rim: [0xff9b5c, 1.0]},
+  cool:   {hemi: [0xdce9ff, 0x2a3346, 1.8], key: [0xd8e8ff, 2.2], rim: [0x6fa8ff, 1.9]},
+  flat:   {hemi: [0xffffff, 0xdddddd, 3.4], key: [0xffffff, 0.7], rim: [0xffffff, 0.7]},
+};
+
+const BACKDROPS: Record<ViewLook["background"], number | null> = {
+  dark: null, grey: 0x2b3240, light: 0xdfe3ea,
+};
+
 /** The costume, as the live view needs it: a colour for each piece, or nothing to leave the piece off. */
 export interface CostumeLook {
   trim?: string | null; belt?: string | null; buckle?: string | null; gloves?: string | null;
@@ -143,7 +164,7 @@ function growHat(pos: Float32Array, scale: number, rim: Uint32Array) {
   }
 }
 
-type Grab = null | "orbit" | "spin" | "tip";
+type Grab = null | "orbit" | "spin" | "tip" | "pan";
 
 export class BodyView {
   private renderer: THREE.WebGLRenderer;
@@ -167,6 +188,8 @@ export class BodyView {
   private glow: THREE.Mesh | null = null;              // what the chosen part looks like while it is chosen
   private bodyAdj: Uint32Array[] | null = null;
   picking = false;                                     // a click picks a part instead of turning the body
+  private look: ViewLook = {light: "studio", background: "dark", wireframe: false, turntable: false};
+  private lamps: {hemi: THREE.HemisphereLight; key: THREE.DirectionalLight; rim: THREE.DirectionalLight};
   onPick: ((spec: PartSpec) => void) | null = null;
   floor = 0;
   private pieces: THREE.Mesh[] = [];                   // the costume drawn over the clothes
@@ -185,13 +208,14 @@ export class BodyView {
   height = 1.8;
 
   constructor(private canvas: HTMLCanvasElement) {
-    this.renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true});
+    this.renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, preserveDrawingBuffer: true});
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x47506a, 2.1));
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x47506a, 2.1);
     const key = new THREE.DirectionalLight(0xfff2e2, 2.4); key.position.set(2.2, 3.4, 2.6);
     const rim = new THREE.DirectionalLight(0x9fc4ff, 1.5); rim.position.set(-2.6, 1.8, -2.2);
-    this.scene.add(key, rim);
+    this.lamps = {hemi, key, rim};
+    this.scene.add(hemi, key, rim);
     this.makeRings();
     this.scene.add(this.rings);
     this.bind();
@@ -403,6 +427,7 @@ export class BodyView {
     this.dress();
     this.hideCovered();
     this.buildCostume();
+    this.setLook({});                      // wireframe and the rest apply to whatever was just made
   }
 
   /** The costume over the clothes: fur trim, a belt and buckle, gloves, fur-topped boots.
@@ -629,6 +654,42 @@ export class BodyView {
     this.scene.add(this.glow);
   }
 
+  // --- the view itself: light, backdrop, wireframe, turntable, a picture -------------------------------
+
+  /** Change how the view looks. Nothing here touches the design; it only changes what you can see. */
+  setLook(look: Partial<ViewLook>) {
+    this.look = {...this.look, ...look};
+    const lamp = LIGHTS[this.look.light] || LIGHTS.studio;
+    this.lamps.hemi.color.setHex(lamp.hemi[0]);
+    this.lamps.hemi.groundColor.setHex(lamp.hemi[1]);
+    this.lamps.hemi.intensity = lamp.hemi[2];
+    this.lamps.key.color.setHex(lamp.key[0]);
+    this.lamps.key.intensity = lamp.key[1];
+    this.lamps.rim.color.setHex(lamp.rim[0]);
+    this.lamps.rim.intensity = lamp.rim[1];
+    const back = BACKDROPS[this.look.background];
+    this.scene.background = back === null ? null : new THREE.Color(back);
+    for (const m of this.everyMaterial()) {
+      if ((m as THREE.MeshStandardMaterial).wireframe !== undefined) {
+        (m as THREE.MeshStandardMaterial).wireframe = this.look.wireframe;
+      }
+    }
+  }
+
+  private everyMaterial(): THREE.Material[] {
+    const out: THREE.Material[] = [];
+    for (const o of [this.mesh, ...this.wearing.map(w => w.mesh), ...this.pieces]) {
+      if (o) out.push(...(Array.isArray(o.material) ? o.material : [o.material]));
+    }
+    return out;
+  }
+
+  /** A picture of the view as it stands, for keeping or sharing. */
+  snapshot(): string {
+    this.renderer.render(this.scene, this.camera);       // draw now, so the buffer is not an old frame
+    return this.renderer.domElement.toDataURL("image/png");
+  }
+
   /** Look at the whole person, or close in on what is being edited. */
   frame(what: "whole" | "face" | "body") {
     const h = this.height;
@@ -674,7 +735,7 @@ export class BodyView {
         if (got && this.onPick) this.onPick(got);
         return;
       }
-      this.grab = this.pick(e);
+      this.grab = e.button === 2 || e.button === 1 || e.shiftKey ? "pan" : this.pick(e);
       this.last = {x: e.clientX, y: e.clientY};
       this.canvas.setPointerCapture(e.pointerId);
       this.setRingLook();
@@ -687,6 +748,14 @@ export class BodyView {
       }
       const dx = e.clientX - this.last.x, dy = e.clientY - this.last.y;
       this.last = {x: e.clientX, y: e.clientY};
+      if (this.grab === "pan") {                                      // slide the view sideways and up
+        const far = this.dist * 0.0016;
+        const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrix, 0);
+        const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrix, 1);
+        this.wanted.target.addScaledVector(right, -dx * far).addScaledVector(up, dy * far);
+        this.looking = "spot";
+        return;
+      }
       if (this.grab !== "tip") this.yaw -= dx * 0.01;                 // orbit and the green ring turn it
       if (this.grab !== "spin") this.pitch = Math.max(-0.9, Math.min(1.1, this.pitch + dy * 0.006));
     });
@@ -701,9 +770,29 @@ export class BodyView {
     this.canvas.addEventListener("pointerleave", () => { if (!this.grab) { this.hover = null; this.setRingLook(); } });
     this.canvas.addEventListener("wheel", e => {
       e.preventDefault();
-      this.wanted.dist = Math.max(0.35, Math.min(6, this.wanted.dist * (1 + Math.sign(e.deltaY) * 0.12)));
+      const was = this.wanted.dist;
+      this.wanted.dist = Math.max(0.25, Math.min(6, was * (1 + Math.sign(e.deltaY) * 0.12)));
+      // zoom towards what is under the pointer, not towards the middle of the screen: closing in on an
+      // ear should keep the ear where it is, which is what every 3D tool does and what hands expect
+      const towards = this.under(e.clientX, e.clientY);
+      if (towards && this.wanted.dist < was) {
+        this.wanted.target.lerp(towards, Math.min(0.5, 1 - this.wanted.dist / was));
+        this.looking = "spot";
+      }
     }, {passive: false});
     this.canvas.addEventListener("dblclick", e => this.lookAtPoint(e));
+    this.canvas.addEventListener("contextmenu", e => e.preventDefault());   // right-drag pans instead
+  }
+
+  /** Whatever the pointer is over, in the scene - or nothing, if it is over the backdrop. */
+  private under(x: number, y: number): THREE.Vector3 | null {
+    const r = this.canvas.getBoundingClientRect();
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1),
+                      this.camera);
+    const hit = ray.intersectObjects([...this.wearing.map(w => w.mesh), ...(this.mesh ? [this.mesh] : [])],
+                                     false)[0];
+    return hit ? hit.point.clone() : null;
   }
 
   /** Double-click anywhere on the body to put that part in the middle and move in close; miss, and it
@@ -732,6 +821,7 @@ export class BodyView {
   private tick = () => {
     if (!this.alive) return;
     this.raf = requestAnimationFrame(this.tick);
+    if (this.look.turntable && !this.grab) this.yaw += 0.004;        // a slow turn, to look it over
     this.dist += (this.wanted.dist - this.dist) * 0.18;              // ease, so nothing jumps
     this.target.lerp(this.wanted.target, 0.18);
     const cp = Math.cos(this.pitch);

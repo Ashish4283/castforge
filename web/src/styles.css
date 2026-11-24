@@ -515,3 +515,34 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
   border: 1px solid var(--line); background: var(--panel); color: var(--text); font-size: 12px;
 }
 .part-chip:hover { border-color: var(--accent-2); color: var(--accent-2); }
+
+/* --- the view's own controls: light, backdrop, mesh, spin, photo ----------------------------------- */
+.view-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 6px 8px; margin-top: 8px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2);
+}
+.view-group { display: inline-flex; align-items: center; gap: 4px; color: var(--text-3); }
+.view-pip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 999px; cursor: pointer; font-size: 11.5px;
+  border: 1px solid transparent; background: transparent; color: var(--text-2); text-transform: capitalize;
+}
+.view-pip:hover { background: var(--panel); color: var(--text); }
+.view-pip.on { border-color: var(--accent-2); color: var(--accent-2); background: var(--panel); }
+
+/* --- what has changed since the last build -------------------------------------------------------- */
+.changes { margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2); }
+.changes > summary {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer;
+  font-weight: 600; font-size: 13px;
+}
+.change-list { list-style: none; margin: 0; padding: 0 12px 10px; display: grid; gap: 4px; }
+.change-list li {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+  border-radius: 8px; background: var(--panel); font-size: 12px;
+}
+.change-list b { min-width: 150px; font-weight: 600; }
+.change-list .arrow { color: var(--text-3); }
+.swatchy { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); }
+.swatchy i { width: 11px; height: 11px; border-radius: 3px; border: 1px solid var(--line-2); }
