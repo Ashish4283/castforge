@@ -26,9 +26,12 @@ import numpy as np
 
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 ap = argparse.ArgumentParser()
-ap.add_argument("--asset", required=True, help="the MPFB asset name, e.g. short03")
-ap.add_argument("--folder", required=True, help="where it lives: hair, eyebrows, eyes, clothes")
-ap.add_argument("--out", required=True)
+ap.add_argument("--asset", help="the MPFB asset name, e.g. short03")
+ap.add_argument("--folder", help="where it lives: hair, eyebrows, eyes, clothes")
+ap.add_argument("--out", help="where to write it")
+ap.add_argument("--many", help="a JSON file of [[folder, asset, out_dir], ...] - all in this one session, "
+                               "which is the whole point: Blender and MPFB take four seconds to start and "
+                               "about one second to do the work")
 ap.add_argument("--texture-size", type=int, default=512)
 args = ap.parse_args(argv)
 
@@ -63,157 +66,187 @@ started = time.time()
 human = HumanService.create_human(macro_detail_dict=TargetService.get_default_macro_info_dict())
 human.name = "Body"
 
-path = AssetService.find_asset_absolute_path(f"{args.asset}/{args.asset}.mhclo", args.folder)
-if not path:
-    raise SystemExit(f"CF: no such asset: {args.folder}/{args.asset}")
-mhclo = Mhclo()
-mhclo.load(path)
+def export_one(folder, asset, out_dir):
+    path = AssetService.find_asset_absolute_path(f"{asset}/{asset}.mhclo", folder)
+    if not path:
+        raise ValueError(f"no such asset: {folder}/{asset}")
+    mhclo = Mhclo()
+    mhclo.load(path)
 
-# read the body BEFORE anything is put on it: a garment adds a mask of its own to the body
-coords = pm.shaped_coords(human)
+    # read the body BEFORE anything is put on it: a garment adds a mask of its own to the body
+    coords = pm.shaped_coords(human)
 
-before = set(bpy.data.objects)
-kind = {"hair": "Hair", "eyebrows": "Eyebrows", "eyelashes": "Eyelashes",
-        "eyes": "Eyes"}.get(args.folder, "Clothes")
-HumanService.add_mhclo_asset(path, human, asset_type=kind, subdiv_levels=0, material_type="MAKESKIN")
-worn = [o for o in bpy.data.objects if o not in before and o.type == "MESH"]
-if not worn:
-    raise SystemExit(f"CF: {args.asset} loaded nothing")
-obj = worn[0]
+    before = set(bpy.data.objects)
+    kind = {"hair": "Hair", "eyebrows": "Eyebrows", "eyelashes": "Eyelashes",
+            "eyes": "Eyes"}.get(folder, "Clothes")
+    HumanService.add_mhclo_asset(path, human, asset_type=kind, subdiv_levels=0, material_type="MAKESKIN")
+    worn = [o for o in bpy.data.objects if o not in before and o.type == "MESH"]
+    if not worn:
+        raise ValueError(f"{asset} loaded nothing")
+    obj = worn[0]
 
-deps = bpy.context.evaluated_depsgraph_get()
-ev = obj.evaluated_get(deps)
-me = ev.to_mesh()
-n_v = len(me.vertices)
+    deps = bpy.context.evaluated_depsgraph_get()
+    ev = obj.evaluated_get(deps)
+    me = ev.to_mesh()
+    n_v = len(me.vertices)
 
-# --- the binding MakeHuman already keeps ----------------------------------------------------------------
-verts = np.zeros((n_v, 3), dtype=np.uint32)
-weights = np.zeros((n_v, 3), dtype=np.float32)
-offsets = np.zeros((n_v, 3), dtype=np.float32)
-loose = 0
-for i in range(n_v):
-    bound = mhclo.verts.get(i)
-    if not bound:
-        loose += 1
-        continue
-    verts[i] = bound["verts"]
-    weights[i] = bound["weights"]
-    offsets[i] = tuple(bound["offsets"])
+    # --- the binding MakeHuman already keeps ----------------------------------------------------------------
+    verts = np.zeros((n_v, 3), dtype=np.uint32)
+    weights = np.zeros((n_v, 3), dtype=np.float32)
+    offsets = np.zeros((n_v, 3), dtype=np.float32)
+    loose = 0
+    for i in range(n_v):
+        bound = mhclo.verts.get(i)
+        if not bound:
+            loose += 1
+            continue
+        verts[i] = bound["verts"]
+        weights[i] = bound["weights"]
+        offsets[i] = tuple(bound["offsets"])
 
-# a check worth having: fit it here, and see that the binding lands in the same place
-scales = pm.fit_scales(coords, mhclo.x_scale, mhclo.y_scale, mhclo.z_scale)
-co = np.empty(n_v * 3)
-me.vertices.foreach_get("co", co)
-truth = co.reshape(-1, 3)
-again = pm.wear_positions(coords, verts.astype(np.int64), weights.astype(np.float64),
-                          offsets.astype(np.float64), scales)
-err = float(np.abs(again - truth).max())
-log(f"{args.asset}: {n_v} vertices bound, worst error {err * 1e6:.1f} microns"
-    + (f", {loose} unbound" if loose else ""))
+    # a check worth having: fit it here, and see that the binding lands in the same place
+    scales = pm.fit_scales(coords, mhclo.x_scale, mhclo.y_scale, mhclo.z_scale)
+    co = np.empty(n_v * 3)
+    me.vertices.foreach_get("co", co)
+    truth = co.reshape(-1, 3)
+    again = pm.wear_positions(coords, verts.astype(np.int64), weights.astype(np.float64),
+                              offsets.astype(np.float64), scales)
+    err = float(np.abs(again - truth).max())
+    log(f"{asset}: {n_v} vertices bound, worst error {err * 1e6:.1f} microns"
+        + (f", {loose} unbound" if loose else ""))
 
-# --- the triangles, the texture, and what it hides -------------------------------------------------------
-faces = []
-for poly in me.polygons:
-    vs = list(poly.vertices)
-    for k in range(1, len(vs) - 1):
-        faces.append([vs[0], vs[k], vs[k + 1]])
-faces = np.array(faces, dtype=np.uint32)
-
-uv = np.zeros((n_v, 2), dtype=np.float32)
-if me.uv_layers:
-    layer = me.uv_layers[0].data
+    # --- the triangles, the texture, and what it hides -------------------------------------------------------
+    faces = []
     for poly in me.polygons:
-        for loop in range(poly.loop_start, poly.loop_start + poly.loop_total):
-            uv[me.loops[loop].vertex_index] = layer[loop].uv
+        vs = list(poly.vertices)
+        for k in range(1, len(vs) - 1):
+            faces.append([vs[0], vs[k], vs[k + 1]])
+    faces = np.array(faces, dtype=np.uint32)
 
-hides = np.array(sorted(mhclo.delverts or []), dtype=np.uint32)   # body the garment covers
+    uv = np.zeros((n_v, 2), dtype=np.float32)
+    if me.uv_layers:
+        layer = me.uv_layers[0].data
+        for poly in me.polygons:
+            for loop in range(poly.loop_start, poly.loop_start + poly.loop_total):
+                uv[me.loops[loop].vertex_index] = layer[loop].uv
 
-# --- where the costume's trim goes ----------------------------------------------------------------------
-# Fur trim, in the build, is a band of the garment's own faces round each opening, pushed out and
-# thickened. The live view cannot copy that geometry, but it can draw those same faces again in the trim's
-# colour, which reads the same. The bands are topological - so many metres along the surface from an
-# opening - so they are the same on every body and can be measured once, here. One bit per band, so a
-# vertex on both the hem and a cuff is not an argument.
-BANDS = {"hem": 1, "collar": 2, "cuff": 4, "boot": 8, "rim": 16}
-polys = [tuple(p.vertices) for p in me.polygons]
-rest_co = [tuple(v) for v in truth]
-regions = np.zeros(n_v, dtype=np.uint8)
-rim_order = np.zeros(0, dtype=np.uint32)
-found = {}
-if args.folder == "clothes":
-    if args.asset in appearance.HATS.values():
-        # A hat grows away from its opening and only ABOVE it, so the opening has to be found on the real
-        # mesh - and it travels IN LOOP ORDER, because its own normal is what "above" means on a hat that
-        # is worn tilted back.
-        rim = costume.rim_of(rest_co, polys, [tuple(p) for p in coords[::7]])
-        rim_order = np.array(rim, dtype=np.uint32)
-        bands = {"rim": set(rim)}
-    elif args.asset in (appearance.SHOES, appearance.BOOTS):
-        bands = costume.boot_bands(rest_co, polys, 0.0)
-    else:
-        bands = costume.trim_bands(rest_co, polys, 0.0, sleeves="long")        # cuffs too: the app chooses
-    for name, bit in BANDS.items():
-        for v in bands.get(name) or ():
-            regions[v] |= bit
-        if bands.get(name):
-            found[name] = len(bands[name])
-    log(f"{args.asset}: trim bands " + (", ".join(f"{k} {v}" for k, v in found.items()) or "none"))
+    hides = np.array(sorted(mhclo.delverts or []), dtype=np.uint32)   # body the garment covers
 
-texture, median = None, 0.5
-os.makedirs(args.out, exist_ok=True)
-for mat in obj.data.materials:
-    if not mat or not mat.use_nodes:
-        continue
-    for node in mat.node_tree.nodes:
-        name = (node.image.filepath or node.image.name).lower() if node.type == "TEX_IMAGE" and node.image else ""
-        if name and not any(w in name for w in ("norm", "bump", "spec", "rough", "disp")):
-            image = node.image.copy()                   # the colours; never the bump or gloss maps
-            if max(image.size) > args.texture_size:
-                image.scale(args.texture_size, args.texture_size)
-            image.file_format = "PNG"
-            image.filepath_raw = os.path.join(args.out, "tex.png")
-            image.save()
-            texture = "tex.png"
-            # The build does not multiply a colour by the texture - that turns a dark knit black. It uses
-            # colour x (luminance / the texture's median luminance), so the weave shows as light and shade
-            # around the colour asked for, whatever the cloth happens to be. The browser needs the median
-            # to do the same, and it is measured here, once, on the pixels that are actually opaque.
-            px = np.array(image.pixels[:], dtype=np.float32).reshape(-1, 4)
-            lit = px[px[:, 3] > 0.5] if (px[:, 3] > 0.5).any() else px
-            median = float(np.median(lit[:, :3] @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)))
+    # --- where the costume's trim goes ----------------------------------------------------------------------
+    # Fur trim, in the build, is a band of the garment's own faces round each opening, pushed out and
+    # thickened. The live view cannot copy that geometry, but it can draw those same faces again in the trim's
+    # colour, which reads the same. The bands are topological - so many metres along the surface from an
+    # opening - so they are the same on every body and can be measured once, here. One bit per band, so a
+    # vertex on both the hem and a cuff is not an argument.
+    BANDS = {"hem": 1, "collar": 2, "cuff": 4, "boot": 8, "rim": 16}
+    polys = [tuple(p.vertices) for p in me.polygons]
+    rest_co = [tuple(v) for v in truth]
+    regions = np.zeros(n_v, dtype=np.uint8)
+    rim_order = np.zeros(0, dtype=np.uint32)
+    found = {}
+    if folder == "clothes":
+        if asset in appearance.HATS.values():
+            # A hat grows away from its opening and only ABOVE it, so the opening has to be found on the real
+            # mesh - and it travels IN LOOP ORDER, because its own normal is what "above" means on a hat that
+            # is worn tilted back.
+            rim = costume.rim_of(rest_co, polys, [tuple(p) for p in coords[::7]])
+            rim_order = np.array(rim, dtype=np.uint32)
+            bands = {"rim": set(rim)}
+        elif asset in (appearance.SHOES, appearance.BOOTS):
+            bands = costume.boot_bands(rest_co, polys, 0.0)
+        else:
+            bands = costume.trim_bands(rest_co, polys, 0.0, sleeves="long")        # cuffs too: the app chooses
+        for name, bit in BANDS.items():
+            for v in bands.get(name) or ():
+                regions[v] |= bit
+            if bands.get(name):
+                found[name] = len(bands[name])
+        log(f"{asset}: trim bands " + (", ".join(f"{k} {v}" for k, v in found.items()) or "none"))
+
+    texture, median = None, 0.5
+    os.makedirs(out_dir, exist_ok=True)
+    for mat in obj.data.materials:
+        if not mat or not mat.use_nodes:
+            continue
+        for node in mat.node_tree.nodes:
+            name = (node.image.filepath or node.image.name).lower() if node.type == "TEX_IMAGE" and node.image else ""
+            if name and not any(w in name for w in ("norm", "bump", "spec", "rough", "disp")):
+                image = node.image.copy()                   # the colours; never the bump or gloss maps
+                if max(image.size) > args.texture_size:
+                    image.scale(args.texture_size, args.texture_size)
+                image.file_format = "PNG"
+                image.filepath_raw = os.path.join(out_dir, "tex.png")
+                image.save()
+                texture = "tex.png"
+                # The build does not multiply a colour by the texture - that turns a dark knit black. It uses
+                # colour x (luminance / the texture's median luminance), so the weave shows as light and shade
+                # around the colour asked for, whatever the cloth happens to be. The browser needs the median
+                # to do the same, and it is measured here, once, on the pixels that are actually opaque.
+                px = np.array(image.pixels[:], dtype=np.float32).reshape(-1, 4)
+                lit = px[px[:, 3] > 0.5] if (px[:, 3] > 0.5).any() else px
+                median = float(np.median(lit[:, :3] @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)))
+                break
+        if texture:
             break
-    if texture:
-        break
-ev.to_mesh_clear()
+    ev.to_mesh_clear()
 
-# everything the browser reads is in the viewer's y-up space, the body included, so the offsets are
-# turned now rather than there. The spans are then measured on view axes: x -> 0, y -> 1, z -> 2.
-offsets_view = pm.to_view(offsets)
-blobs = [("verts", verts.tobytes(), n_v), ("weights", weights.tobytes(), n_v),
-         ("offsets", offsets_view.tobytes(), n_v), ("uv", uv.tobytes(), n_v),
-         ("indices", faces.tobytes(), len(faces) * 3), ("hides", hides.tobytes(), len(hides)),
-         ("regions", regions.tobytes(), n_v), ("rim", rim_order.tobytes(), len(rim_order))]
-# Every blob starts on a 4-byte boundary. A browser cannot make a Uint32Array (or a Float32Array) at an
-# odd offset - it throws "start offset should be a multiple of 4" - and the one byte-sized blob here
-# (`regions`, one byte a vertex) pushes everything after it off alignment. That threw while the character
-# was being dressed, which took the hat out of the live view and made the size dial look dead.
-at, where, padded = 0, {}, []
-for name, blob, count in blobs:
-    spare = (-at) % 4
-    if spare:
-        padded.append(bytes(spare))
-        at += spare
-    where[name] = {"at": at, "count": count}
-    padded.append(blob)
-    at += len(blob)
-with open(os.path.join(args.out, "wear.bin"), "wb") as fh:
-    for blob in padded:
-        fh.write(blob)
-json.dump({"version": preview_kit.VERSION, "asset": args.asset, "folder": args.folder,
-           "vertices": n_v, "triangles": len(faces), "texture": texture,
-           "median": round(max(median, 0.02), 4),
-           "x_scale": list(mhclo.x_scale), "y_scale": list(mhclo.y_scale), "z_scale": list(mhclo.z_scale),
-           "error_microns": round(err * 1e6, 1), "bands": found, "band_bits": BANDS, **where},
-          open(os.path.join(args.out, "wear.json"), "w", encoding="utf-8"))
-log(f"worn kit: {at / 1e6:.2f} MB, hides {len(hides)} body vertices, "
-    f"{time.time() - started:.1f}s -> {args.out}")
+    # everything the browser reads is in the viewer's y-up space, the body included, so the offsets are
+    # turned now rather than there. The spans are then measured on view axes: x -> 0, y -> 1, z -> 2.
+    offsets_view = pm.to_view(offsets)
+    blobs = [("verts", verts.tobytes(), n_v), ("weights", weights.tobytes(), n_v),
+             ("offsets", offsets_view.tobytes(), n_v), ("uv", uv.tobytes(), n_v),
+             ("indices", faces.tobytes(), len(faces) * 3), ("hides", hides.tobytes(), len(hides)),
+             ("regions", regions.tobytes(), n_v), ("rim", rim_order.tobytes(), len(rim_order))]
+    # Every blob starts on a 4-byte boundary. A browser cannot make a Uint32Array (or a Float32Array) at an
+    # odd offset - it throws "start offset should be a multiple of 4" - and the one byte-sized blob here
+    # (`regions`, one byte a vertex) pushes everything after it off alignment. That threw while the character
+    # was being dressed, which took the hat out of the live view and made the size dial look dead.
+    at, where, padded = 0, {}, []
+    for name, blob, count in blobs:
+        spare = (-at) % 4
+        if spare:
+            padded.append(bytes(spare))
+            at += spare
+        where[name] = {"at": at, "count": count}
+        padded.append(blob)
+        at += len(blob)
+    with open(os.path.join(out_dir, "wear.bin"), "wb") as fh:
+        for blob in padded:
+            fh.write(blob)
+    json.dump({"version": preview_kit.VERSION, "asset": asset, "folder": folder,
+               "vertices": n_v, "triangles": len(faces), "texture": texture,
+               "median": round(max(median, 0.02), 4),
+               "x_scale": list(mhclo.x_scale), "y_scale": list(mhclo.y_scale), "z_scale": list(mhclo.z_scale),
+               "error_microns": round(err * 1e6, 1), "bands": found, "band_bits": BANDS, **where},
+              open(os.path.join(out_dir, "wear.json"), "w", encoding="utf-8"))
+    log(f"worn kit: {at / 1e6:.2f} MB, hides {len(hides)} body vertices, "
+        f"{time.time() - started:.1f}s -> {out_dir}")
+
+
+def undress(keep):
+    """Take off whatever was just put on, and only the modifiers it added to the body.
+
+    Never the body's own "Hide helpers" mask: without it the helper cages render as a white slab."""
+    for obj in [o for o in bpy.data.objects if o.type == "MESH" and o is not human and o not in keep]:
+        bpy.data.objects.remove(obj, do_unlink=True)
+    for mod in list(human.modifiers):
+        if mod.type == "MASK" and mod.name != "Hide helpers":
+            human.modifiers.remove(mod)
+
+
+if args.many:
+    jobs = json.load(open(args.many, encoding="utf-8"))
+    keep = {human}
+    done = 0
+    for folder_, asset_, out_ in jobs:
+        try:
+            export_one(folder_, asset_, out_)
+            done += 1
+        except Exception as e:                     # one bad asset must not stop the wardrobe
+            log(f"WARNING {folder_}/{asset_}: {e}")
+        undress(keep)
+    log(f"wardrobe: {done} of {len(jobs)} in {time.time() - started:.1f}s")
+elif args.asset and args.folder and args.out:
+    export_one(args.folder, args.asset, args.out)
+else:
+    raise SystemExit("CF: give either --asset/--folder/--out or --many FILE.json")

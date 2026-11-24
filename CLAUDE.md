@@ -71,6 +71,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | the studio's steps, look pickers, thumbnails | steps `web/src/pages/characters/steps.ts`; tiles `LookPicker.tsx`; pictures `blender/preview_thumbs.py` -> `library/preview_kits/thumbs/`; routes `/api/character/looks` (what to offer) and `/api/character/thumbs` (take the missing ones) |
 | is a character fit to animate? | `core/rigging.py` (pure, tested: `keep_strongest`, `problems`, `verdict`), measured and repaired by `blender/rig_check.py`; CLI `castforge.py rig NAME [FOLDER] [--fix]`; route `/api/character/rig`; panel `CharacterDesigner.RigPanel`; every build tidies and writes `<name>.rig.json` |
 | picking a part of a mesh and reshaping it (size, slide, turn) | `costume.part_at`/`shape_part`/`neighbours` (pure, tested) mirrored in `web/src/pages/characters/parts.ts`; design key `parts`; picked by `bodyview.setParts`/`choose`, applied by `build_character.resize_parts` |
+| the wardrobe warm-up (why picking a hat is instant) | `appearance.wardrobe()` (pure, tested) lists all 57 pieces; `preview_wear.py --many JOBS.json` exports them in ONE Blender session; route `/api/character/wardrobe` (POST warms, GET reports); the studio calls it on arrival |
 | the costume in the live view (trim, belt, buckle, gloves) | `costume.trim_bands`/`boot_bands`/`beyond` (pure, tested); the bands travel in `preview_wear.py` (`regions`), the hands and joints in `preview_kit.py`; drawn by `bodyview.setCostume` |
 | what the live view wears (hair, beard, clothes) | export `blender/preview_wear.py` -> `library/preview_kits/worn/<folder>-<asset>/`; the wardrobe itself `appearance.wearables` (pure, tested); route `/api/character/wear`; drawing `bodyview.setWearing` |
 | the designer's live body (morphs as the sliders move) | export `blender/preview_kit.py` -> `library/preview_kits/<sex>-<age>-<build>-<height>/kit.json+bin`; what is needed and whether it is there `core/preview_kit.py` (pure, tested, `VERSION`); route `/api/character/preview-kit`; drawing `web/src/pages/characters/bodyview.ts` + `LivePreview.tsx` |
@@ -261,6 +262,17 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   the exporter writes a new field, every cached export keeps the old shape, and the feature that needs
   that field just quietly does nothing (here: a hat with no opening recorded, so it refused to grow).
   The viewer now also finds a hat's opening itself (`parts.openRings`) rather than trusting the export.
+
+- Blender + MPFB take about FOUR seconds to start and about one second to do the work, so anything that
+  exports many assets must do it in one session (`preview_wear.py --many`, like `preview_thumbs.py`).
+  Exporting the wardrobe one asset at a time cost five seconds every time someone tried a different hat;
+  warming all 57 in one session costs about 22 s once, and a pick then takes under a second.
+- A grid item is `min-width: auto`, so it refuses to shrink below its own content. The live view's button
+  row could not wrap, which forced the whole view 146 px wider than the card holding it - and the
+  overflow painted on top of the panel beside it. `minmax(0, 1fr)` on the column and `min-width: 0` on
+  the children. When a panel looks like it is "coming on top", measure the boxes in the browser first.
+- The studio is colourful on purpose (yellow, orange, lime, pink, cyan - `--paint-*`), but NO accent
+  colour is ever laid over the 3D view itself: a character has to be judged against a quiet ground.
 
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).

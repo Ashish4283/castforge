@@ -1,4 +1,10 @@
-/* CastForge Studio design system: tokens first, then layout, then components. Dark, calm, one accent. */
+/* CastForge Studio design system: tokens first, then layout, then components.
+ *
+ * Dark ground, bright paint. A character studio is a place where people make things up, so the studio
+ * itself carries an artist's palette - yellow, green, orange, a fluorescent pink - rather than one polite
+ * accent. The dark ground stays, because 3D has to be looked at against something quiet, and every bright
+ * colour here is checked for contrast against it. The STUDIO is colourful; the character never is: no
+ * accent colour is ever laid over the 3D view itself. */
 :root {
   --bg: #0a0c10;
   --bg-side: #0e1117;
@@ -10,11 +16,19 @@
   --text: #e9ecf3;
   --text-2: #a4acbd;
   --text-3: #6c7588;
-  --accent: #7c6cff;
-  --accent-2: #9a8dff;
-  --accent-ink: #ffffff;
-  --accent-soft: rgba(124, 108, 255, 0.14);
-  --accent-line: rgba(124, 108, 255, 0.45);
+  --accent: #ffb020;                 /* the studio's own colour: a painter's yellow */
+  --accent-2: #ffd166;
+  --accent-ink: #1a1206;             /* ink that reads on the yellow */
+  --accent-soft: rgba(255, 176, 32, 0.14);
+  --accent-line: rgba(255, 176, 32, 0.5);
+  /* the paints: used to tell one kind of step or control from another, never decoration for its own sake */
+  --paint-yellow: #ffc83d;
+  --paint-orange: #ff8a3d;
+  --paint-green: #5ddc7a;
+  --paint-lime: #c6f24e;
+  --paint-pink: #ff5fa2;
+  --paint-cyan: #45e0e0;
+  --paint-violet: #a98bff;
   --ok: #3ccf91;
   --ok-soft: rgba(60, 207, 145, 0.12);
   --warn: #f4b740;
@@ -562,3 +576,87 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
 .rig-facts { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--text-2); }
 .rig-facts b { color: var(--text); }
 .rig-problems { margin: 0; padding-left: 16px; display: grid; gap: 4px; }
+
+/* --- the studio in colour --------------------------------------------------------------------------- */
+/* Each step of the studio has its own paint, so the rail reads as a journey rather than a list. The
+   colours cycle through the palette; the one you are on is filled in, the ones behind you are ticked. */
+.steps-rail .step-dot:nth-child(7n+1) { --step-paint: var(--paint-yellow); }
+.steps-rail .step-dot:nth-child(7n+2) { --step-paint: var(--paint-orange); }
+.steps-rail .step-dot:nth-child(7n+3) { --step-paint: var(--paint-pink); }
+.steps-rail .step-dot:nth-child(7n+4) { --step-paint: var(--paint-violet); }
+.steps-rail .step-dot:nth-child(7n+5) { --step-paint: var(--paint-cyan); }
+.steps-rail .step-dot:nth-child(7n+6) { --step-paint: var(--paint-green); }
+.steps-rail .step-dot:nth-child(7n+7) { --step-paint: var(--paint-lime); }
+.steps-rail .step-dot span {
+  background: color-mix(in srgb, var(--step-paint, var(--accent)) 22%, transparent);
+  color: var(--step-paint, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--step-paint, var(--accent)) 45%, transparent);
+}
+.steps-rail .step-dot.on {
+  border-color: var(--step-paint, var(--accent));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--step-paint, var(--accent)) 40%, transparent),
+              0 6px 18px color-mix(in srgb, var(--step-paint, var(--accent)) 22%, transparent);
+}
+.steps-rail .step-dot.on span { background: var(--step-paint, var(--accent)); color: #1a1206; }
+.steps-rail .step-dot.on b { color: var(--step-paint, var(--accent)); }
+.steps-rail .step-dot.done span { background: color-mix(in srgb, var(--paint-green) 25%, transparent);
+                                  color: var(--paint-green); border-color: transparent; }
+
+/* The view's own controls take the paint of what they do, so the eye finds them without reading. */
+.view-pip.on { border-color: var(--paint-cyan); color: var(--paint-cyan);
+               background: color-mix(in srgb, var(--paint-cyan) 12%, transparent); }
+.view-group:first-of-type .view-pip.on { border-color: var(--paint-yellow); color: var(--paint-yellow);
+                                         background: color-mix(in srgb, var(--paint-yellow) 12%, transparent); }
+.part-chip { border-color: color-mix(in srgb, var(--paint-lime) 45%, transparent); color: var(--paint-lime); }
+.part-chip:hover { border-color: var(--paint-lime); background: color-mix(in srgb, var(--paint-lime) 12%, transparent); }
+.part-chip.warn { border-color: var(--paint-orange); color: var(--paint-orange); }
+.part-dial.set i { color: var(--paint-lime); }
+.slider-row.set .slider-value { color: var(--paint-yellow); }
+.look.on { border-color: var(--paint-green); box-shadow: 0 0 0 1px var(--paint-green); }
+.look-tick { background: var(--paint-green); color: #0a0c10; }
+.swatch.on { outline: 2px solid var(--paint-yellow); outline-offset: 2px; }
+
+/* --- the editing panel floats over the view instead of shoving it down ------------------------------ */
+.live-stage { position: relative; }
+.part-bar {
+  position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 5;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-color: color-mix(in srgb, var(--paint-lime) 35%, transparent);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  max-height: 62%; overflow: auto;
+}
+.part-bar.away { left: auto; right: 10px; width: auto; }
+.part-pin {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px;
+  border: 1px solid var(--line-2); background: var(--panel-2); color: var(--text-2);
+  font-size: 11.5px; cursor: pointer;
+}
+.part-pin:hover { color: var(--paint-lime); border-color: var(--paint-lime); }
+.part-bar.shrunk .part-dials { display: none; }
+.part-bar.shrunk { max-height: none; }
+
+/* --- nothing may push its own card out of shape ----------------------------------------------------- */
+/* A grid item is `min-width: auto` by default, which means it refuses to shrink below its own content.
+   The row of view buttons cannot wrap, so it was forcing the live view 146 px wider than the card it
+   lives in - and the overflow landed on top of the panel beside it. Measured, not guessed. */
+.live-preview { grid-template-columns: minmax(0, 1fr); }
+.live-preview > * { min-width: 0; }
+.live-bar { flex-wrap: wrap; row-gap: 6px; }
+.live-bar .btn { white-space: nowrap; }
+.view-bar { max-width: 100%; }
+.part-bar { max-width: calc(100% - 20px); }
+
+/* The floating panel has to read in a narrow column: one line of title and buttons, a short line of
+   explanation under it, and the dials beneath - never a tall thin column of wrapped words. */
+.part-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px 10px; }
+.part-head b { grid-row: 1; }
+.part-head .spacer { display: none; }
+.part-head .btn, .part-head .part-pin { grid-row: 1; }
+.part-head > span.muted {
+  grid-column: 1 / -1; grid-row: 2; min-width: 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  font-size: 11px; line-height: 1.35;
+}
+.part-dials { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.part-dial { grid-template-columns: 96px 1fr 50px; font-size: 11.5px; }

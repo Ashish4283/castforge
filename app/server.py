@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -145,6 +146,64 @@ def build_worn(folder, asset):
         if not os.path.isfile(done):
             return False, None, (r.stdout or r.stderr or "").strip().splitlines()[-1:] or ["it could not be made"]
         return True, where, "made"
+
+
+wardrobe_state = {"running": False, "left": 0, "took": 0.0}
+
+
+def worn_folder(folder, asset):
+    return os.path.join(LIBRARY, "preview_kits", "worn", f"{folder}-{asset}")
+
+
+def worn_ready(folder, asset):
+    done = os.path.join(worn_folder(folder, asset), "wear.json")
+    try:
+        return json.load(open(done, encoding="utf-8")).get("version") == kit_mod.VERSION
+    except (OSError, ValueError):
+        return False
+
+
+def warm_wardrobe():
+    """Export everything the wardrobe can put on, in ONE Blender session.
+
+    Blender and MPFB take about four seconds to start and about one second to do the work, so exporting
+    fifty-seven pieces one at a time costs five minutes of waiting spread over a designing session - five
+    seconds every time someone tries a different hat. In one session it is about a minute, once, and after
+    that every pick is instant."""
+    missing = [(f, a) for f, a in look.wardrobe() if not worn_ready(f, a)]
+    wardrobe_state.update(running=True, left=len(missing))
+    if not missing:
+        wardrobe_state["running"] = False
+        return
+    started = time.time()
+    try:
+        jobs = [[f, a, worn_folder(f, a)] for f, a in missing]
+        for f, a in missing:
+            os.makedirs(worn_folder(f, a), exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as fh:
+            json.dump(jobs, fh)
+            listing = fh.name
+        subprocess.run([config.BLENDER, "-b", "--factory-startup", "--python-exit-code", "1",
+                        "-P", os.path.join(ROOT, "blender", "preview_wear.py"), "--", "--many", listing],
+                       capture_output=True, text=True, cwd=ROOT)
+        os.unlink(listing)
+    finally:
+        wardrobe_state.update(running=False, left=sum(1 for f, a in missing if not worn_ready(f, a)),
+                              took=round(time.time() - started, 1))
+
+
+@app.post("/api/character/wardrobe")
+def character_wardrobe():
+    """Make sure every piece of the wardrobe has been exported, so picking one is instant."""
+    if not wardrobe_state["running"]:
+        threading.Thread(target=warm_wardrobe, daemon=True).start()
+    return wardrobe_state
+
+
+@app.get("/api/character/wardrobe")
+def character_wardrobe_state():
+    left = [(f, a) for f, a in look.wardrobe() if not worn_ready(f, a)]
+    return {**wardrobe_state, "missing": len(left), "total": len(look.wardrobe())}
 
 
 @app.post("/api/character/wear")

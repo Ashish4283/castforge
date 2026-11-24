@@ -81,6 +81,10 @@ export function CharacterDesigner({name}: {name: string}) {
   }, [movie, name]);
   useEffect(() => { load(); }, [load]);
 
+  // Make sure every piece of the wardrobe has been exported, once, in one Blender session. Without this
+  // the first time you try a hat or a different hair it costs five seconds of Blender starting up.
+  useEffect(() => { post("/api/character/wardrobe", {}).catch(() => { /* picking still works, slower */ }); }, []);
+
   useEffect(() => {                   // the pictures the studio offers; taken on the first visit ever
     (async () => {
       try {

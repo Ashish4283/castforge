@@ -167,6 +167,30 @@ WEAR_KINDS = {"hair": ("hair", "hair.color"), "beard": ("clothes", "hair.color")
               "shoes": ("clothes", "outfit.shoes")}
 
 
+def wardrobe():
+    """Everything the wardrobe can put on, as sorted (folder, asset) pairs - the whole catalogue.
+
+    One place, so the warm-up that exports them all cannot drift from what `wearables` may ask for."""
+    out = {(folder, asset) for asset, (folder, _tint) in
+           [(EYE_MESH, WEAR_KINDS["eyes"])]}
+    for style, asset in HAIR_STYLES.items():
+        if asset and asset != "none":
+            out.add(("hair", asset))
+    for asset in EYEBROWS.values():
+        out.add(("eyebrows", asset))
+    for group in (BEARDS.values(), HATS.values()):
+        for item in group:
+            for asset in (item if isinstance(item, (list, tuple)) else [item]):
+                out.add(("clothes", asset))
+    for group in (OUTFITS.values(), TOPS.values(), BOTTOMS.values()):
+        for item in group:
+            for asset in (item.values() if isinstance(item, dict) else [item]):
+                out.add(("clothes", asset))
+    for asset in (DRESS, SHOES, BOOTS):
+        out.add(("clothes", asset))
+    return sorted(out)
+
+
 def wearables(design):
     """Everything a design puts on, as [{role, asset, folder, tint}] in the order it is worn.
 

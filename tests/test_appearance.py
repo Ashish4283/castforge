@@ -172,3 +172,22 @@ def test_a_hat_takes_the_hair_off():
     assert "hat" in worn and "hair" not in worn
     bare = {w["role"] for w in appearance.wearables({"gender": "male", "hair": {"style": "afro"}})}
     assert "hair" in bare and "hat" not in bare
+
+
+def test_the_wardrobe_lists_every_piece_the_designer_can_ask_for():
+    """The warm-up exports this list; anything missing from it costs five seconds when it is picked."""
+    whole = appearance.wardrobe()
+    assert len(whole) > 40
+    folders = {folder for folder, _asset in whole}
+    assert folders == {"clothes", "hair", "eyebrows", "eyes"}
+    assets = {asset for _folder, asset in whole}
+    assert assets <= set(appearance.known_assets())          # nothing in it that the wardrobe would refuse
+    assert len(assets) == len(whole)                   # and no asset listed under two folders
+
+
+def test_every_ready_made_look_is_in_the_wardrobe():
+    for style, asset in appearance.HAIR_STYLES.items():
+        if asset and asset != "none":
+            assert ("hair", asset) in appearance.wardrobe(), style
+    for hat, asset in appearance.HATS.items():
+        assert ("clothes", asset) in appearance.wardrobe(), hat

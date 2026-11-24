@@ -1,7 +1,8 @@
 // The live body beside the sliders: it changes as you drag, so nothing has to be agreed to unseen.
 // It shows the SHAPE only - hair, beard, clothes and skin come from a build - and says so.
 import {useEffect, useRef, useState} from "react";
-import {Camera, Check, Grid3x3, Lightbulb, Loader2, Maximize2, Move3d, RefreshCw, Rotate3d,
+import {Camera, Check, ChevronDown, ChevronUp, Grid3x3, Lightbulb, Loader2, Maximize2, Move3d,
+        RefreshCw, Rotate3d,
         Scaling, SunMoon, X} from "lucide-react";
 import * as THREE from "three";
 import {api, Json, post, Schema} from "../../api";
@@ -89,8 +90,11 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
                                               wireframe: false, turntable: false});
   const [draft, setDraft] = useState<PartSpec | null>(null);
   const [cover, setCover] = useState(0);                  // how much of the thing the part covers
+  const [shrunk, setShrunk] = useState(false);            // the dials folded away, to see the character
   const saved: PartSpec[] = Array.isArray(get(design, "parts")) ? (get(design, "parts") as PartSpec[]) : [];
   const wornRef = useRef<{spec: WornSpec; bin: ArrayBuffer; texture: THREE.Texture | null}[]>([]);
+  // Anything fetched once is kept: trying a hat, going back, and trying it again should cost nothing.
+  const held = useRef(new Map<string, {spec: WornSpec; bin: ArrayBuffer; texture: THREE.Texture | null}>());
   // only these change WHAT is worn; the sliders and the colours never do, so they never refetch
   const outfitKey = JSON.stringify([get(design, "gender"), get(design, "hair.style"), get(design, "hair.length"),
                                     get(design, "beard"), get(design, "hat"), get(design, "eyebrows"),
@@ -153,6 +157,8 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
         const r = await post<{wearing: WearItem[]; problems: string[]}>("/api/character/wear", {design});
         const loader = new THREE.TextureLoader();
         const items = await Promise.all(r.wearing.map(async item => {
+          const kept = held.current.get(item.json);
+          if (kept) return {...kept, spec: {...kept.spec, role: item.role, tint: item.tint}};
           const [spec, bin] = await Promise.all([
             fetch(item.json).then(x => x.json() as Promise<WornSpec>),
             fetch(item.bin).then(x => x.arrayBuffer()),
@@ -161,7 +167,9 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
             ? await new Promise<THREE.Texture | null>(done =>
                 loader.load(item.texture!, t => { t.colorSpace = THREE.SRGBColorSpace; done(t); }, undefined, () => done(null)))
             : null;
-          return {spec: {...spec, role: item.role, tint: item.tint}, bin, texture};
+          const got = {spec: {...spec, role: item.role, tint: item.tint}, bin, texture};
+          held.current.set(item.json, got);
+          return got;
         }));
         if (dropped) return;
         wornRef.current = items;
@@ -246,9 +254,8 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
             {dressing && <span className="muted">· dressing…</span>}
           </div>
         )}
-      </div>
       {(draft || saved.length > 0) && (
-        <div className="part-bar">
+        <div className={`part-bar ${shrunk ? "shrunk" : ""}`}>
           {draft ? (
             <>
               <div className="part-head">
@@ -261,6 +268,11 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
                       + "fades out towards where this part joins on, so it stays attached."}
                 </span>
                 <span className="spacer" />
+                <button className="part-pin" onClick={() => setShrunk(v => !v)}
+                        title={shrunk ? "Show the dials again" : "Fold it away to see the character"}>
+                  {shrunk ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  {shrunk ? "dials" : "fold"}
+                </button>
                 <Button variant="primary" icon={<Check size={14} />} onClick={keep}>Keep</Button>
                 <Button variant="ghost" icon={<X size={14} />} onClick={() => setDraft(null)}>Cancel</Button>
               </div>
@@ -302,6 +314,7 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
           )}
         </div>
       )}
+      </div>
       <div className="view-bar">
         <span className="view-group" title="The light on the character">
           <Lightbulb size={13} />
