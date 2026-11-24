@@ -38,9 +38,10 @@ function tintOf(design: Json, tint: string | null): string | undefined {
 const partName = (on: string) => ({body: "body", hat: "hat", top: "top", bottom: "trousers",
                                    outfit: "outfit", shoes: "shoes", hair: "hair", beard: "beard"}[on] || on);
 
-export function LivePreview({design, schema, focus, onParts}: {
+export function LivePreview({design, schema, focus, onParts, touching}: {
   design: Json; schema: Schema; focus: "whole" | "face" | "body";
   onParts?: (parts: PartSpec[]) => void;
+  touching?: string | null;              // the slider the hand is on, so the view can show what it moves
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const view = useRef<BodyView | null>(null);
@@ -172,6 +173,11 @@ export function LivePreview({design, schema, focus, onParts}: {
     a.download = `${String(get(design, "name") || "character")}.png`;
     a.click();
   };
+
+  useEffect(() => {                      // light up what the slider under the hand actually moves
+    const pair = touching ? schema.slider_targets?.[touching] : null;
+    view.current?.showTargets(pair ? [...pair.plus, ...pair.minus] : null);
+  }, [touching, state]);                 // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { view.current?.frame(focus); }, [focus]);
   useEffect(() => { view.current?.showRings(rings); }, [rings]);

@@ -186,6 +186,7 @@ export class BodyView {
   private parts: PartSpec[] = [];                      // parts made bigger or smaller, from the design
   private chosen: {spec: PartSpec; verts: Set<number>} | null = null;
   private glow: THREE.Mesh | null = null;              // what the chosen part looks like while it is chosen
+  private hint: THREE.Mesh | null = null;              // what the slider under your hand actually moves
   private bodyAdj: Uint32Array[] | null = null;
   picking = false;                                     // a click picks a part instead of turning the body
   private look: ViewLook = {light: "studio", background: "dark", wireframe: false, turntable: false};
@@ -688,6 +689,42 @@ export class BodyView {
   snapshot(): string {
     this.renderer.render(this.scene, this.camera);       // draw now, so the buffer is not an old frame
     return this.renderer.domElement.toDataURL("image/png");
+  }
+
+  /** Light up what a slider moves, while the hand is on it.
+   *
+   *  The kit already says which vertices each morph target touches - that is how the body is morphed at
+   *  all - so showing it costs nothing, and it answers the question every slider raises: what IS this? */
+  showTargets(names: string[] | null) {
+    if (this.hint) {
+      this.scene.remove(this.hint);
+      this.hint.geometry.dispose();
+      (this.hint.material as THREE.Material).dispose();
+      this.hint = null;
+    }
+    if (!names || !names.length || !this.mesh || !this.tris) return;
+    const moved = new Set<number>();
+    for (const name of names) {
+      const shape = this.shapes.get(name);
+      if (shape) for (const v of shape.idx) moved.add(v);
+    }
+    if (!moved.size) return;
+    const faces: number[] = [];
+    for (let t = 0; t < this.tris.length; t += 3) {        // any triangle with a corner that moves
+      const a = this.tris[t], b = this.tris[t + 1], c = this.tris[t + 2];
+      if (moved.has(a) || moved.has(b) || moved.has(c)) faces.push(a, b, c);
+    }
+    if (!faces.length) return;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", this.mesh.geometry.getAttribute("position"));
+    const normal = this.mesh.geometry.getAttribute("normal");
+    if (normal) g.setAttribute("normal", normal);
+    g.setIndex(new THREE.BufferAttribute(new Uint32Array(faces), 1));
+    this.hint = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+      color: 0xffd36e, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4}));
+    this.hint.renderOrder = 4;
+    this.scene.add(this.hint);
   }
 
   /** Look at the whole person, or close in on what is being edited. */

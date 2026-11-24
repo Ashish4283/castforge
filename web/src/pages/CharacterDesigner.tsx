@@ -57,6 +57,7 @@ export function CharacterDesigner({name}: {name: string}) {
   const [steps, setSteps] = useState(0);            // only so the buttons know when to light up
   const [rig, setRig] = useState<RigReport | null>(null);
   const [checking, setChecking] = useState(false);
+  const [touching, setTouching] = useState<string | null>(null);   // the slider the hand is on
 
   const load = useCallback(async () => {
     if (!movie) return;        // the store has not said which movie yet: asking now only gets a 400
@@ -207,7 +208,7 @@ export function CharacterDesigner({name}: {name: string}) {
           </div>
           {stage === "live" && schema.slider_targets && (
             <Suspense fallback={<div className="live-preview"><div className="live-stage"><div className="live-cover"><span className="spinner" /></div></div></div>}>
-              <LivePreview design={design} schema={schema} focus={focus}
+              <LivePreview design={design} schema={schema} focus={focus} touching={touching}
                            onParts={v => change("parts", v as unknown as Json)} />
             </Suspense>
           )}
@@ -283,6 +284,7 @@ export function CharacterDesigner({name}: {name: string}) {
                     <div className="sliders">
                       {keys.filter(k => schema.character[`${here.sliders}.${k}`]).map(k => (
                         <SliderField key={k} name={k} def={schema.character[`${here.sliders}.${k}`]}
+                                     onTouch={on => setTouching(on ? `${here.sliders}.${k}` : null)}
                                      range={schema.slider_range || [-1, 1]}
                                      value={Number(get(design, `${here.sliders}.${k}`) || 0)}
                                      onChange={v => { setStage("live"); setFocus(here.look); change(`${here.sliders}.${k}`, v || null); }} />
@@ -383,6 +385,7 @@ export function CharacterDesigner({name}: {name: string}) {
                   <div className="sliders">
                     {keys.filter(k => schema.character[`${part}.${k}`]).map(k => (
                       <SliderField key={k} name={k} def={schema.character[`${part}.${k}`]}
+                                   onTouch={on => setTouching(on ? `${part}.${k}` : null)}
                                    range={schema.slider_range || [-1, 1]}
                                    value={Number(get(design, `${part}.${k}`) || 0)}
                                    onChange={v => { setStage("live"); setFocus(part === "face" ? "face" : "body"); change(`${part}.${k}`, v || null); }} />
@@ -501,15 +504,18 @@ function Swatchy({value}: {value: Json}) {
   return <span className="swatchy">{String(value).replace(/_/g, " ")}</span>;
 }
 
-function SliderField({name, def, range, value, onChange, middle = 0, label}:
+function SliderField({name, def, range, value, onChange, middle = 0, label, onTouch}:
                      {name: string; def: ParamDef; range: readonly [number, number] | number[]; value: number;
-                      onChange: (v: number) => void; middle?: number; label?: string}) {
+                      onChange: (v: number) => void; middle?: number; label?: string;
+                      onTouch?: (on: boolean) => void}) {
   const [lo, hi] = range as [number, number];
   // most of these sliders sit at nothing in the middle (a face is ordinary at 0); a size sits at 1, so
   // "changed" and the double-click that puts it back are both measured from wherever the middle is
   const moved = Math.abs(value - middle) > 1e-9;
   return (
-    <label className={`slider-row ${moved ? "set" : ""}`} title={def.help}>
+    <label className={`slider-row ${moved ? "set" : ""}`} title={def.help}
+           onMouseEnter={() => onTouch?.(true)} onMouseLeave={() => onTouch?.(false)}
+           onFocus={() => onTouch?.(true)} onBlur={() => onTouch?.(false)}>
       <span className="slider-name">{label || title(name)}</span>
       <input type="range" min={lo} max={hi} step={0.05} value={value}
              onChange={e => onChange(Number(e.target.value))} onDoubleClick={() => onChange(middle)} />
