@@ -193,12 +193,21 @@ blobs = [("verts", verts.tobytes(), n_v), ("weights", weights.tobytes(), n_v),
          ("offsets", offsets_view.tobytes(), n_v), ("uv", uv.tobytes(), n_v),
          ("indices", faces.tobytes(), len(faces) * 3), ("hides", hides.tobytes(), len(hides)),
          ("regions", regions.tobytes(), n_v), ("rim", rim_order.tobytes(), len(rim_order))]
-at, where = 0, {}
+# Every blob starts on a 4-byte boundary. A browser cannot make a Uint32Array (or a Float32Array) at an
+# odd offset - it throws "start offset should be a multiple of 4" - and the one byte-sized blob here
+# (`regions`, one byte a vertex) pushes everything after it off alignment. That threw while the character
+# was being dressed, which took the hat out of the live view and made the size dial look dead.
+at, where, padded = 0, {}, []
 for name, blob, count in blobs:
+    spare = (-at) % 4
+    if spare:
+        padded.append(bytes(spare))
+        at += spare
     where[name] = {"at": at, "count": count}
+    padded.append(blob)
     at += len(blob)
 with open(os.path.join(args.out, "wear.bin"), "wb") as fh:
-    for _name, blob, _count in blobs:
+    for blob in padded:
         fh.write(blob)
 json.dump({"version": preview_kit.VERSION, "asset": args.asset, "folder": args.folder,
            "vertices": n_v, "triangles": len(faces), "texture": texture,

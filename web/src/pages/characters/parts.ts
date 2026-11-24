@@ -183,3 +183,45 @@ export function growPart(pos: Float32Array, part: Set<number>, scale: number, ad
                          indices: ArrayLike<number>) {
   shapePart(pos, part, adj, indices, scale);
 }
+
+
+/** The open boundary rings of a mesh: the edges used by a single triangle, chained into loops.
+ *
+ *  The export marks a hat's opening, but the viewer must not DEPEND on that: a cached export from an
+ *  older version has no opening in it, and then a hat silently refuses to grow - which is exactly what
+ *  happened. With this, the worst case is picking a slightly different ring, not doing nothing at all. */
+export function openRings(indices: ArrayLike<number>): number[][] {
+  const used = new Map<string, number>();
+  for (let t = 0; t + 2 < indices.length; t += 3) {
+    for (const [a, b] of [[indices[t], indices[t + 1]], [indices[t + 1], indices[t + 2]],
+                          [indices[t + 2], indices[t]]]) {
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+      used.set(key, (used.get(key) || 0) + 1);
+    }
+  }
+  const next = new Map<number, number[]>();
+  for (const [key, n] of used) {
+    if (n !== 1) continue;
+    const [a, b] = key.split(":").map(Number);
+    (next.get(a) || next.set(a, []).get(a)!).push(b);
+    (next.get(b) || next.set(b, []).get(b)!).push(a);
+  }
+  const seen = new Set<number>();
+  const rings: number[][] = [];
+  for (const start of [...next.keys()].sort((x, y) => x - y)) {
+    if (seen.has(start)) continue;
+    const ring = [start];
+    seen.add(start);
+    let prev = -1, here = start;
+    for (;;) {
+      const step = (next.get(here) || []).find(v => v !== prev && !seen.has(v));
+      if (step === undefined) break;
+      ring.push(step);
+      seen.add(step);
+      prev = here;
+      here = step;
+    }
+    if (ring.length >= 3) rings.push(ring);
+  }
+  return rings;
+}

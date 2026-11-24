@@ -197,7 +197,8 @@ export function CharacterDesigner({name}: {name: string}) {
                   title="Take back the last change (Ctrl+Z)" onClick={undo}>Undo</Button>
           <Button variant="ghost" icon={<Redo2 size={15} />} disabled={!future.current.length}
                   title="Put it back (Ctrl+Shift+Z)" onClick={redo}>Redo</Button>
-          <Button variant="ghost" icon={<RotateCcw size={15} />} disabled={!dirty} onClick={() => edit(() => JSON.parse(saved || JSON.stringify(BLANK)))}>Discard</Button>
+          <Button variant="ghost" icon={<RotateCcw size={15} />} disabled={!dirty} title="Put every control back to how this character was last built"
+                  onClick={() => edit(() => JSON.parse(saved || JSON.stringify(BLANK)))}>Reset</Button>
           <Button variant="primary" icon={<Hammer size={15} />} busy={busy} disabled={!!job || problems.length > 0} onClick={rebuild}>{isNew ? "Build character" : "Rebuild"}</Button>
         </>} />
       <div className="designer">

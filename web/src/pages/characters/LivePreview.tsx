@@ -59,6 +59,17 @@ const put = (v: [number, number, number] | undefined, i: number, x: number) => {
 const cm = (v: number) => `${v > 0 ? "+" : ""}${Math.round(v * 100)} cm`;
 const deg = (v: number) => `${v > 0 ? "+" : ""}${Math.round(v)}°`;
 
+/** What a part actually does, as a chip can show it: "x1.30", "+5 cm", "-40°", or several. */
+function describe(part: PartSpec) {
+  const bits: string[] = [];
+  if (Math.abs(part.scale - 1) > 1e-9) bits.push(`x${part.scale.toFixed(2)}`);
+  const slid = (part.move || [0, 0, 0]).find(Boolean);
+  if (slid) bits.push(cm(slid));
+  const turned = (part.turn || [0, 0, 0]).find(Boolean);
+  if (turned) bits.push(deg(turned));
+  return bits.join(" ") || "as it came";
+}
+
 const partName = (on: string) => ({body: "body", hat: "hat", top: "top", bottom: "trousers",
                                    outfit: "outfit", shoes: "shoes", hair: "hair", beard: "beard"}[on] || on);
 
@@ -276,13 +287,17 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
             </>
           ) : (
             <>
-              <span className="muted small">Resized:</span>
+              <span className="muted small">Reshaped by hand:</span>
               {saved.map((part, i) => (
                 <button key={i} className="part-chip" onClick={() => drop(i)}
-                        title="Put this part back to its own size">
-                  {partName(part.on)} x{part.scale.toFixed(2)} <X size={11} />
+                        title="Put this part back to how it came">
+                  {partName(part.on)} {describe(part)} <X size={11} />
                 </button>
               ))}
+              {saved.length > 1 && (
+                <button className="part-chip warn" onClick={() => onParts?.([])}
+                        title="Put every part back to how it came">Clear them all</button>
+              )}
             </>
           )}
         </div>

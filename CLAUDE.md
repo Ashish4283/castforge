@@ -252,6 +252,16 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   hat, doubled, is not a part at all - it is a different hat, and it looks like one (this is exactly what
   made a built Santa come out wearing a bowl).
 
+- Every blob in a worn export must start on a 4-BYTE boundary. `regions` is one byte a vertex, so it
+  pushes whatever follows off alignment, and the browser then throws "start offset of Uint32Array should
+  be a multiple of 4" while dressing - which took the hat out of the live view and made its size dial
+  look dead. `preview_wear.py` pads between blobs; `bodyview.setWearing` also puts on one thing at a time
+  so a single unreadable piece cannot leave the character naked.
+- Bump `preview_kit.VERSION` IN THE SAME EDIT as the exporter change. A lost bump is silent and vicious:
+  the exporter writes a new field, every cached export keeps the old shape, and the feature that needs
+  that field just quietly does nothing (here: a hat with no opening recorded, so it refused to grow).
+  The viewer now also finds a hat's opening itself (`parts.openRings`) rather than trusting the export.
+
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).
 Scene vocabulary for Gemini: `docs/GEMINI_SCENE_PROMPT.md`.

@@ -7,7 +7,7 @@
 // Turning it: drag anywhere to turn the body, or grab a ring - the green one round its feet spins it, the
 // red one standing up beside it tips it. The wheel zooms. Nothing here changes the design; it only looks.
 import * as THREE from "three";
-import {adjacencyOf, facesInside, nearestVertex, shapePart, spreadFrom} from "./parts";
+import {adjacencyOf, facesInside, nearestVertex, openRings, shapePart, spreadFrom} from "./parts";
 
 export interface Kit {
   version: number;
@@ -396,6 +396,20 @@ export class BodyView {
     }
     this.wearing = [];
     for (const worn of items) {
+      try {
+        this.wearOne(worn);
+      } catch (e) {                      // one unreadable thing must not leave the character undressed
+        console.warn("CastForge: could not put on", worn.spec.asset, e);
+      }
+    }
+    this.dress();
+    this.hideCovered();
+    this.buildCostume();
+    this.setLook({});                      // wireframe and the rest apply to whatever was just made
+  }
+
+  private wearOne(worn: Worn) {
+    {
       const {spec, bin} = worn;
       const n = spec.vertices;
       const idx = new Uint32Array(bin, spec.verts.at, n * 3);
@@ -423,15 +437,18 @@ export class BodyView {
       const mesh = new THREE.Mesh(g, mat);
       mesh.renderOrder = 1;
       this.scene.add(mesh);
-      // a hat's opening, in loop order: what holds it on, and what "above" is measured from
-      const rim = spec.rim?.count ? new Uint32Array(bin, spec.rim.at, spec.rim.count) : new Uint32Array(0);
+      // A hat's opening, in loop order: what holds it on, and what "above" is measured from. The export
+      // marks it, but an export cached from an older version has no mark - so fall back to the mesh's own
+      // widest open ring rather than silently refusing to grow the hat (which is what used to happen).
+      let rim = spec.rim?.count ? new Uint32Array(bin, spec.rim.at, spec.rim.count) : new Uint32Array(0);
+      if (!rim.length && spec.role === "hat") {
+        const rings = openRings(faces);
+        const widest = rings.sort((a, b) => b.length - a.length)[0];
+        if (widest) rim = Uint32Array.from(widest);
+      }
       this.wearing.push({worn, mesh, idx, weight, off, pos, hides, scale: new Float32Array(3), rim,
                          adj: null});
     }
-    this.dress();
-    this.hideCovered();
-    this.buildCostume();
-    this.setLook({});                      // wireframe and the rest apply to whatever was just made
   }
 
   /** The costume over the clothes: fur trim, a belt and buckle, gloves, fur-topped boots.
