@@ -304,3 +304,43 @@ def test_shrinking_a_part_is_the_same_rule_backwards():
     c = kit.centroid(co, kit.border_of(part, adj))
     deep = [v for v in part if co[v][2] == 1.8][0]
     assert abs(small[deep][0] - c[0]) < abs(co[deep][0] - c[0])
+
+
+def a_cap():
+    """A little cap: a tube closed over at the top, so its ONE opening is the ring that sits on the head.
+
+    Closing it matters. An open tube has two boundary rings, and a part bounded at both ends is pinned at
+    both ends - nothing in the middle can be slid or turned anywhere."""
+    co, faces = tube(rings=5, n=8, radius=0.1, step=0.04, z0=1.8)
+    co = list(co) + [(0.0, 0.0, 1.84)]               # a point over the crown
+    tip = len(co) - 1
+    faces = list(faces) + [(i, (i + 1) % 8, tip) for i in range(8)]
+    adj = kit.neighbours(faces)
+    part = set(range(len(co)))                       # the whole cap; its border is the opening
+    return co, faces, adj, part
+
+
+def test_a_part_can_be_slid_without_leaving_the_seam_behind():
+    co, faces, adj, part = a_cap()
+    moved = kit.shape_part(co, part, move=(0.05, 0, 0), faces=faces, adj=adj)
+    opening = {v for loop in kit.boundary_loops(faces) for v in loop}
+    for v in opening:
+        assert moved[v] == pytest.approx(co[v], abs=1e-9)        # the opening stays on the head
+    top = max(range(len(co)), key=lambda v: co[v][2])
+    assert moved[top][0] - co[top][0] == pytest.approx(0.05, abs=1e-9)   # the crown slides the full way
+
+
+def test_a_part_can_be_turned_about_where_it_joins_on():
+    co, faces, adj, part = a_cap()
+    turned = kit.shape_part(co, part, turn=(0, 40, 0), faces=faces, adj=adj)   # lean it sideways
+    opening = {v for loop in kit.boundary_loops(faces) for v in loop}
+    for v in opening:
+        assert turned[v] == pytest.approx(co[v], abs=1e-9)
+    top = max(range(len(co)), key=lambda v: co[v][2])
+    assert abs(turned[top][0] - co[top][0]) > 0.05               # the point has swung over
+    assert turned[top][2] < co[top][2]                           # and come down as it leaned
+
+
+def test_asking_for_nothing_changes_nothing():
+    co, faces, adj, part = a_cap()
+    assert kit.shape_part(co, part, faces=faces, adj=adj) == [tuple(p) for p in co]

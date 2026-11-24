@@ -35,6 +35,30 @@ function tintOf(design: Json, tint: string | null): string | undefined {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : undefined;
 }
 
+/** One dial in the part bar. Double-click puts it back to the middle, like every other slider here. */
+function Dial({label, value, min, max, step, middle, show, onChange}: {
+  label: string; value: number; min: number; max: number; step: number; middle: number;
+  show: (v: number) => string; onChange: (v: number) => void;
+}) {
+  return (
+    <label className={`part-dial ${Math.abs(value - middle) > 1e-9 ? "set" : ""}`}>
+      <span>{label}</span>
+      <input type="range" min={min} max={max} step={step} value={value}
+             onChange={e => onChange(Number(e.target.value))} onDoubleClick={() => onChange(middle)} />
+      <i>{show(value)}</i>
+    </label>
+  );
+}
+
+const at = (v: [number, number, number] | undefined, i: number) => (v ? v[i] : 0);
+const put = (v: [number, number, number] | undefined, i: number, x: number) => {
+  const out: [number, number, number] = v ? [...v] as [number, number, number] : [0, 0, 0];
+  out[i] = x;
+  return out;
+};
+const cm = (v: number) => `${v > 0 ? "+" : ""}${Math.round(v * 100)} cm`;
+const deg = (v: number) => `${v > 0 ? "+" : ""}${Math.round(v)}°`;
+
 const partName = (on: string) => ({body: "body", hat: "hat", top: "top", bottom: "trousers",
                                    outfit: "outfit", shoes: "shoes", hair: "hair", beard: "beard"}[on] || on);
 
@@ -53,6 +77,7 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
   const [look, setLook] = useState<ViewLook>({light: "studio", background: "dark",
                                               wireframe: false, turntable: false});
   const [draft, setDraft] = useState<PartSpec | null>(null);
+  const [cover, setCover] = useState(0);                  // how much of the thing the part covers
   const saved: PartSpec[] = Array.isArray(get(design, "parts")) ? (get(design, "parts") as PartSpec[]) : [];
   const wornRef = useRef<{spec: WornSpec; bin: ArrayBuffer; texture: THREE.Texture | null}[]>([]);
   // only these change WHAT is worn; the sliders and the colours never do, so they never refetch
@@ -150,7 +175,7 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
   // what is being resized right now: everything already kept, plus the one being tried
   useEffect(() => {
     view.current?.setParts(draft ? [...saved, draft] : saved);
-    if (draft) view.current?.choose(draft);
+    setCover(draft ? view.current?.choose(draft) || 0 : 0);
   }, [JSON.stringify(saved), JSON.stringify(draft)]);     // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -215,21 +240,39 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
         <div className="part-bar">
           {draft ? (
             <>
-              <b>{partName(draft.on)}</b>
-              <label className="part-dial">
-                <span>How much of it</span>
-                <input type="range" min={0.02} max={0.3} step={0.01} value={draft.radius}
-                       onChange={e => setDraft({...draft, radius: Number(e.target.value)})} />
-                <i>{Math.round(draft.radius * 100)} cm</i>
-              </label>
-              <label className="part-dial">
-                <span>Size</span>
-                <input type="range" min={0.5} max={2} step={0.05} value={draft.scale}
-                       onChange={e => setDraft({...draft, scale: Number(e.target.value)})} />
-                <i>x{draft.scale.toFixed(2)}</i>
-              </label>
-              <Button variant="primary" icon={<Check size={14} />} onClick={keep}>Keep</Button>
-              <Button variant="ghost" icon={<X size={14} />} onClick={() => setDraft(null)}>Cancel</Button>
+              <div className="part-head">
+                <b>{partName(draft.on)}</b>
+                <span className="muted small">
+                  {cover > 0.75
+                    ? `that is ${Math.round(cover * 100)}% of the ${partName(draft.on)} - almost all of it. `
+                      + "Sizing a whole hat is what the Hat size dial is for; a part is meant to be smaller."
+                    : `${Math.round(cover * 100)}% of the ${partName(draft.on)}. Everything you change `
+                      + "fades out towards where this part joins on, so it stays attached."}
+                </span>
+                <span className="spacer" />
+                <Button variant="primary" icon={<Check size={14} />} onClick={keep}>Keep</Button>
+                <Button variant="ghost" icon={<X size={14} />} onClick={() => setDraft(null)}>Cancel</Button>
+              </div>
+              <div className="part-dials">
+                <Dial label="How much of it" value={draft.radius} min={0.02} max={0.3} step={0.01}
+                      middle={0.08} show={v => `${Math.round(v * 100)} cm`}
+                      onChange={v => setDraft({...draft, radius: v})} />
+                <Dial label="Size" value={draft.scale} min={0.5} max={2} step={0.05} middle={1}
+                      show={v => `x${v.toFixed(2)}`}
+                      onChange={v => setDraft({...draft, scale: v})} />
+                <Dial label="Left / right" value={at(draft.move, 0)} min={-0.2} max={0.2} step={0.005}
+                      middle={0} show={cm} onChange={v => setDraft({...draft, move: put(draft.move, 0, v)})} />
+                <Dial label="Up / down" value={at(draft.move, 2)} min={-0.2} max={0.2} step={0.005}
+                      middle={0} show={cm} onChange={v => setDraft({...draft, move: put(draft.move, 2, v)})} />
+                <Dial label="Front / back" value={at(draft.move, 1)} min={-0.2} max={0.2} step={0.005}
+                      middle={0} show={cm} onChange={v => setDraft({...draft, move: put(draft.move, 1, v)})} />
+                <Dial label="Lean left / right" value={at(draft.turn, 1)} min={-60} max={60} step={1}
+                      middle={0} show={deg} onChange={v => setDraft({...draft, turn: put(draft.turn, 1, v)})} />
+                <Dial label="Tip forward / back" value={at(draft.turn, 0)} min={-60} max={60} step={1}
+                      middle={0} show={deg} onChange={v => setDraft({...draft, turn: put(draft.turn, 0, v)})} />
+                <Dial label="Twist" value={at(draft.turn, 2)} min={-60} max={60} step={1}
+                      middle={0} show={deg} onChange={v => setDraft({...draft, turn: put(draft.turn, 2, v)})} />
+              </div>
             </>
           ) : (
             <>

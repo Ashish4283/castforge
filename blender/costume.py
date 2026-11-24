@@ -444,22 +444,20 @@ def border_of(part, adj):
     return {v for v in part if any(w not in part for w in adj.get(v, ()))}
 
 
-def grow_part(co, part, scale, faces=None, adj=None):
-    """`part` of a mesh made bigger or smaller, still attached to the rest of it.
+def part_depth(co, part, adj, faces=None):
+    """How deep inside `part` each of its vertices lies, walking in from the border along the surface.
 
-    Everything grows away from the centre of the part's border: by the full `scale` deepest inside the
-    part, and by nothing at all at the border itself, so the seam does not open and nothing outside the
-    part moves. Vertices outside `part` are returned untouched. (This is the same rule that keeps a hat's
-    fur roll still while its crown grows; see `grow_hat`.)"""
-    part = set(part)
-    if abs(scale - 1.0) < 1e-6 or not part:
-        return [tuple(p) for p in co]
-    adj = adj if adj is not None else neighbours(faces or [])
+    This is what lets a part be moved, turned or resized without tearing it off: whatever is done to the
+    part is done in full where it is deepest and not at all at the border.
+
+    When the part is the WHOLE object there is no border by adjacency - nothing is outside it - and what
+    holds it on is its open boundary instead: a hat selected whole is still held by the ring the head goes
+    through. That is the usual case for a hat, so it is not an edge case to skip."""
     edge = border_of(part, adj)
+    if (not edge or edge == part) and faces:
+        edge = {v for loop in boundary_loops(faces) for v in loop if v in part}
     if not edge or edge == part:
-        return [tuple(p) for p in co]
-    c = centroid(co, edge)
-    # how far inside the part each vertex is, walking from the border and never leaving the part
+        return {}, []
     deep = {v: 0.0 for v in edge}
     heap = [(0.0, v) for v in edge]
     while heap:
@@ -473,10 +471,50 @@ def grow_part(co, part, scale, faces=None, adj=None):
             if nd < deep.get(w, math.inf):
                 deep[w] = nd
                 heapq.heappush(heap, (nd, w))
+    return deep, edge
+
+
+def _turn(point, about, degrees):
+    """`point` turned about the three axes through `about`, in degrees (x, y, z)."""
+    x, y, z = (point[i] - about[i] for i in range(3))
+    rx, ry, rz = (math.radians(d) for d in degrees)
+    y, z = y * math.cos(rx) - z * math.sin(rx), y * math.sin(rx) + z * math.cos(rx)
+    z, x = z * math.cos(ry) - x * math.sin(ry), z * math.sin(ry) + x * math.cos(ry)
+    x, y = x * math.cos(rz) - y * math.sin(rz), x * math.sin(rz) + y * math.cos(rz)
+    return (about[0] + x, about[1] + y, about[2] + z)
+
+
+def shape_part(co, part, scale=1.0, move=(0.0, 0.0, 0.0), turn=(0.0, 0.0, 0.0), faces=None, adj=None):
+    """`part` of a mesh resized, slid and turned - still joined to the rest of it.
+
+    All three happen about the centre of the part's border, and all three fade to nothing at that border,
+    so the seam never opens and nothing outside the part moves. A hat's border is the ring on the head, so
+    turning the hat tips the cone over while the brim stays exactly where it sits.
+
+    `move` is metres, `turn` is degrees about the x, y and z axes. Vertices outside `part` come back
+    untouched."""
+    part = set(part)
+    still = abs(scale - 1.0) < 1e-6 and not any(move) and not any(turn)
+    if still or not part:
+        return [tuple(p) for p in co]
+    adj = adj if adj is not None else neighbours(faces or [])
+    deep, edge = part_depth(co, part, adj, faces)
+    if not deep:
+        return [tuple(p) for p in co]
+    c = centroid(co, edge)
     far = max(deep.values()) or 1.0
     out = [tuple(p) for p in co]
     for v in part:
         t = min(1.0, deep.get(v, far) / far)
-        grow = 1.0 + (scale - 1.0) * (t * t * (3 - 2 * t))      # smooth: no crease at the seam
-        out[v] = tuple(c[i] + (co[v][i] - c[i]) * grow for i in range(3))
+        ease = t * t * (3 - 2 * t)                              # smooth: no crease at the seam
+        grow = 1.0 + (scale - 1.0) * ease
+        p = tuple(c[i] + (co[v][i] - c[i]) * grow for i in range(3))
+        if any(turn):
+            p = _turn(p, c, tuple(d * ease for d in turn))
+        out[v] = tuple(p[i] + move[i] * ease for i in range(3))
     return out
+
+
+def grow_part(co, part, scale, faces=None, adj=None):
+    """Resizing alone - `shape_part` with nothing else asked for."""
+    return shape_part(co, part, scale=scale, faces=faces, adj=adj)

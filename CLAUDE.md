@@ -70,7 +70,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | undo, redo, what changed since the last build | `CharacterDesigner.edit`/`undo`/`redo` (whole designs as text on two stacks) and the `changed` diff |
 | the studio's steps, look pickers, thumbnails | steps `web/src/pages/characters/steps.ts`; tiles `LookPicker.tsx`; pictures `blender/preview_thumbs.py` -> `library/preview_kits/thumbs/`; routes `/api/character/looks` (what to offer) and `/api/character/thumbs` (take the missing ones) |
 | is a character fit to animate? | `core/rigging.py` (pure, tested: `keep_strongest`, `problems`, `verdict`), measured and repaired by `blender/rig_check.py`; CLI `castforge.py rig NAME [FOLDER] [--fix]`; route `/api/character/rig`; panel `CharacterDesigner.RigPanel`; every build tidies and writes `<name>.rig.json` |
-| picking a part of a mesh and resizing it | `costume.part_at`/`grow_part`/`neighbours` (pure, tested) mirrored in `web/src/pages/characters/parts.ts`; design key `parts`; picked by `bodyview.setParts`/`choose`, applied by `build_character.resize_parts` |
+| picking a part of a mesh and reshaping it (size, slide, turn) | `costume.part_at`/`shape_part`/`neighbours` (pure, tested) mirrored in `web/src/pages/characters/parts.ts`; design key `parts`; picked by `bodyview.setParts`/`choose`, applied by `build_character.resize_parts` |
 | the costume in the live view (trim, belt, buckle, gloves) | `costume.trim_bands`/`boot_bands`/`beyond` (pure, tested); the bands travel in `preview_wear.py` (`regions`), the hands and joints in `preview_kit.py`; drawn by `bodyview.setCostume` |
 | what the live view wears (hair, beard, clothes) | export `blender/preview_wear.py` -> `library/preview_kits/worn/<folder>-<asset>/`; the wardrobe itself `appearance.wearables` (pure, tested); route `/api/character/wear`; drawing `bodyview.setWearing` |
 | the designer's live body (morphs as the sliders move) | export `blender/preview_kit.py` -> `library/preview_kits/<sex>-<age>-<build>-<height>/kit.json+bin`; what is needed and whether it is there `core/preview_kit.py` (pure, tested, `VERSION`); route `/api/character/preview-kit`; drawing `web/src/pages/characters/bodyview.ts` + `LivePreview.tsx` |
@@ -240,6 +240,17 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - When auditing a rig, count the SKIN only (the "body" vertex group). The body mesh also carries helper
   cages and joint cubes, which are legitimately unweighted - counting them reports 16 faults that are not
   faults. (The metarig left in the file is not a fault either: Rigify needs it to generate the rig again.)
+
+- A part that covers a WHOLE object has no border by adjacency - nothing is outside it - and bailing there
+  is wrong, because that is the ordinary case for a hat. What holds it on is then its open boundary (the
+  ring the head goes through), so `costume.part_depth` falls back to `boundary_loops` and needs the faces
+  passed, not just the adjacency.
+- A part is remembered in the design with `move` (metres) and `turn` (degrees) beside `scale`, all in the
+  BUILD's axes (x across, y front-back, z up). The live view is y-up, so it swaps them on the way in:
+  move -> [x, z, -y]. Getting that wrong slides a hat into the head instead of to the side.
+- The studio says what fraction of a thing a part covers. It is not decoration: a part covering 92% of a
+  hat, doubled, is not a part at all - it is a different hat, and it looks like one (this is exactly what
+  made a built Santa come out wearing a bowl).
 
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).

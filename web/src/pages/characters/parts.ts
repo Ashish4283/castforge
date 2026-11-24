@@ -101,17 +101,47 @@ export function facesInside(indices: ArrayLike<number>, part: Set<number>): numb
   return out;
 }
 
-/** Resize `part` in place, leaving it joined to the rest. Mirrors `costume.grow_part`. */
-export function growPart(pos: Float32Array, part: Set<number>, scale: number, adj: Uint32Array[]) {
-  if (Math.abs(scale - 1) < 1e-6 || !part.size) return;
+/** The vertices that hold a part on: the ones touching something outside it, or - when the part IS the
+ *  whole object - the open boundary it hangs from, like the ring of a hat that the head goes through. */
+function holdingOn(part: Set<number>, adj: Uint32Array[], indices: ArrayLike<number>): number[] {
   const border: number[] = [];
   for (const v of part) {
     for (const w of adj[v] || []) if (!part.has(w)) { border.push(v); break; }
   }
+  if (border.length && border.length !== part.size) return border;
+  const used = new Map<string, number>();                 // an edge used by one face is an open edge
+  for (let t = 0; t + 2 < indices.length; t += 3) {
+    for (const [a, b] of [[indices[t], indices[t + 1]], [indices[t + 1], indices[t + 2]],
+                          [indices[t + 2], indices[t]]]) {
+      const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+      used.set(key, (used.get(key) || 0) + 1);
+    }
+  }
+  const open = new Set<number>();
+  for (const [key, n] of used) {
+    if (n !== 1) continue;
+    const [a, b] = key.split(":").map(Number);
+    if (part.has(a)) open.add(a);
+    if (part.has(b)) open.add(b);
+  }
+  return [...open];
+}
+
+/** Resize, slide and turn `part`, leaving it joined to the rest. Mirrors `costume.shape_part`.
+ *
+ *  All three happen about the centre of what holds the part on, and all three fade to nothing there, so
+ *  the seam never opens and nothing outside the part moves. `move` is metres in this view's own space
+ *  (y up), `turn` is degrees about x, y and z. */
+export function shapePart(pos: Float32Array, part: Set<number>, adj: Uint32Array[],
+                          indices: ArrayLike<number>,
+                          scale = 1, move: [number, number, number] = [0, 0, 0],
+                          turn: [number, number, number] = [0, 0, 0]) {
+  const still = Math.abs(scale - 1) < 1e-6 && !move.some(Boolean) && !turn.some(Boolean);
+  if (still || !part.size) return;
+  const border = holdingOn(part, adj, indices);
   if (!border.length || border.length === part.size) return;
   const c = [0, 0, 0];
   for (const v of border) for (let k = 0; k < 3; k++) c[k] += pos[v * 3 + k] / border.length;
-  // how deep inside the part each vertex lies, walking in from the border and never leaving the part
   const deep = new Map<number, number>();
   const heap = new Heap();
   for (const v of border) { deep.set(v, 0); heap.push(0, v); }
@@ -129,7 +159,27 @@ export function growPart(pos: Float32Array, part: Set<number>, scale: number, ad
   if (!far) return;
   for (const v of part) {
     const t = Math.min(1, (deep.get(v) ?? far) / far);
-    const grow = 1 + (scale - 1) * (t * t * (3 - 2 * t));       // smooth: no crease at the seam
-    for (let k = 0; k < 3; k++) pos[v * 3 + k] = c[k] + (pos[v * 3 + k] - c[k]) * grow;
+    const ease = t * t * (3 - 2 * t);                     // smooth: no crease at the seam
+    const grow = 1 + (scale - 1) * ease;
+    let x = c[0] + (pos[v * 3] - c[0]) * grow;
+    let y = c[1] + (pos[v * 3 + 1] - c[1]) * grow;
+    let z = c[2] + (pos[v * 3 + 2] - c[2]) * grow;
+    if (turn.some(Boolean)) {
+      const [rx, ry, rz] = turn.map(d => (d * ease * Math.PI) / 180);
+      let dx = x - c[0], dy = y - c[1], dz = z - c[2];
+      [dy, dz] = [dy * Math.cos(rx) - dz * Math.sin(rx), dy * Math.sin(rx) + dz * Math.cos(rx)];
+      [dz, dx] = [dz * Math.cos(ry) - dx * Math.sin(ry), dz * Math.sin(ry) + dx * Math.cos(ry)];
+      [dx, dy] = [dx * Math.cos(rz) - dy * Math.sin(rz), dx * Math.sin(rz) + dy * Math.cos(rz)];
+      x = c[0] + dx; y = c[1] + dy; z = c[2] + dz;
+    }
+    pos[v * 3] = x + move[0] * ease;
+    pos[v * 3 + 1] = y + move[1] * ease;
+    pos[v * 3 + 2] = z + move[2] * ease;
   }
+}
+
+/** Resizing alone, kept for callers that only want that. */
+export function growPart(pos: Float32Array, part: Set<number>, scale: number, adj: Uint32Array[],
+                         indices: ArrayLike<number>) {
+  shapePart(pos, part, adj, indices, scale);
 }

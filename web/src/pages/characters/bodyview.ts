@@ -7,7 +7,7 @@
 // Turning it: drag anywhere to turn the body, or grab a ring - the green one round its feet spins it, the
 // red one standing up beside it tips it. The wheel zooms. Nothing here changes the design; it only looks.
 import * as THREE from "three";
-import {adjacencyOf, facesInside, growPart, nearestVertex, spreadFrom} from "./parts";
+import {adjacencyOf, facesInside, nearestVertex, shapePart, spreadFrom} from "./parts";
 
 export interface Kit {
   version: number;
@@ -45,6 +45,8 @@ export interface PartSpec {
   at: [number, number, number];
   radius: number;
   scale: number;
+  move?: [number, number, number];   // metres, in the build's space (x across, y front-back, z up)
+  turn?: [number, number, number];   // degrees about those same axes
 }
 
 /** How the view itself looks: the things a 3D tool is expected to let you change. */
@@ -306,7 +308,7 @@ export class BodyView {
     }
     if (this.parts.some(p_ => p_.on === "body")) {
       const skin = this.surface("body");
-      if (skin) this.resizeParts("body", skin.pos, skin.adj);
+      if (skin) this.resizeParts("body", skin.pos, skin.adj, skin.indices);
     }
     const attr = this.mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
     attr.needsUpdate = true;
@@ -343,8 +345,9 @@ export class BodyView {
       if (this.parts.some(p_ => p_.on === w.worn.spec.role)) {
         const faces = w.mesh.geometry.getIndex();
         if (faces) {
-          w.adj ||= adjacencyOf(faces.array as ArrayLike<number>, pos.length / 3);
-          this.resizeParts(w.worn.spec.role, pos, w.adj);
+          const indices = faces.array as ArrayLike<number>;
+          w.adj ||= adjacencyOf(indices, pos.length / 3);
+          this.resizeParts(w.worn.spec.role, pos, w.adj, indices);
         }
       }
       const attr = w.mesh.geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -589,13 +592,18 @@ export class BodyView {
     return seed < 0 ? new Set() : spreadFrom(face.pos, face.adj, seed, spec.radius);
   }
 
-  /** Apply every resized part to a surface that has just been rebuilt. */
-  private resizeParts(role: string, pos: Float32Array, adj: Uint32Array[]) {
+  /** Apply every shaped part to a surface that has just been rebuilt. */
+  private resizeParts(role: string, pos: Float32Array, adj: Uint32Array[], indices: ArrayLike<number>) {
     for (const spec of this.parts) {
-      if (spec.on !== role || Math.abs(spec.scale - 1) < 1e-6) continue;
+      if (spec.on !== role) continue;
+      const move = spec.move || [0, 0, 0];
+      const turn = spec.turn || [0, 0, 0];
+      if (Math.abs(spec.scale - 1) < 1e-6 && !move.some(Boolean) && !turn.some(Boolean)) continue;
       const seed = nearestVertex(pos, this.fromBuild(spec.at));
       if (seed < 0) continue;
-      growPart(pos, spreadFrom(pos, adj, seed, spec.radius), spec.scale, adj);
+      // the design keeps metres and degrees in the BUILD's axes (z up); this view is y up
+      shapePart(pos, spreadFrom(pos, adj, seed, spec.radius), adj, indices, spec.scale,
+                [move[0], move[2], -move[1]], [turn[0], turn[2], -turn[1]]);
     }
   }
 
@@ -615,8 +623,11 @@ export class BodyView {
     return spec;
   }
 
-  /** Show a part as chosen: its own triangles, lit up over whatever they belong to. */
-  choose(spec: PartSpec | null) {
+  /** Show a part as chosen, and say how much of the thing it covers - 0 to 1.
+   *
+   *  The fraction matters: picking nearly a whole hat and doubling it is not a part at all, it is a
+   *  different hat, and it will look like one. Saying so is kinder than letting it happen. */
+  choose(spec: PartSpec | null): number {
     if (this.glow) {
       this.scene.remove(this.glow);
       this.glow.geometry.dispose();
@@ -625,6 +636,10 @@ export class BodyView {
     }
     this.chosen = spec ? {spec, verts: this.vertsOf(spec)} : null;
     this.showChosen();
+    if (!this.chosen) return 0;
+    const face = this.surface(this.chosen.spec.on);
+    const whole = face ? face.pos.length / 3 : 0;
+    return whole ? this.chosen.verts.size / whole : 0;
   }
 
   private showChosen() {

@@ -293,9 +293,10 @@ CHARACTER = {
     "hair.color": p("color", "hair colour (a beard takes it too)"),
     "beard": p("enum", "beard", default="none", values=BEARDS),
     "hat": p("enum", "hat (hides the hair)", default="none", values=HATS),
-    "parts": p("parts", "parts of the body or of something worn, made bigger or smaller: a list of "
-                        "{on, at: [x, y, z], radius, scale}. The studio writes these when you click a "
-                        "part and size it; leave the list out unless you mean to resize something"),
+    "parts": p("parts", "parts of the body or of something worn, reshaped by hand: a list of "
+                        "{on, at: [x, y, z], radius, scale, move: [x, y, z] metres, turn: [x, y, z] "
+                        "degrees}. The studio writes these when you click a part and work on it; leave "
+                        "the list out unless you mean to reshape something"),
     "hat_size": p("number", "how big the hat is, 0.7 small to 1.6 oversized (1 = as the asset comes)",
                   default=1.0),
     "outfit.style": p("enum", "whole-body outfit (a uniform, suit or robe) instead of a top and trousers",
@@ -399,6 +400,9 @@ def check_design(design):
                     problems.append("parts: each one needs 'at': [x, y, z]")
                 elif not all(isinstance(item.get(k), (int, float)) for k in ("radius", "scale")):
                     problems.append("parts: each one needs a number 'radius' and 'scale'")
+                elif any(not (isinstance(item.get(k), (list, tuple)) and len(item[k]) == 3)
+                         for k in ("move", "turn") if k in item):
+                    problems.append("parts: 'move' and 'turn' are [x, y, z] when they are there at all")
                 elif not isinstance(item.get("on"), str):
                     problems.append("parts: each one needs 'on' (body, hat, top, bottom, outfit, shoes)")
         elif spec["type"] == "color" and not (isinstance(v, str) and len(v.lstrip("#")) == 6

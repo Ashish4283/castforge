@@ -483,7 +483,11 @@ def resize_parts(obj, role):
     A part is remembered as the point that was clicked, how far it reaches along the surface and how much
     bigger it should be - never as vertex numbers, because this mesh is not the one the studio drew (it is
     subdivided once more), so only a point in space means the same thing in both."""
-    mine = [p_ for p_ in PARTS if p_.get("on") == role and abs(float(p_.get("scale", 1)) - 1) > 1e-6]
+    def asked(p_):
+        return (abs(float(p_.get("scale", 1)) - 1) > 1e-6
+                or any(p_.get("move") or ()) or any(p_.get("turn") or ()))
+
+    mine = [p_ for p_ in PARTS if p_.get("on") == role and asked(p_)]
     if not obj or not mine:
         return
     sys.path.insert(0, HERE)
@@ -497,8 +501,12 @@ def resize_parts(obj, role):
         if not part:
             log(f"WARNING a resized {role} part at {at} found nothing")
             continue
-        co = _kit.grow_part(co, part, float(spec["scale"]), adj=adj)
-        log(f"{role} part x{float(spec['scale']):.2f} over {len(part)} vertices")
+        co = _kit.shape_part(co, part, float(spec.get("scale", 1)),
+                             tuple(float(x) for x in (spec.get("move") or (0, 0, 0))),
+                             tuple(float(x) for x in (spec.get("turn") or (0, 0, 0))),
+                             faces=faces, adj=adj)
+        log(f"{role} part x{float(spec.get('scale', 1)):.2f} move {spec.get('move') or (0, 0, 0)} "
+            f"turn {spec.get('turn') or (0, 0, 0)} over {len(part)} vertices")
     obj.data.vertices.foreach_set("co", [c for p_ in co for c in p_])
     obj.data.update()
 
