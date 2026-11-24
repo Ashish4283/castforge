@@ -546,3 +546,11 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
 .change-list .arrow { color: var(--text-3); }
 .swatchy { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); }
 .swatchy i { width: 11px; height: 11px; border-radius: 3px; border: 1px solid var(--line-2); }
+
+/* --- is this character fit to animate? ------------------------------------------------------------- */
+.rig-panel { margin-top: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 12px;
+             background: var(--panel-2); display: grid; gap: 10px; }
+.rig-panel h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 13px; }
+.rig-facts { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--text-2); }
+.rig-facts b { color: var(--text); }
+.rig-problems { margin: 0; padding-left: 16px; display: grid; gap: 4px; }

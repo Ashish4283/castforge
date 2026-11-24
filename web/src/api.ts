@@ -67,9 +67,17 @@ export interface BuildingAsset {
   name: string; title: string; category: string; footprint: number[]; asset: string | null; preview: string | null;
 }
 export interface BuildingCatalog { templates: BuildingTemplate[]; assets: BuildingAsset[] }
+/** What the last rig check found (blender/rig_check.py); null when the character has never been built. */
+export interface RigReport {
+  bones: number; deform: number; visemes: number; vertices: number;
+  unweighted: number; over_four: number; unnormalised: number; missing: string[];
+  problems: string[]; verdict: string;
+}
+
 export interface CharacterDetail {
   name: string; design: Json; photo: string | null; face: string | null;
   previews: Partial<Record<"front" | "side" | "back", string>>; log: string[];
+  rig?: RigReport | null;
 }
 
 export async function api<T = Json>(url: string, opts: RequestInit = {}): Promise<T> {

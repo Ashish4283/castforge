@@ -35,7 +35,7 @@ args = ap.parse_args(argv)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
-from core import appearance            # noqa: E402  every face and body shape, in one table
+from core import appearance, rigging            # noqa: E402  every face and body shape, in one table
 # body build presets for designed characters: MakeHuman weight / muscle / proportions
 BUILDS = {"slim": (0.25, 0.4, 0.6), "average": (0.5, 0.5, 0.5), "athletic": (0.4, 0.75, 0.75),
           "heavy": (0.85, 0.45, 0.4), "muscular": (0.55, 0.95, 0.7)}
@@ -1306,6 +1306,27 @@ if COSTUME:
                 m.vertex_group, m.invert_vertex_group = "cf_in_boots", True
         made.append(f"boots (top {top_z:.2f} m)" if top_z is not None else "boots")
     log("costume", made)
+
+# --- the rig, tidied -------------------------------------------------------------------------------------
+# Automatic weighting leaves vertices pulled by eight or nine bones. No exporter keeps more than four, and
+# the extra ones are noise that makes a shoulder or a jaw mushy when it moves. Keeping the strongest four
+# and normalising is what `core/rigging.py` describes and `blender/rig_check.py` applies; the check then
+# measures the result, so the two can never quietly disagree. It costs about five seconds.
+sys.path.insert(0, HERE)
+import rig_check as _rig                                   # noqa: E402
+
+tidied = 0
+for _mesh in [o for o in bpy.data.objects
+              if o.type == "MESH" and any(m.type == "ARMATURE" for m in o.modifiers)]:
+    tidied += _rig.tidy(_mesh)
+log(f"rig tidied: {tidied} vertices were pulled by more than {rigging.MOST} bones")
+_facts = _rig.look_over(rig, human)
+for _line in rigging.problems(_facts):
+    log("WARNING rig:", _line)
+log("rig", rigging.verdict(_facts))
+# kept beside the .blend so the app can say whether a character is fit to animate without opening Blender
+json.dump({**_facts, "problems": rigging.problems(_facts), "verdict": rigging.verdict(_facts)},
+          open(os.path.splitext(os.path.abspath(args.out))[0] + ".rig.json", "w", encoding="utf-8"), indent=1)
 
 # self-contained: textures (skin, clothes, the face photo) go inside the .blend, so the character still
 # works after it is copied into a movie folder

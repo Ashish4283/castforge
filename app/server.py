@@ -1215,8 +1215,36 @@ def character(movie: str, name: str):
     log = os.path.join(cdir, f"{name}.build.log")
     lines = [l[4:] for l in open(log, encoding="utf-8", errors="ignore").read().splitlines()
              if l.startswith("CF:") and "face shape" not in l] if os.path.exists(log) else []
+    rig = None                                     # what the last build said about the rig, if anything
+    rig_path = os.path.join(cdir, f"{name}.rig.json")
+    if os.path.exists(rig_path):
+        try:
+            rig = json.load(open(rig_path, encoding="utf-8"))
+        except ValueError:
+            rig = None
     return {"name": name, "design": design, "photo": media_url(photo) if photo else None,
-            "face": media_url(face) if face else None, "previews": previews, "log": lines[-14:]}
+            "face": media_url(face) if face else None, "previews": previews, "log": lines[-14:],
+            "rig": rig}
+
+
+@app.post("/api/character/rig")
+def character_rig(body: dict):
+    """Look the character's rig over, and tidy it when asked. Takes a few seconds; no GPU."""
+    movie, name = safe(body.get("movie"), "movie"), safe(body.get("name"))
+    cdir, _photo, _face = character_files(movie, name)
+    blend = os.path.join(cdir, f"{name}.blend")
+    if not os.path.exists(blend):
+        raise HTTPException(404, "that character has not been built yet")
+    cmd = [config.BLENDER, "-b", "--python-exit-code", "1",
+           "-P", os.path.join(ROOT, "blender", "rig_check.py"), "--", blend]
+    if body.get("fix"):
+        cmd.append("--fix")
+    run = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+    report = os.path.join(cdir, f"{name}.rig.json")
+    if not os.path.exists(report):
+        tail = " / ".join((run.stdout or run.stderr or "").strip().splitlines()[-3:])
+        raise HTTPException(500, f"the rig could not be checked: {tail}")
+    return json.load(open(report, encoding="utf-8"))
 
 
 @app.post("/api/character/rebuild")

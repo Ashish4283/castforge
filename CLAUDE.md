@@ -68,6 +68,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | the live view's own controls (light, backdrop, mesh, spin, photo) | `bodyview.setLook`/`snapshot` (`LIGHTS`, `BACKDROPS`); the bar is in `LivePreview.tsx` |
 | undo, redo, what changed since the last build | `CharacterDesigner.edit`/`undo`/`redo` (whole designs as text on two stacks) and the `changed` diff |
 | the studio's steps, look pickers, thumbnails | steps `web/src/pages/characters/steps.ts`; tiles `LookPicker.tsx`; pictures `blender/preview_thumbs.py` -> `library/preview_kits/thumbs/`; routes `/api/character/looks` (what to offer) and `/api/character/thumbs` (take the missing ones) |
+| is a character fit to animate? | `core/rigging.py` (pure, tested: `keep_strongest`, `problems`, `verdict`), measured and repaired by `blender/rig_check.py`; CLI `castforge.py rig NAME [FOLDER] [--fix]`; route `/api/character/rig`; panel `CharacterDesigner.RigPanel`; every build tidies and writes `<name>.rig.json` |
 | picking a part of a mesh and resizing it | `costume.part_at`/`grow_part`/`neighbours` (pure, tested) mirrored in `web/src/pages/characters/parts.ts`; design key `parts`; picked by `bodyview.setParts`/`choose`, applied by `build_character.resize_parts` |
 | the costume in the live view (trim, belt, buckle, gloves) | `costume.trim_bands`/`boot_bands`/`beyond` (pure, tested); the bands travel in `preview_wear.py` (`regions`), the hands and joints in `preview_kit.py`; drawn by `bodyview.setCostume` |
 | what the live view wears (hair, beard, clothes) | export `blender/preview_wear.py` -> `library/preview_kits/worn/<folder>-<asset>/`; the wardrobe itself `appearance.wearables` (pure, tested); route `/api/character/wear`; drawing `bodyview.setWearing` |
@@ -230,6 +231,14 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - `liftOffSurface` only works on a LIT material: `objectNormal` is declared by the normal chunk, which a
   MeshBasicMaterial leaves out, and the shader fails to compile. Unlit overlays (the part highlight) use
   `polygonOffset` instead.
+
+- Automatic weighting leaves vertices pulled by eight or nine bones. No exporter keeps more than four and
+  the extra ones make a shoulder or jaw mushy, so every build now limits and normalises deform weights
+  (`rig_check.tidy`, which uses Blender's own operators - about 5 s for a whole character). Measured on a
+  built Santa: 2494 over-weighted vertices on the body, 4253 on the beard, 2391 on the suit.
+- When auditing a rig, count the SKIN only (the "body" vertex group). The body mesh also carries helper
+  cages and joint cubes, which are legitimately unweighted - counting them reports 16 faults that are not
+  faults. (The metarig left in the file is not a fault either: Rigify needs it to generate the rig again.)
 
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).

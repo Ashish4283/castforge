@@ -1,10 +1,11 @@
 // The character designer: every design key (core/schema.py CHARACTER) as a control, ready-made looks, the
 // front/side/back previews, and Rebuild. Photo characters keep their face and body from the photo.
 import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {ArrowLeft, ArrowRight, ChevronRight, Dumbbell, Hammer, ListChecks, Redo2, RotateCcw, Shirt,
+import {ArrowLeft, ArrowRight, Bone, ChevronRight, Dumbbell, Hammer, ListChecks, Redo2, RotateCcw,
+        Shirt,
         Sparkles, Undo2,
         UserRound, Wand2} from "lucide-react";
-import {api, CharacterDetail, Json, label, ParamDef, post, q} from "../api";
+import {api, CharacterDetail, Json, label, ParamDef, post, q, RigReport} from "../api";
 import {useStore} from "../app/store";
 import {Badge, Button, ColorField, Field, Notice, PageHead, Segmented, Select, Switch} from "../components/ui";
 // three.js is 500 kB: it loads the first time someone opens the live body, not with the app
@@ -54,12 +55,15 @@ export function CharacterDesigner({name}: {name: string}) {
   const past = useRef<string[]>([]);
   const future = useRef<string[]>([]);
   const [steps, setSteps] = useState(0);            // only so the buttons know when to light up
+  const [rig, setRig] = useState<RigReport | null>(null);
+  const [checking, setChecking] = useState(false);
 
   const load = useCallback(async () => {
     if (!movie) return;        // the store has not said which movie yet: asking now only gets a 400
     try {
       const d = await api<CharacterDetail>(`/api/character?${q({movie, name})}`);
       setDetail(d);
+      setRig(d.rig || null);
       setIsNew(false);
       const start = Object.keys(d.design).length ? d.design : structuredClone(BLANK);
       setUsePhoto(start.use_photo ?? (!!d.photo && !start.costume));     // as it was last built
@@ -300,6 +304,16 @@ export function CharacterDesigner({name}: {name: string}) {
                     </div>
                   </div>
                 )}
+                {here.id === "build" && <RigPanel rig={rig} checking={checking} isNew={isNew}
+                                                  onCheck={async (fix: boolean) => {
+                                                    setChecking(true);
+                                                    try {
+                                                      setRig(await post<RigReport>("/api/character/rig",
+                                                                                   {movie, name, fix}));
+                                                      toast(fix ? "The rig is tidied." : "Rig checked.");
+                                                    } catch (e) { toast((e as Error).message, "err"); }
+                                                    finally { setChecking(false); }
+                                                  }} />}
                 {here.id === "build" && (
                   <div className="ready">
                     {problems.length > 0
@@ -440,6 +454,42 @@ function title(k: string) {
 
 // One feature, from one end to the other, with the middle marked. The number says where it is so a look can
 // be written down and repeated; double-click the handle (or Reset above) to come back to the middle.
+/** Is this character fit to animate? What the last build measured, in words, with a way to put it right.
+ *
+ *  The measuring is `blender/rig_check.py` and the wording `core/rigging.py`; this only shows it. */
+function RigPanel({rig, checking, isNew, onCheck}: {
+  rig: RigReport | null; checking: boolean; isNew: boolean; onCheck: (fix: boolean) => void;
+}) {
+  if (isNew) return null;
+  const ok = rig && rig.problems.length === 0;
+  return (
+    <div className="rig-panel">
+      <h3><Bone size={15} color={ok ? "var(--ok)" : "var(--accent-2)"} />The rig</h3>
+      {!rig && <p className="muted small">Not looked at yet. The check takes a few seconds and needs no GPU.</p>}
+      {rig && (
+        <>
+          <div className="rig-facts">
+            <span><b>{rig.bones}</b> bones</span>
+            <span><b>{rig.deform}</b> move the skin</span>
+            <span><b>{rig.visemes}</b>/15 visemes</span>
+            <span><b>{rig.vertices.toLocaleString()}</b> skin vertices</span>
+          </div>
+          {ok ? <Notice kind="ok">Ready to animate: every vertex is held by at most four bones.</Notice>
+              : <Notice kind="warn">
+                  <ul className="rig-problems">{rig.problems.map((p, i) => <li key={i}>{p}</li>)}</ul>
+                </Notice>}
+        </>
+      )}
+      <div className="row">
+        <Button variant="ghost" busy={checking} onClick={() => onCheck(false)}>Check the rig</Button>
+        {rig && rig.problems.length > 0 && (
+          <Button variant="primary" busy={checking} onClick={() => onCheck(true)}>Tidy it</Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** One value as a person reads it: a colour as a dot of that colour, an empty one as "none". */
 function Swatchy({value}: {value: Json}) {
   if (typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)) {

@@ -16,6 +16,7 @@
     python castforge.py voice "TEXT" --voice am_santa [--speed 0.9] [--fx phone]   hear a line (CPU)
     python castforge.py transcribe FILE.wav      the words in a recording (for lip-sync transcripts)
     python castforge.py library-build [--refresh] build missing (or refresh unchanged) city-library starters
+    python castforge.py rig NAME [MOVIE_FOLDER] [--fix]   is that character fit to animate? (--fix tidies it)
     python castforge.py doctor                   check that every tool CastForge needs is installed
 """
 import argparse
@@ -664,6 +665,25 @@ def main():
         if not a.args:
             sys.exit("usage: python castforge.py transcribe FILE.wav")
         sys.exit(subprocess.run([config.AI_PYTHON, os.path.join(ROOT, "generate", "transcribe.py"), a.args[0]]).returncode)
+    elif a.command == "rig":
+        # Look a built character's rig over, and optionally put right what can be put right without a
+        # rebuild. Takes a name inside a movie folder, or a path to a .blend.
+        if not a.args:
+            sys.exit("usage: python castforge.py rig NAME|FILE.blend [MOVIE] [--fix]")
+        want = a.args[0]
+        path = want if want.lower().endswith(".blend") else None
+        if not path:
+            folder = next((x for x in a.args[1:] if not x.startswith("--")), os.path.abspath("."))
+            here = [os.path.join(folder, "characters", f"{want}.blend"),
+                    os.path.join(folder, f"{want}.blend")]
+            path = next((x for x in here if os.path.exists(x)), here[0])
+        if not os.path.exists(path):
+            sys.exit(f"no such character file: {path}")
+        cmd = [config.BLENDER, "-b", "--python-exit-code", "1",
+               "-P", os.path.join(ROOT, "blender", "rig_check.py"), "--", path]
+        if "--fix" in a.args:
+            cmd.append("--fix")
+        sys.exit(subprocess.run(cmd).returncode)
     elif a.command == "doctor":
         sys.exit(1 if doctor() else 0)
     elif a.command == "app":
