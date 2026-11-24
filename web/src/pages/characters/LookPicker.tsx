@@ -2,7 +2,10 @@
 import {Check, Ban} from "lucide-react";
 import {Json} from "../../api";
 
-export interface Look { value: string; asset: string; thumb: string | null }
+export interface Look { value: string; asset: string; thumb: string | null; mine?: string }
+
+/** A piece someone cut themselves (core/wardrobe.py), as the studio lists them. */
+export interface Piece { id: string; name: string; base: string; role: string; says?: string }
 
 const pretty = (v: string) => v.replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
 
@@ -23,13 +26,14 @@ export function LookPicker({title, looks, value, none, onPick}: {
         )}
         {looks.map(l => (
           <button type="button" key={l.value} className={`look ${chosen === l.value ? "on" : ""}`}
-                  onClick={() => onPick(l.value)} title={pretty(l.value)}>
+                  onClick={() => onPick(l.value)} title={l.mine ? `${l.mine} (yours)` : pretty(l.value)}>
             <span className="look-pic">
               {l.thumb ? <img src={l.thumb} alt={pretty(l.value)} loading="lazy" />
-                       : <span className="look-wait">{pretty(l.value).slice(0, 2)}</span>}
+                       : <span className="look-wait">{(l.mine || pretty(l.value)).slice(0, 2)}</span>}
+              {l.mine && <i className="look-mine">yours</i>}
               {chosen === l.value && <i className="look-tick"><Check size={12} /></i>}
             </span>
-            <span className="look-name">{pretty(l.value)}</span>
+            <span className="look-name">{l.mine || pretty(l.value)}</span>
           </button>
         ))}
       </div>

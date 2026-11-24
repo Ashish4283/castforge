@@ -35,7 +35,7 @@ args = ap.parse_args(argv)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
-from core import appearance, rigging            # noqa: E402  every face and body shape, in one table
+from core import appearance, config, rigging, wardrobe            # noqa: E402  every face and body shape, in one table
 # body build presets for designed characters: MakeHuman weight / muscle / proportions
 BUILDS = {"slim": (0.25, 0.4, 0.6), "average": (0.5, 0.5, 0.5), "athletic": (0.4, 0.75, 0.75),
           "heavy": (0.85, 0.45, 0.4), "muscular": (0.55, 0.95, 0.7)}
@@ -582,8 +582,43 @@ beard = (DESIGN or {}).get("beard", "none")
 if beard in BEARDS:
     beard_objs = [o for o in (asset(f"{b}/{b}.mhclo", "clothes", "Clothes") for b in BEARDS[beard]) if o]
     log("beard", beard)
+# Pieces someone cut themselves (core/wardrobe.py): a slot may say "piece:my_long_coat", which means
+# that asset with that person's edits applied. The edits name their place by VERTEX NUMBER, which is the
+# same here as in the live view - the subdivision modifier leaves the base mesh and its numbering alone.
+PIECES = wardrobe.load_all(config.LIBRARY_DIR)
+
+
+def cut_edits(obj, piece, what):
+    """Apply a saved piece's edits to the object just loaded from its base asset."""
+    edits = [e for e in (piece.get("edits") or []) if isinstance(e, dict)]
+    if not obj or not edits:
+        return
+    sys.path.insert(0, HERE)
+    import costume as _kit
+    co = [tuple(v.co) for v in obj.data.vertices]
+    faces = [tuple(f.vertices) for f in obj.data.polygons]
+    adj = _kit.neighbours(faces)
+    for edit in edits:
+        seed = int(edit.get("seed", -1))
+        if not 0 <= seed < len(co):
+            log(f"WARNING {what}: edit {seed} is not a vertex of this piece")
+            continue
+        part = _kit.band(co, _kit.edges_of(faces), [seed], float(edit.get("radius", 0.08)))
+        co = _kit.shape_part(co, part, float(edit.get("scale", 1)),
+                             tuple(float(x) for x in (edit.get("move") or (0, 0, 0))),
+                             tuple(float(x) for x in (edit.get("turn") or (0, 0, 0))),
+                             faces=faces, adj=adj)
+    obj.data.vertices.foreach_set("co", [c for p_ in co for c in p_])
+    obj.data.update()
+    log(f"{what}: {piece.get('name')} ({len(edits)} edit(s))")
+
+
 hat = (DESIGN or {}).get("hat", "none")
-if hat in HATS:
+hat_piece = PIECES.get(wardrobe.named(hat) or "")
+if hat_piece and hat_piece.get("role") == "hat":
+    hat_obj = asset(f"{hat_piece['base']}/{hat_piece['base']}.mhclo", "clothes", "Clothes")
+    cut_edits(hat_obj, hat_piece, "hat piece")
+elif hat in HATS:
     hat_obj = asset(f"{HATS[hat]}/{HATS[hat]}.mhclo", "clothes", "Clothes")
     log("hat", hat)
     # These assets come in one size, and it is a small one - a Santa cap off the shelf is a child's. A hat

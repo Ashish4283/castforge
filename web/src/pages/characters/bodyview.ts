@@ -43,6 +43,7 @@ export interface WornSpec {                  // one thing being worn, as the ser
 export interface PartSpec {
   on: string;                        // the role it belongs to: "body", "hat", "top", "shoes"...
   at: [number, number, number];
+  seed?: number;                     // the vertex it was centred on, for saving it against the PIECE
   radius: number;
   scale: number;
   move?: [number, number, number];   // metres, in the build's space (x across, y front-back, z up)
@@ -75,7 +76,17 @@ export interface CostumeLook {
   trim?: string | null; belt?: string | null; buckle?: string | null; gloves?: string | null;
   boots?: boolean | null; sleeves?: string | null;
 }
-export interface Worn { spec: WornSpec; bin: ArrayBuffer; colour?: string; texture?: THREE.Texture | null }
+export interface Worn { spec: WornSpec; bin: ArrayBuffer; colour?: string; texture?: THREE.Texture | null;
+                        edits?: PieceEdit[] }
+
+/** One edit a person made to a piece of clothing, kept against the PIECE rather than the character.
+ *
+ *  `seed` is a vertex number of the asset's own mesh, which means the same place whoever is wearing it -
+ *  unlike a point in space, which moves with the body. See core/wardrobe.py. */
+export interface PieceEdit {
+  seed: number; radius: number; scale?: number;
+  move?: [number, number, number]; turn?: [number, number, number];
+}
 
 /** Colour a garment the way the build colours it.
  *
@@ -179,7 +190,7 @@ export class BodyView {
   private rings = new THREE.Group();
   private wearing: {worn: Worn; mesh: THREE.Mesh; idx: Uint32Array; weight: Float32Array;
                     off: Float32Array; pos: Float32Array; hides: Uint32Array; scale: Float32Array;
-                    rim: Uint32Array; adj: Uint32Array[] | null}[] = [];
+                    rim: Uint32Array; adj: Uint32Array[] | null; faces: ArrayLike<number>}[] = [];
   private tris: Uint32Array | null = null;   // the body's triangles, which garments are pinned to
   private hands: Uint32Array = new Uint32Array(0);     // the skin a glove covers
   private joints: Record<string, [number, number, number]> = {};
@@ -341,6 +352,18 @@ export class BodyView {
                            + off[i * 3 + k] * scale[k];
         }
       }
+      // the piece's own cut first - it belongs to the garment and travels with it onto any body
+      const cut = w.worn.edits || [];
+      if (cut.length) {
+        w.adj ||= adjacencyOf(w.faces, pos.length / 3);
+        for (const edit of cut) {
+          if (!(edit.seed >= 0 && edit.seed * 3 < pos.length)) continue;
+          const move = edit.move || [0, 0, 0];
+          const turn = edit.turn || [0, 0, 0];
+          shapePart(pos, spreadFrom(pos, w.adj, edit.seed, edit.radius), w.adj, w.faces,
+                    edit.scale ?? 1, [move[0], move[2], -move[1]], [turn[0], turn[2], -turn[1]]);
+        }
+      }
       if (w.worn.spec.role === "hat") growHat(pos, this.hatSize, w.rim);
       if (this.parts.some(p_ => p_.on === w.worn.spec.role)) {
         const faces = w.mesh.geometry.getIndex();
@@ -447,7 +470,7 @@ export class BodyView {
         if (widest) rim = Uint32Array.from(widest);
       }
       this.wearing.push({worn, mesh, idx, weight, off, pos, hides, scale: new Float32Array(3), rim,
-                         adj: null});
+                         adj: null, faces});
     }
   }
 
@@ -635,7 +658,12 @@ export class BodyView {
     if (!hit) return null;
     const role = hit.object === this.mesh ? "body"
       : this.wearing.find(w => w.mesh === hit.object)?.worn.spec.role || "body";
-    const spec: PartSpec = {on: role, at: this.toBuild(hit.point), radius, scale: 1};
+    // The point is what a body part needs (the body is this character's); the vertex number is what a
+    // PIECE needs (the garment is the same mesh on everybody). Keep both, and let the saver choose.
+    const face = this.surface(role);
+    const seed = face ? nearestVertex(face.pos, [hit.point.x, hit.point.y, hit.point.z]) : -1;
+    const spec: PartSpec = {on: role, at: this.toBuild(hit.point), radius, scale: 1,
+                            ...(seed >= 0 ? {seed} : {})};
     this.choose(spec);
     return spec;
   }
@@ -757,6 +785,18 @@ export class BodyView {
       polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4}));
     this.hint.renderOrder = 4;
     this.scene.add(this.hint);
+  }
+
+  /** Show one thing on its own - a hat, a coat - with the body and everything else out of the way.
+   *
+   *  Cutting a piece is easier when nothing is in front of it, and it is the garment you are working on,
+   *  not the character. `null` puts everyone back. */
+  setSolo(role: string | null) {
+    const show = (o: THREE.Mesh | null, on: boolean) => { if (o) o.visible = on; };
+    show(this.mesh, !role || role === "body");
+    for (const w of this.wearing) show(w.mesh, !role || w.worn.spec.role === role);
+    for (const piece of this.pieces) piece.visible = !role;      // the costume belongs to the character
+    this.rings.visible = !role && this.rings.visible;
   }
 
   /** Look at the whole person, or close in on what is being edited. */

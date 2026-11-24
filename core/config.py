@@ -29,6 +29,7 @@ FFPROBE = shutil.which("ffprobe") or "ffprobe"
 AI_PYTHON = os.environ.get("CASTFORGE_AI_PYTHON") or shutil.which("python") or "python"
 VENV_PY = os.path.join(ROOT, ".venv", "Scripts", "python.exe")
 RHUBARB = os.path.join(ROOT, "tools", "Rhubarb-Lip-Sync-1.14.0-Windows", "rhubarb.exe")
+LIBRARY_DIR = os.path.join(ROOT, "library")     # kits, thumbnails and pieces people cut
 SFX_DIR = os.path.join(ROOT, "sfx")
 MOTIONS_DIR = os.path.join(ROOT, "motions", "clips")      # motion capture clips (motion.py)
 

@@ -10,7 +10,7 @@ import {useStore} from "../app/store";
 import {Badge, Button, ColorField, Field, Notice, PageHead, Segmented, Select, Switch} from "../components/ui";
 // three.js is 500 kB: it loads the first time someone opens the live body, not with the app
 const LivePreview = lazy(() => import("./characters/LivePreview").then(m => ({default: m.LivePreview})));
-import {Look, LookPicker, Swatches} from "./characters/LookPicker";
+import {Look, LookPicker, Piece, Swatches} from "./characters/LookPicker";
 import {STEPS} from "./characters/steps";
 
 const SECTIONS: {title: string; text: string; keys: string[]}[] = [
@@ -58,6 +58,7 @@ export function CharacterDesigner({name}: {name: string}) {
   const [rig, setRig] = useState<RigReport | null>(null);
   const [checking, setChecking] = useState(false);
   const [touching, setTouching] = useState<string | null>(null);   // the slider the hand is on
+  const [pieces, setPieces] = useState<Piece[]>([]);               // what people have cut themselves
 
   const load = useCallback(async () => {
     if (!movie) return;        // the store has not said which movie yet: asking now only gets a 400
@@ -84,6 +85,11 @@ export function CharacterDesigner({name}: {name: string}) {
   // Make sure every piece of the wardrobe has been exported, once, in one Blender session. Without this
   // the first time you try a hat or a different hair it costs five seconds of Blender starting up.
   useEffect(() => { post("/api/character/wardrobe", {}).catch(() => { /* picking still works, slower */ }); }, []);
+
+  const loadPieces = useCallback(async () => {
+    try { setPieces((await api<{pieces: Piece[]}>("/api/wardrobe")).pieces || []); } catch { /* none yet */ }
+  }, []);
+  useEffect(() => { loadPieces(); }, [loadPieces]);
 
   useEffect(() => {                   // the pictures the studio offers; taken on the first visit ever
     (async () => {
@@ -214,7 +220,12 @@ export function CharacterDesigner({name}: {name: string}) {
           {stage === "live" && schema.slider_targets && (
             <Suspense fallback={<div className="live-preview"><div className="live-stage"><div className="live-cover"><span className="spinner" /></div></div></div>}>
               <LivePreview design={design} schema={schema} focus={focus} touching={touching}
-                           onParts={v => change("parts", v as unknown as Json)} />
+                           onParts={v => change("parts", v as unknown as Json)}
+                           onPiece={({role, slot}) => {
+                             change(role === "hat" ? "hat" : "outfit.style", slot);
+                             loadPieces();
+                             toast("Saved. It is in your pieces now.");
+                           }} />
             </Suspense>
           )}
           <div className="stage" style={stage === "live" ? {display: "none"} : undefined}>
@@ -250,7 +261,11 @@ export function CharacterDesigner({name}: {name: string}) {
                 <p>{here.text}</p>
                 {here.looks?.map(row => (
                   <LookPicker key={row.key} title={row.title} none={row.none}
-                              looks={looks?.[row.from] || []} value={get(design, row.key)}
+                              looks={[...(looks?.[row.from] || []),
+                                      ...pieces.filter(p_ => p_.role === row.from)
+                                               .map(p_ => ({value: `piece:${p_.id}`, asset: p_.base,
+                                                            thumb: null, mine: p_.name}))]}
+                              value={get(design, row.key)}
                               onPick={v => change(row.key, v)} />
                 ))}
                 {here.colours?.map(row => (

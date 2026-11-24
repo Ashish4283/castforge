@@ -5,6 +5,7 @@
 Everything still happens through castforge.py and the Blender scripts; this file only gives them a screen.
 Movies live in castforge/movies/<movie>/ with characters/, sets/ and one folder per episode (scene.json).
 """
+import glob
 import io
 import json
 import math
@@ -31,6 +32,7 @@ sys.path.insert(0, ROOT)
 import castforge as cf  # noqa: E402
 from core import config, publish, schema  # noqa: E402
 from core import appearance as look  # noqa: E402
+from core import wardrobe as cuts  # noqa: E402  pieces someone cut themselves
 from core import preview_kit as kit_mod  # noqa: E402
 from core import sets as sets_mod  # noqa: E402
 from core.buildings import (BUILDING_CATEGORIES, BUILDING_DESIGNS, default_asset_spec,
@@ -148,6 +150,46 @@ def build_worn(folder, asset):
         return True, where, "made"
 
 
+# --- pieces someone cut themselves -----------------------------------------------------------------------
+# A piece is a wardrobe asset with a person's own edits kept against it (core/wardrobe.py). They live in
+# the library, not in a movie, because a coat you cut once should be wearable by anyone in any film.
+PIECES = os.path.join(LIBRARY, "wardrobe")
+
+
+def all_pieces():
+    """{id: piece} - everything anyone has cut (core/wardrobe.py reads them; the build reads the same)."""
+    return cuts.load_all(LIBRARY)
+
+
+@app.get("/api/wardrobe")
+def wardrobe_list():
+    """Every piece, so the studio can offer them beside the ready-made ones."""
+    pieces = sorted(all_pieces().values(), key=lambda p_: p_.get("name", "").lower())
+    return {"pieces": [{**p_, "says": cuts.describe(p_)} for p_ in pieces]}
+
+
+@app.post("/api/wardrobe")
+def wardrobe_save(body: dict):
+    """Save a piece under its name. Saving the same name again replaces it."""
+    piece = dict(body or {})
+    piece["id"] = cuts.piece_id(piece.get("name"))
+    problems = cuts.check(piece, known=set(look.known_assets()))
+    if problems:
+        raise HTTPException(400, "; ".join(problems))
+    os.makedirs(PIECES, exist_ok=True)
+    json.dump(piece, open(os.path.join(PIECES, f"{piece['id']}.json"), "w", encoding="utf-8"), indent=1)
+    return {**piece, "says": cuts.describe(piece)}
+
+
+@app.delete("/api/wardrobe/{piece}")
+def wardrobe_delete(piece: str):
+    path = os.path.join(PIECES, f"{cuts.piece_id(piece)}.json")
+    if not os.path.exists(path):
+        raise HTTPException(404, "no such piece")
+    os.remove(path)
+    return {"gone": cuts.piece_id(piece)}
+
+
 wardrobe_state = {"running": False, "left": 0, "took": 0.0}
 
 
@@ -170,7 +212,7 @@ def warm_wardrobe():
     fifty-seven pieces one at a time costs five minutes of waiting spread over a designing session - five
     seconds every time someone tries a different hat. In one session it is about a minute, once, and after
     that every pick is instant."""
-    missing = [(f, a) for f, a in look.wardrobe() if not worn_ready(f, a)]
+    missing = [(f, a) for f, a in look.catalogue() if not worn_ready(f, a)]
     wardrobe_state.update(running=True, left=len(missing))
     if not missing:
         wardrobe_state["running"] = False
@@ -202,8 +244,8 @@ def character_wardrobe():
 
 @app.get("/api/character/wardrobe")
 def character_wardrobe_state():
-    left = [(f, a) for f, a in look.wardrobe() if not worn_ready(f, a)]
-    return {**wardrobe_state, "missing": len(left), "total": len(look.wardrobe())}
+    left = [(f, a) for f, a in look.catalogue() if not worn_ready(f, a)]
+    return {**wardrobe_state, "missing": len(left), "total": len(look.catalogue())}
 
 
 @app.post("/api/character/wear")
@@ -215,7 +257,7 @@ def character_wear(body: dict):
     sex - make this worth calling again; the sliders never do."""
     design = body.get("design") or {}
     out, problems = [], []
-    for item in look.wearables(design):
+    for item in look.wearables(design, all_pieces()):
         ok, where, message = build_worn(item["folder"], item["asset"])
         if not ok:
             problems.append(f"{item['role']}: {message}")

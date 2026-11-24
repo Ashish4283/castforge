@@ -71,7 +71,8 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | the studio's steps, look pickers, thumbnails | steps `web/src/pages/characters/steps.ts`; tiles `LookPicker.tsx`; pictures `blender/preview_thumbs.py` -> `library/preview_kits/thumbs/`; routes `/api/character/looks` (what to offer) and `/api/character/thumbs` (take the missing ones) |
 | is a character fit to animate? | `core/rigging.py` (pure, tested: `keep_strongest`, `problems`, `verdict`), measured and repaired by `blender/rig_check.py`; CLI `castforge.py rig NAME [FOLDER] [--fix]`; route `/api/character/rig`; panel `CharacterDesigner.RigPanel`; every build tidies and writes `<name>.rig.json` |
 | picking a part of a mesh and reshaping it (size, slide, turn) | `costume.part_at`/`shape_part`/`neighbours` (pure, tested) mirrored in `web/src/pages/characters/parts.ts`; design key `parts`; picked by `bodyview.setParts`/`choose`, applied by `build_character.resize_parts` |
-| the wardrobe warm-up (why picking a hat is instant) | `appearance.wardrobe()` (pure, tested) lists all 57 pieces; `preview_wear.py --many JOBS.json` exports them in ONE Blender session; route `/api/character/wardrobe` (POST warms, GET reports); the studio calls it on arrival |
+| pieces people cut themselves (an asset + their own edits) | `core/wardrobe.py` (pure, tested: `check`, `named`, `slot`, `load_all`); stored in `library/wardrobe/*.json`; routes `/api/wardrobe` (GET/POST/DELETE); resolved by `appearance.wearables(design, pieces)`; applied by `build_character.cut_edits` and in the live view inside `bodyview.dress` |
+| the wardrobe warm-up (why picking a hat is instant) | `appearance.catalogue()` (pure, tested) lists all 57 pieces; `preview_wear.py --many JOBS.json` exports them in ONE Blender session; route `/api/character/wardrobe` (POST warms, GET reports); the studio calls it on arrival |
 | the costume in the live view (trim, belt, buckle, gloves) | `costume.trim_bands`/`boot_bands`/`beyond` (pure, tested); the bands travel in `preview_wear.py` (`regions`), the hands and joints in `preview_kit.py`; drawn by `bodyview.setCostume` |
 | what the live view wears (hair, beard, clothes) | export `blender/preview_wear.py` -> `library/preview_kits/worn/<folder>-<asset>/`; the wardrobe itself `appearance.wearables` (pure, tested); route `/api/character/wear`; drawing `bodyview.setWearing` |
 | the designer's live body (morphs as the sliders move) | export `blender/preview_kit.py` -> `library/preview_kits/<sex>-<age>-<build>-<height>/kit.json+bin`; what is needed and whether it is there `core/preview_kit.py` (pure, tested, `VERSION`); route `/api/character/preview-kit`; drawing `web/src/pages/characters/bodyview.ts` + `LivePreview.tsx` |
@@ -273,6 +274,14 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   the children. When a panel looks like it is "coming on top", measure the boxes in the browser first.
 - The studio is colourful on purpose (yellow, orange, lime, pink, cyan - `--paint-*`), but NO accent
   colour is ever laid over the 3D view itself: a character has to be judged against a quiet ground.
+
+- A piece's edits are kept against the PIECE, by VERTEX NUMBER, not against the character by a point in
+  space. The garment is refitted to whoever wears it (MakeHuman's binding), so an edit recorded this way
+  is refitted for free on every body - cut a coat longer once and it is longer on everyone, at their own
+  size. A vertex number means the same place in the live view and in the build, because the build's
+  subdivision modifier leaves the base mesh and its numbering alone. A point in space would not.
+- `appearance.catalogue()` (every asset) and `core/wardrobe.py` (pieces people cut) are different things:
+  the first is what the wardrobe ships, the second is what someone made from it.
 
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).

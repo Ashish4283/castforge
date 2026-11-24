@@ -176,7 +176,7 @@ def test_a_hat_takes_the_hair_off():
 
 def test_the_wardrobe_lists_every_piece_the_designer_can_ask_for():
     """The warm-up exports this list; anything missing from it costs five seconds when it is picked."""
-    whole = appearance.wardrobe()
+    whole = appearance.catalogue()
     assert len(whole) > 40
     folders = {folder for folder, _asset in whole}
     assert folders == {"clothes", "hair", "eyebrows", "eyes"}
@@ -188,6 +188,35 @@ def test_the_wardrobe_lists_every_piece_the_designer_can_ask_for():
 def test_every_ready_made_look_is_in_the_wardrobe():
     for style, asset in appearance.HAIR_STYLES.items():
         if asset and asset != "none":
-            assert ("hair", asset) in appearance.wardrobe(), style
+            assert ("hair", asset) in appearance.catalogue(), style
     for hat, asset in appearance.HATS.items():
-        assert ("clothes", asset) in appearance.wardrobe(), hat
+        assert ("clothes", asset) in appearance.catalogue(), hat
+
+
+def a_cut_piece(**over):
+    piece = {"id": "my_cap", "name": "My cap", "base": "joepal_xmas_cap", "folder": "clothes",
+             "role": "hat", "colour": "#c8102e", "edits": [{"seed": 5, "radius": 0.08, "scale": 1.3}]}
+    piece.update(over)
+    return piece
+
+
+def test_a_slot_can_ask_for_a_piece_someone_cut_themselves():
+    worn = appearance.wearables({"gender": "male", "hat": "piece:my_cap"}, {"my_cap": a_cut_piece()})
+    hat = next(w for w in worn if w["role"] == "hat")
+    assert hat["asset"] == "joepal_xmas_cap"          # it is still that asset underneath
+    assert hat["edits"][0]["scale"] == 1.3            # with the cut carried along
+    assert hat["colour"] == "#c8102e" and hat["label"] == "My cap"
+
+
+def test_a_piece_that_is_not_there_falls_back_to_the_plain_wardrobe():
+    worn = appearance.wearables({"gender": "male", "hat": "piece:gone"}, {})
+    assert not any(w["role"] == "hat" for w in worn)   # no hat named, so the hair shows instead
+    assert any(w["role"] == "hair" for w in worn)
+
+
+def test_a_piece_only_counts_in_the_slot_it_was_cut_for():
+    """A hat piece named in the outfit slot must not become an outfit."""
+    worn = appearance.wearables({"gender": "male", "outfit": {"style": "piece:my_cap"}},
+                                {"my_cap": a_cut_piece()})
+    assert not any(w.get("piece") for w in worn)
+    assert any(w["role"] in ("top", "bottom") for w in worn)    # it fell back to separates

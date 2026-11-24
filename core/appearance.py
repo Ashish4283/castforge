@@ -12,6 +12,8 @@ Keeping one table means a slider added here is immediately something the photo f
 
 Pure Python, no Blender: `core/schema.py` builds the app's form from it and the tests check it.
 """
+from core import wardrobe          # pieces someone cut themselves, and how a slot names one
+
 
 # --- the table ----------------------------------------------------------------------------------------------
 # key -> (group, plus targets, minus targets, help). A name with "{s}" is paired: it becomes l-… and r-….
@@ -167,7 +169,7 @@ WEAR_KINDS = {"hair": ("hair", "hair.color"), "beard": ("clothes", "hair.color")
               "shoes": ("clothes", "outfit.shoes")}
 
 
-def wardrobe():
+def catalogue():
     """Everything the wardrobe can put on, as sorted (folder, asset) pairs - the whole catalogue.
 
     One place, so the warm-up that exports them all cannot drift from what `wearables` may ask for."""
@@ -191,26 +193,44 @@ def wardrobe():
     return sorted(out)
 
 
-def wearables(design):
+def wearables(design, pieces=None):
     """Everything a design puts on, as [{role, asset, folder, tint}] in the order it is worn.
 
     The build makes these as real fitted meshes; the preview shows the same list, so what someone picks is
-    what they see. A hat hides the hair, exactly as the build has it."""
+    what they see. A hat hides the hair, exactly as the build has it.
+
+    A slot may name a piece someone cut themselves - "piece:my_long_coat" - and `pieces` is then the
+    wardrobe of saved pieces to look it up in ({id: piece}, see core/wardrobe.py). The item that comes
+    back carries the piece's own edits and colour, so a coat cut longer is longer on whoever wears it."""
     d = design or {}
+    kept = pieces or {}
     gender = d.get("gender") if d.get("gender") in ("male", "female") else "female"
     outfit = d.get("outfit") or {}
     costume = d.get("costume") or {}
     hair = d.get("hair") or {}
     out = []
 
-    def add(role, asset):
+    def add(role, asset, piece=None):
         folder, tint = WEAR_KINDS[role]
-        out.append({"role": role, "asset": asset, "folder": folder, "tint": tint})
+        item = {"role": role, "asset": asset, "folder": folder, "tint": tint}
+        if piece:
+            item.update(piece=piece["id"], edits=piece.get("edits") or [],
+                        colour=piece.get("colour"), label=piece.get("name"))
+        out.append(item)
+
+    def chosen(slot_value, role):
+        """The piece a slot asks for, or None when it names an ordinary asset (or one that is not there)."""
+        want = wardrobe.named(slot_value)
+        piece = kept.get(want) if want else None
+        return piece if piece and piece.get("role") == role else None
 
     add("eyes", EYE_MESH)
     add("eyebrows", EYEBROWS.get(d.get("eyebrows"), "eyebrow001"))
     hat = d.get("hat", "none")
-    if hat in HATS:
+    hat_piece = chosen(hat, "hat")
+    if hat_piece:
+        add("hat", hat_piece["base"], hat_piece)
+    elif hat in HATS:
         add("hat", HATS[hat])
     else:                                      # a hat covers the hair, so the hair is left off
         style = HAIR_STYLES.get(hair.get("style"), hair.get("style") or "")
@@ -226,7 +246,10 @@ def wearables(design):
         add("beard", beard)
 
     style = outfit.get("style", "casual")
-    if style in OUTFITS:
+    style_piece = chosen(style, "outfit")
+    if style_piece:
+        add("outfit", style_piece["base"], style_piece)
+    elif style in OUTFITS:
         add("outfit", OUTFITS[style][gender])
     elif outfit.get("garment") == "dress":
         add("outfit", DRESS)

@@ -2,13 +2,14 @@
 // It shows the SHAPE only - hair, beard, clothes and skin come from a build - and says so.
 import {useEffect, useRef, useState} from "react";
 import {Camera, Check, ChevronDown, ChevronUp, Grid3x3, Lightbulb, Loader2, Maximize2, Move3d,
+        Save, Shirt,
         RefreshCw, Rotate3d,
         Scaling, SunMoon, X} from "lucide-react";
 import * as THREE from "three";
 import {api, Json, post, Schema} from "../../api";
 import {Button, Segmented} from "../../components/ui";
-import {BodyView, CostumeLook, Kit, PartSpec, RING_SPIN, RING_TIP, ViewLook, Worn, WornSpec}
-  from "./bodyview";
+import {BodyView, CostumeLook, Kit, PartSpec, PieceEdit, RING_SPIN, RING_TIP, ViewLook, Worn,
+        WornSpec} from "./bodyview";
 
 const get = (d: Json, key: string) => key.split(".").reduce((o, k) => (o && typeof o === "object" ? o[k] : undefined), d);
 
@@ -27,7 +28,10 @@ export function targetsFor(design: Json, schema: Schema): Record<string, number>
   return out;
 }
 
-interface WearItem extends WornSpec { json: string; bin: string }
+interface WearItem extends WornSpec {
+  json: string; bin: string;
+  piece?: string; edits?: PieceEdit[]; colour?: string | null; label?: string;   // a piece someone cut
+}
 
 /** The colour a worn thing takes from the design, or none (then its own texture shows as it is). */
 function tintOf(design: Json, tint: string | null): string | undefined {
@@ -74,10 +78,11 @@ function describe(part: PartSpec) {
 const partName = (on: string) => ({body: "body", hat: "hat", top: "top", bottom: "trousers",
                                    outfit: "outfit", shoes: "shoes", hair: "hair", beard: "beard"}[on] || on);
 
-export function LivePreview({design, schema, focus, onParts, touching}: {
+export function LivePreview({design, schema, focus, onParts, touching, onPiece}: {
   design: Json; schema: Schema; focus: "whole" | "face" | "body";
   onParts?: (parts: PartSpec[]) => void;
   touching?: string | null;              // the slider the hand is on, so the view can show what it moves
+  onPiece?: (piece: {role: string; slot: string}) => void;   // a piece was cut and saved
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const view = useRef<BodyView | null>(null);
@@ -91,10 +96,15 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
   const [draft, setDraft] = useState<PartSpec | null>(null);
   const [cover, setCover] = useState(0);                  // how much of the thing the part covers
   const [shrunk, setShrunk] = useState(false);            // the dials folded away, to see the character
+  const [alone, setAlone] = useState(false);              // the piece on its own, with the body hidden
+  const [naming, setNaming] = useState("");               // the name being typed for a piece
+  const [saving, setSaving] = useState(false);
   const saved: PartSpec[] = Array.isArray(get(design, "parts")) ? (get(design, "parts") as PartSpec[]) : [];
-  const wornRef = useRef<{spec: WornSpec; bin: ArrayBuffer; texture: THREE.Texture | null}[]>([]);
+  const wornRef = useRef<{spec: WornSpec; bin: ArrayBuffer; texture: THREE.Texture | null;
+                          edits?: PieceEdit[]; own?: string | null}[]>([]);
   // Anything fetched once is kept: trying a hat, going back, and trying it again should cost nothing.
-  const held = useRef(new Map<string, {spec: WornSpec; bin: ArrayBuffer; texture: THREE.Texture | null}>());
+  const held = useRef(new Map<string, {spec: WornSpec; bin: ArrayBuffer; texture: THREE.Texture | null;
+                                     edits?: PieceEdit[]; own?: string | null}>());
   // only these change WHAT is worn; the sliders and the colours never do, so they never refetch
   const outfitKey = JSON.stringify([get(design, "gender"), get(design, "hair.style"), get(design, "hair.length"),
                                     get(design, "beard"), get(design, "hat"), get(design, "eyebrows"),
@@ -158,7 +168,8 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
         const loader = new THREE.TextureLoader();
         const items = await Promise.all(r.wearing.map(async item => {
           const kept = held.current.get(item.json);
-          if (kept) return {...kept, spec: {...kept.spec, role: item.role, tint: item.tint}};
+          if (kept) return {...kept, spec: {...kept.spec, role: item.role, tint: item.tint},
+                            edits: item.edits || [], own: item.colour || null};
           const [spec, bin] = await Promise.all([
             fetch(item.json).then(x => x.json() as Promise<WornSpec>),
             fetch(item.bin).then(x => x.arrayBuffer()),
@@ -167,7 +178,8 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
             ? await new Promise<THREE.Texture | null>(done =>
                 loader.load(item.texture!, t => { t.colorSpace = THREE.SRGBColorSpace; done(t); }, undefined, () => done(null)))
             : null;
-          const got = {spec: {...spec, role: item.role, tint: item.tint}, bin, texture};
+          const got = {spec: {...spec, role: item.role, tint: item.tint}, bin, texture,
+                       edits: item.edits || [], own: item.colour || null};
           held.current.set(item.json, got);
           return got;
         }));
@@ -184,7 +196,8 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
     const skin = tintOf(design, "skin");
     view.current?.setSkin(skin);
     view.current?.setWearing(wornRef.current.map(w => ({
-      spec: w.spec, bin: w.bin, texture: w.texture, colour: tintOf(design, w.spec.tint),
+      spec: w.spec, bin: w.bin, texture: w.texture, edits: w.edits || [],
+      colour: w.own || tintOf(design, w.spec.tint),      // a cut piece carries its own colour
     } as Worn)));
     view.current?.setHatSize(Number(get(design, "hat_size") || 1));
     view.current?.setCostume(costume);              // after the clothes: the costume is drawn over them
@@ -205,6 +218,40 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
   }, [picking, draft]);
 
   const keep = () => { if (draft) onParts?.([...saved, draft]); setDraft(null); };
+
+  useEffect(() => { view.current?.setSolo(alone && draft ? draft.on : null); },
+            [alone, draft?.on, state, dressing]);        // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Save what has been shaped as a piece of its own, usable on any character afterwards.
+   *
+   *  The edits are kept against the PIECE, by vertex number, so they refit on every body - which is the
+   *  whole point of cutting it here rather than on one character. */
+  const cutAPiece = async () => {
+    if (!draft || draft.on === "body") return;
+    const worn = wornRef.current.find(w => w.spec.role === draft.on);
+    const mine = [...saved, draft].filter(p_ => p_.on === draft.on && p_.seed !== undefined);
+    if (!worn || !mine.length) return;
+    setSaving(true);
+    try {
+      const piece = await post<{id: string; name: string}>("/api/wardrobe", {
+        name: naming,
+        base: worn.spec.asset,
+        folder: (worn.spec as unknown as {folder?: string}).folder || "clothes",
+        role: draft.on,
+        colour: tintOf(design, worn.spec.tint) || null,
+        edits: mine.map(p_ => ({seed: p_.seed, radius: p_.radius, scale: p_.scale,
+                                move: p_.move || [0, 0, 0], turn: p_.turn || [0, 0, 0]})),
+      });
+      onPiece?.({role: draft.on, slot: `piece:${piece.id}`});
+      setDraft(null);
+      setNaming("");
+      onParts?.(saved.filter(p_ => p_.on !== draft.on));   // it lives in the piece now, not on this one
+    } catch (e) {
+      setNote((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
   const drop = (i: number) => onParts?.(saved.filter((_, k) => k !== i));
 
   useEffect(() => { view.current?.setLook(look); }, [JSON.stringify(look), state]);  // eslint-disable-line react-hooks/exhaustive-deps
@@ -276,6 +323,19 @@ export function LivePreview({design, schema, focus, onParts, touching}: {
                 <Button variant="primary" icon={<Check size={14} />} onClick={keep}>Keep</Button>
                 <Button variant="ghost" icon={<X size={14} />} onClick={() => setDraft(null)}>Cancel</Button>
               </div>
+              {draft.on !== "body" && (
+                <div className="part-cut">
+                  <button className={`part-pin ${alone ? "on" : ""}`} onClick={() => setAlone(v => !v)}
+                          title="Hide everything else and work on this piece alone">
+                    <Shirt size={13} />{alone ? "on the character" : "just this piece"}
+                  </button>
+                  <input className="input sm" placeholder="name your version…" value={naming}
+                         onChange={e => setNaming(e.target.value)} />
+                  <Button variant="ghost" icon={<Save size={14} />} busy={saving}
+                          disabled={!naming.trim()} onClick={cutAPiece}
+                          title="Save this as your own piece, usable on any character">Save as mine</Button>
+                </div>
+              )}
               <div className="part-dials">
                 <Dial label="How much of it" value={draft.radius} min={0.02} max={0.3} step={0.01}
                       middle={0.08} show={v => `${Math.round(v * 100)} cm`}
