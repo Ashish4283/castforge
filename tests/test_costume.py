@@ -344,3 +344,49 @@ def test_a_part_can_be_turned_about_where_it_joins_on():
 def test_asking_for_nothing_changes_nothing():
     co, faces, adj, part = a_cap()
     assert kit.shape_part(co, part, faces=faces, adj=adj) == [tuple(p) for p in co]
+
+
+def ring_width(ring):
+    """How wide a ring is about its own middle - not about the head, which it moves away from."""
+    middle = [sum(p[i] for p in ring) / len(ring) for i in range(3)]
+    return max(math.dist(p, middle) for p in ring)
+
+
+def test_a_made_cap_starts_as_a_roll_round_the_head_it_is_going_on():
+    rings, fur, tip = kit.santa_cap((0.0, 0.0), 1.60, 0.095, droop=0.0)
+    opening = rings[0]
+    assert all(abs(p[2] - 1.60) < 1e-9 for p in opening)             # the roll's bottom sits on the head
+    assert 0.095 < ring_width(opening) < 0.095 * 1.25                # a little proud of it, as fur is
+    assert tip[2] > 1.60 and abs(tip[0]) < 1e-9                      # straight up when it does not flop
+
+
+def test_the_roll_keeps_its_width_and_the_cone_tapers_from_where_it_ends():
+    rings, fur, _tip = kit.santa_cap((0.0, 0.0), 1.60, 0.1, droop=0.0, band=0.3)
+    assert 1 < fur < len(rings)
+    roll = [ring_width(r) for r in rings[:fur]]
+    assert max(roll) - min(roll) < 0.01                              # the roll is a roll, not a dome
+    assert ring_width(rings[fur]) < min(roll)                        # the cone starts just inside it...
+    assert ring_width(rings[fur]) > min(roll) * 0.8                  # ...with no step between them
+    assert ring_width(rings[-1]) < ring_width(rings[0]) / 5          # and comes to a point
+
+
+def test_a_cap_flops_the_way_it_is_pointed():
+    _r, _f, left = kit.santa_cap((0.0, 0.0), 1.6, 0.1, droop=0.8, towards=0)
+    _r, _f, back = kit.santa_cap((0.0, 0.0), 1.6, 0.1, droop=0.8, towards=90)
+    _r, _f, up = kit.santa_cap((0.0, 0.0), 1.6, 0.1, droop=0.0)
+    assert left[0] > 0.1 and abs(left[1]) < 1e-9
+    assert back[1] > 0.1 and abs(back[0]) < 1e-9
+    assert up[2] > left[2]                                           # flopping costs it height
+
+
+def test_more_fur_means_more_of_the_cap_is_fur():
+    _r, thin, _t = kit.santa_cap((0, 0), 1.6, 0.1, band=0.15)
+    _r, deep, _t = kit.santa_cap((0, 0), 1.6, 0.1, band=0.45)
+    assert deep > thin
+
+
+def test_a_bobble_is_a_ball_around_its_middle():
+    rows = kit.ball((0.0, 0.0, 2.0), 0.05, rows=6, span=8)
+    every = [p for row in rows for p in row]
+    assert all(math.dist(p, (0, 0, 2.0)) <= 0.05 + 1e-9 for p in every)
+    assert max(p[2] for p in every) > 2.0 and min(p[2] for p in every) < 2.0

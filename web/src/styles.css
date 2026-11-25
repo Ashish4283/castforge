@@ -670,3 +670,4 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
   background: var(--paint-lime); color: #121607; font-size: 9px; font-style: normal; font-weight: 700;
 }
 .look-pic { position: relative; }
+.look-mine.made { background: var(--paint-cyan); color: #06201f; }

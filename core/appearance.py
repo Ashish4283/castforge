@@ -147,6 +147,11 @@ BEARDS = {"scruffy": ["wdg_scruffy_beard"], "long": ["rehmanpolanski_beard_vikin
           "santa": ["rehmanpolanski_beard_viking", "rehmanpolanski_moustache_viking"]}
 HATS = {"santa": "joepal_xmas_cap", "newsboy": "jujube_newsboy_cap", "fedora": "fedora01",
         "cloche": "aethelraed_unraed_cloche_hat", "flat_cap": "grinsegold_uncle_joshis_hat"}
+# Hats that are MADE for the head rather than loaded from the library. The asset Santa cap is one size,
+# thin-banded and worn tilted - a child's cap - and no amount of scaling turns it into the real thing, so
+# this one is built on the head it is going on (blender/costume.santa_cap). Nothing is exported for it:
+# both the build and the live view make it from the head's own measurements.
+MADE_HATS = {"santa_made": "santa"}
 OUTFITS = {                                   # a whole-body outfit instead of a top and a bottom
     "suit": {"male": "male_casualsuit01", "female": "female_casualsuit01"},
     "formal": {"male": "male_elegantsuit01", "female": "female_elegantsuit01"},
@@ -228,7 +233,9 @@ def wearables(design, pieces=None):
     add("eyebrows", EYEBROWS.get(d.get("eyebrows"), "eyebrow001"))
     hat = d.get("hat", "none")
     hat_piece = chosen(hat, "hat")
-    if hat_piece:
+    if hat in MADE_HATS:
+        pass                                   # made for this head: nothing to fetch, and it covers the hair
+    elif hat_piece:
         add("hat", hat_piece["base"], hat_piece)
     elif hat in HATS:
         add("hat", HATS[hat])

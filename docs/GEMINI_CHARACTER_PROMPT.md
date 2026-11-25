@@ -20,7 +20,14 @@ no explanation. Format:
            "style": "" (use the length) | "none" | "short" | "crew_cut" | "messy" | "afro" | "mid_length" | "bangs" | "shaggy" | "long" | "long_loose" | "ponytail" | "bun" | "bob" | "inverted_bob" | "bobcut" | "braid" | "french_braid" | "double_braid"},
   "eyebrows": "style_1" ... "style_12",
   "beard": "none" | "scruffy" | "full" | "long" | "faun" | "moustache" | "santa",
-  "hat": "none" | "santa" | "newsboy" | "fedora" | "cloche" | "flat_cap",
+  "hat": "none" | "santa_made" | "santa" | "newsboy" | "fedora" | "cloche" | "flat_cap",
+                                        // "santa_made" is built for that character's own head -
+                                        // a deep fur roll, a cone that flops over, a bobble. Prefer
+                                        // it to "santa", which is a fixed one-size asset.
+  "cap": {"droop": 0.6,                 // 0 straight up, 1 right over
+          "towards": 20,                // degrees round the head: 0 their left, 90 behind
+          "band": 0.3,                  // how much of it is fur: 0.15 a trim, 0.45 a deep roll
+          "bobble": 1.0},               // 0 none, 1.5 enormous
   // "parts" is left out: the studio writes it when someone clicks a part and resizes it by hand.
   "hat_size": 1.0,                      // 0.7 small, 1 as the asset comes, 1.6 oversized.
                                         // The assets are cut small: a Santa cap wants about 1.35.

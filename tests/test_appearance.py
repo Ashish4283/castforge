@@ -220,3 +220,15 @@ def test_a_piece_only_counts_in_the_slot_it_was_cut_for():
                                 {"my_cap": a_cut_piece()})
     assert not any(w.get("piece") for w in worn)
     assert any(w["role"] in ("top", "bottom") for w in worn)    # it fell back to separates
+
+
+def test_a_made_hat_is_not_fetched_and_still_covers_the_hair():
+    """It is built on the character's own head, so there is nothing to export - but it is still a hat."""
+    worn = appearance.wearables({"gender": "male", "hat": "santa_made", "hair": {"style": "inverted_bob"}})
+    roles = [w["role"] for w in worn]
+    assert "hat" not in roles and "hair" not in roles
+    assert "top" in roles                                # everything else is worn as usual
+
+
+def test_every_made_hat_is_offered_by_the_vocabulary():
+    assert set(appearance.MADE_HATS) <= set(schema.CHARACTER["hat"]["values"])

@@ -71,6 +71,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | the studio's steps, look pickers, thumbnails | steps `web/src/pages/characters/steps.ts`; tiles `LookPicker.tsx`; pictures `blender/preview_thumbs.py` -> `library/preview_kits/thumbs/`; routes `/api/character/looks` (what to offer) and `/api/character/thumbs` (take the missing ones) |
 | is a character fit to animate? | `core/rigging.py` (pure, tested: `keep_strongest`, `problems`, `verdict`), measured and repaired by `blender/rig_check.py`; CLI `castforge.py rig NAME [FOLDER] [--fix]`; route `/api/character/rig`; panel `CharacterDesigner.RigPanel`; every build tidies and writes `<name>.rig.json` |
 | picking a part of a mesh and reshaping it (size, slide, turn) | `costume.part_at`/`shape_part`/`neighbours` (pure, tested) mirrored in `web/src/pages/characters/parts.ts`; design key `parts`; picked by `bodyview.setParts`/`choose`, applied by `build_character.resize_parts` |
+| a Santa cap made for the head (not an asset) | `costume.santa_cap`/`ball` (pure, tested); the build makes it at the costume anchor and weights it to `DEF-spine.006`; the live view mirrors it in `web/src/pages/characters/cap.ts`; `appearance.MADE_HATS`, design keys `cap.*` |
 | pieces people cut themselves (an asset + their own edits) | `core/wardrobe.py` (pure, tested: `check`, `named`, `slot`, `load_all`); stored in `library/wardrobe/*.json`; routes `/api/wardrobe` (GET/POST/DELETE); resolved by `appearance.wearables(design, pieces)`; applied by `build_character.cut_edits` and in the live view inside `bodyview.dress` |
 | the wardrobe warm-up (why picking a hat is instant) | `appearance.catalogue()` (pure, tested) lists all 57 pieces; `preview_wear.py --many JOBS.json` exports them in ONE Blender session; route `/api/character/wardrobe` (POST warms, GET reports); the studio calls it on arrival |
 | the costume in the live view (trim, belt, buckle, gloves) | `costume.trim_bands`/`boot_bands`/`beyond` (pure, tested); the bands travel in `preview_wear.py` (`regions`), the hands and joints in `preview_kit.py`; drawn by `bodyview.setCostume` |
@@ -282,6 +283,19 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   subdivision modifier leaves the base mesh and its numbering alone. A point in space would not.
 - `appearance.catalogue()` (every asset) and `core/wardrobe.py` (pieces people cut) are different things:
   the first is what the wardrobe ships, the second is what someone made from it.
+
+- A hat that is MADE (`appearance.MADE_HATS`, e.g. `santa_made`) is not worn from the library: nothing is
+  exported and `wearables` returns no item for it - but it still covers the hair. The build and the live
+  view each build it from the head's own measurements, which is why it can never bulge through a skull.
+- Measuring a head: take the middle from the band's EXTENT, never the average of its vertices. A head is
+  not evenly meshed (the face carries far more vertices than the back of the skull), so an average sits
+  forward of the real centre and the far side then measures as twice the radius - 0.140 m for a head of
+  0.07. And take the width as the average of the two half-extents: a head is longer than it is wide.
+- A Santa cap is a fur ROLL plus a cone, and the roll's depth comes from the HEAD (about 6 cm on a 9.8 cm
+  head), not from the cap's length: scaling the roll with the cap turns it into a fez.
+- When a change seems not to reach the live view, check it is in the key that triggers a repaint
+  (`LivePreview.colourKey` / `outfitKey`). Twice now a feature was built correctly and did nothing
+  because its design key was in neither.
 
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).

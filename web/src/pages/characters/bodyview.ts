@@ -8,6 +8,7 @@
 // red one standing up beside it tips it. The wheel zooms. Nothing here changes the design; it only looks.
 import * as THREE from "three";
 import {adjacencyOf, facesInside, nearestVertex, openRings, shapePart, spreadFrom} from "./parts";
+import {CapWants, capMesh, headAt} from "./cap";
 
 export interface Kit {
   version: number;
@@ -196,6 +197,8 @@ export class BodyView {
   private joints: Record<string, [number, number, number]> = {};
   private costume: CostumeLook = {};
   private hatSize = 1;                                 // these assets come in one size, and it is small
+  private capWants: CapWants | null = null;            // a Santa cap made for this head, or none
+  private cap: {cloth: THREE.Mesh; fur: THREE.Mesh} | null = null;
   private parts: PartSpec[] = [];                      // parts made bigger or smaller, from the design
   private chosen: {spec: PartSpec; verts: Set<number>} | null = null;
   private glow: THREE.Mesh | null = null;              // what the chosen part looks like while it is chosen
@@ -325,6 +328,7 @@ export class BodyView {
     attr.needsUpdate = true;
     this.mesh.geometry.computeVertexNormals();
     this.dress();
+    this.makeCap();
     this.showChosen();
   }
 
@@ -428,6 +432,7 @@ export class BodyView {
     this.dress();
     this.hideCovered();
     this.buildCostume();
+    this.makeCap();
     this.setLook({});                      // wireframe and the rest apply to whatever was just made
   }
 
@@ -739,7 +744,8 @@ export class BodyView {
 
   private everyMaterial(): THREE.Material[] {
     const out: THREE.Material[] = [];
-    for (const o of [this.mesh, ...this.wearing.map(w => w.mesh), ...this.pieces]) {
+    for (const o of [this.mesh, ...this.wearing.map(w => w.mesh), ...this.pieces,
+                     ...(this.cap ? [this.cap.cloth, this.cap.fur] : [])]) {
       if (o) out.push(...(Array.isArray(o.material) ? o.material : [o.material]));
     }
     return out;
@@ -797,6 +803,47 @@ export class BodyView {
     for (const w of this.wearing) show(w.mesh, !role || w.worn.spec.role === role);
     for (const piece of this.pieces) piece.visible = !role;      // the costume belongs to the character
     this.rings.visible = !role && this.rings.visible;
+  }
+
+  /** A Santa cap made for this head, or none. Re-made whenever the body or the cap's taste changes.
+   *
+   *  It is not something worn from the library - there is nothing to fetch and nothing to fit. The head
+   *  is measured as it stands, and the cap is built on that circle, which is why it cannot bulge through
+   *  the skull the way the one-size asset does. */
+  setCap(want: CapWants | null) {
+    this.capWants = want;
+    this.makeCap();
+  }
+
+  private makeCap() {
+    if (this.cap) {
+      for (const part of [this.cap.cloth, this.cap.fur]) {
+        this.scene.remove(part);
+        part.geometry.dispose();
+        (part.material as THREE.Material).dispose();
+      }
+      this.cap = null;
+    }
+    if (!this.capWants || !this.work || !this.tris) return;
+    const neck = this.joints["joint-neck"];
+    const head = headAt(this.work, this.tris, neck ? neck[1] + 0.02 : this.height * 0.82);
+    if (!head) return;
+    const {points, cloth, fur} = capMesh(head, this.capWants);
+    const piece = (index: Uint32Array, colour: string, rough: number, sheen: number) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(points, 3));
+      g.setIndex(new THREE.BufferAttribute(index, 1));
+      g.computeVertexNormals();
+      const mesh = new THREE.Mesh(g, new THREE.MeshPhysicalMaterial({
+        color: new THREE.Color(colour), roughness: rough, metalness: 0,
+        side: THREE.DoubleSide, flatShading: false}));
+      (mesh.material as THREE.MeshPhysicalMaterial).sheen = sheen;    // velvet and fur both catch light
+      mesh.renderOrder = 1;
+      this.scene.add(mesh);
+      return mesh;
+    };
+    this.cap = {cloth: piece(cloth, this.capWants.cloth, 0.55, 0.6),
+                fur: piece(fur, this.capWants.fur, 0.95, 1.0)};
   }
 
   /** Look at the whole person, or close in on what is being edited. */

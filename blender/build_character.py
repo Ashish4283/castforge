@@ -1253,6 +1253,92 @@ if COSTUME:
         else:
             log("no hood: no head bone or head vertices found")
 
+    # A Santa cap made for THIS head. The library's cap is one size, thin-banded and worn tilted - a
+    # child's cap - and scaling it never gets to the real thing: a deep fur roll, a cone that curves over
+    # and flops, a fat bobble. So it is built on the head it is going on, taking the skull's own circle as
+    # its opening, which means it cannot bulge through. The live view builds the same shape from the same
+    # measurements, so what you shape in the studio is what gets built. Maths: costume.santa_cap.
+    if (DESIGN or {}).get("hat") in appearance.MADE_HATS:
+        want = (DESIGN or {}).get("cap") or {}
+        head_bone = next((h for h in (head("DEF-spine.006"), head("head")) if h is not None), None)
+        skull = [body_w[v] for v in in_body if head_bone is not None and body_w[v][2] > head_bone.z + 0.03]
+        if not skull:
+            log("no santa cap: no head vertices found")
+        else:
+            size = float((DESIGN or {}).get("hat_size") or 1.0)
+            crown = max(p[2] for p in skull)
+            # A Santa cap's fur band sits on the forehead and above the ears, about 8.5 cm below the
+            # crown on a grown head. Measuring higher catches the ears and the opening comes out loose.
+            sit = crown - 0.085
+            around = [p for p in skull if abs(p[2] - sit) < 0.02] or skull
+            # Halfway between the extremes, not the average of the vertices: a head is not evenly meshed
+            # (the face carries far more vertices than the back of the skull), so an average sits forward
+            # of the real centre and the far side then measures as twice the radius.
+            low_x, high_x = min(p[0] for p in around), max(p[0] for p in around)
+            low_y, high_y = min(p[1] for p in around), max(p[1] for p in around)
+            cx, cy = (low_x + high_x) / 2, (low_y + high_y) / 2
+            # the average of the two half-extents, not the larger: a head is longer than it is wide
+            wide = ((high_x - low_x) + (high_y - low_y)) / 4 + 0.006
+            rings, fur, tip = kit.santa_cap(
+                (cx, cy), sit, wide, wide * 3.0 * size,
+                droop=float(want.get("droop", 0.6)), towards=float(want.get("towards", 20.0)),
+                band=float(want.get("band", 0.3)))
+            bobble = float(want.get("bobble", 1.0))
+            balls = kit.ball(tip, wide * 0.42 * bobble) if bobble > 0.05 else []
+
+            bm = bmesh.new()
+            FUR, CLOTH = 0, 1
+            tagged = []                                # (face, which material) - fur band or velvet
+
+            def tube(shape, slot_for, cap_top):
+                """Join a stack of rings into a tube, one row at a time, and say what each face is made of."""
+                rows = [[bm.verts.new(p) for p in ring] for ring in shape]
+                span = len(shape[0])
+                for r in range(len(rows) - 1):
+                    upper, lower = rows[r], rows[r + 1]
+                    for i in range(span):
+                        j = (i + 1) % span
+                        try:
+                            face = bm.faces.new([upper[i], upper[j], lower[j], lower[i]])
+                        except ValueError:
+                            continue
+                        face.smooth = True
+                        tagged.append((face, slot_for(r)))
+                if cap_top:
+                    try:
+                        lid = bm.faces.new(rows[-1])
+                        lid.smooth = True
+                        tagged.append((lid, slot_for(len(rows) - 1)))
+                    except ValueError:
+                        pass
+
+            tube(rings, lambda r: FUR if r < fur else CLOTH, cap_top=not balls)
+            if balls:
+                tube(balls, lambda _r: FUR, cap_top=True)
+            bmesh.ops.recalc_face_normals(bm, faces=[f for f, _slot in tagged])
+            mesh = bpy.data.meshes.new("cf_santa_cap")
+            bm.to_mesh(mesh)
+            bm.free()
+
+            cap_obj = bpy.data.objects.new("cf_santa_cap", mesh)
+            for c in human.users_collection:
+                c.objects.link(cap_obj)
+            cap_obj.data.materials.append(material("cf_cap_fur", lin(COSTUME.get("trim") or "#f3efe8"),
+                                                   0.95, sheen=1.0, fluff=0.5))
+            cap_obj.data.materials.append(material("cf_cap", lin(want.get("colour") or "#c8102e"),
+                                                   0.55, sheen=0.6))
+            for poly, (_face, slot_of) in zip(cap_obj.data.polygons, tagged):
+                poly.material_index = slot_of
+            # a cap moves with the head and nothing else: one bone, full weight
+            group = cap_obj.vertex_groups.new(name="DEF-spine.006")
+            group.add([v.index for v in cap_obj.data.vertices], 1.0, "REPLACE")
+            rigged = cap_obj.modifiers.new("cf_cap_rig", "ARMATURE")
+            rigged.object = rig
+            cap_obj.parent = rig
+            solid = cap_obj.modifiers.new("cf_cap_thick", "SOLIDIFY")
+            solid.thickness, solid.offset = 0.006, -1.0
+            made.append(f"santa cap ({len(rings)} rings, {fur} fur, head {wide * 100:.0f} cm)")
+
     # a cape: a sheet hanging from the back of the collar to the knees, weighted to the chest so it swings
     cape = lin(COSTUME.get("cape"))
     if cape and garment:

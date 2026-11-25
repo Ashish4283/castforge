@@ -518,3 +518,99 @@ def shape_part(co, part, scale=1.0, move=(0.0, 0.0, 0.0), turn=(0.0, 0.0, 0.0), 
 def grow_part(co, part, scale, faces=None, adj=None):
     """Resizing alone - `shape_part` with nothing else asked for."""
     return shape_part(co, part, scale=scale, faces=faces, adj=adj)
+
+
+# --- a Santa cap made to fit, instead of an asset that never does -----------------------------------------
+# The cap in the asset library is one size, worn tilted, with a thin band - a child's cap. A real one is a
+# deep cone that curves over and flops sideways, a fur roll a third of its height, and a fat bobble at the
+# tip. None of that can be got by scaling the asset, so the cap is built on the head it is going on: the
+# opening is the head's own measured circle, so it can never bulge through the skull.
+
+def cap_path(base, radius, height, droop=0.6, towards=0.0, rings=16):
+    """The cap's spine: `rings` points from the opening up to the tip, bending over as it rises.
+
+    `droop` is how far it flops (0 straight up, 1 right over), `towards` which way in degrees round the
+    head (0 is the character's left). The bend is a parabola in the rise, so it leaves the head upright
+    and curls more the further out it goes - which is how a soft cap hangs."""
+    lean_x = math.cos(math.radians(towards))
+    lean_y = math.sin(math.radians(towards))
+    out = []
+    for i in range(rings):
+        t = i / (rings - 1)
+        sideways = droop * height * 1.15 * t * t
+        rise = height * t * (1.0 - 0.35 * droop * t)          # it rises less as it flops over
+        out.append((base[0] + lean_x * sideways, base[1] + lean_y * sideways, base[2] + rise))
+    return out
+
+
+def cap_radius(t, radius, band=0.3, roll=0.22, tip=0.1):
+    """How wide the cap is a fraction `t` of the way up: a fur roll, then a cone tapering to the tip."""
+    if t <= band:
+        swell = math.sin(math.pi * (t / band)) if band > 0 else 0.0
+        return radius * (1.0 + roll * swell)
+    rest = (t - band) / (1.0 - band)
+    return radius * ((1.0 - rest) ** 0.75 * (1.0 - tip) + tip)
+
+
+def santa_cap(centre, base_z, radius, height=None, droop=0.6, towards=0.0, band=0.3,
+              rings=16, span=18, crown=None):
+    """A Santa cap built for one head: (rings of points, how many of them are fur, the tip).
+
+    Two pieces, as a real cap is. A fur ROLL - a thick cylinder standing a little proud of the head,
+    sitting on the forehead, not perched on the crown - and above it a cone that tapers and flops the way
+    it is pointed. The cone starts at exactly the radius the roll ends at, so there is no step between
+    them, and the whole thing is measured from the head it is going on, so it cannot bulge through.
+
+    `centre` is the head's middle (x, y), `base_z` the bottom of the roll, `radius` the head's radius
+    there. `band` is how much of the cap's height is fur."""
+    height = height if height else radius * 3.0
+    band = min(0.6, max(0.08, band))
+    # How tall the fur is comes from the HEAD, not from the cap's length: a bigger cap has a longer cone,
+    # not a deeper band. Measured against a real one, the roll is about 6 cm on a 9.8 cm head.
+    roll_h = radius * 0.62 * (band / 0.3)
+    roll_r = radius * 1.12                                # and how far it stands proud of the head
+    in_roll = max(2, round(rings * band))
+    lean_x, lean_y = math.cos(math.radians(towards)), math.sin(math.radians(towards))
+    spine, widths = [], []
+    for i in range(in_roll):                              # the roll: straight up, barely tapering
+        t = i / max(1, in_roll - 1)
+        spine.append((centre[0], centre[1], base_z + roll_h * t))
+        widths.append(roll_r * (1.0 - 0.04 * t))
+    rest_rings = rings - in_roll
+    for i in range(rest_rings):                           # the cone: from the roll's top, over and down
+        t = (i + 1) / rest_rings
+        lean = droop * (height - roll_h) * 1.3 * t * t
+        rise = (height - roll_h) * t * (1.0 - 0.35 * droop * t)
+        spine.append((centre[0] + lean_x * lean, centre[1] + lean_y * lean, base_z + roll_h + rise))
+        widths.append(radius * ((1.0 - t) ** 0.85 * 1.02 + 0.06))
+    out = []
+    for i, (point, wide) in enumerate(zip(spine, widths)):
+        ahead = spine[min(i + 1, rings - 1)]
+        behind = spine[max(i - 1, 0)]
+        axis = [ahead[k] - behind[k] for k in range(3)]
+        length = math.sqrt(sum(a * a for a in axis)) or 1.0
+        axis = [a / length for a in axis]
+        side = [-axis[1], axis[0], 0.0]
+        if not any(side):
+            side = [1.0, 0.0, 0.0]
+        slen = math.sqrt(sum(a * a for a in side)) or 1.0
+        side = [a / slen for a in side]
+        other = [axis[1] * side[2] - axis[2] * side[1],
+                 axis[2] * side[0] - axis[0] * side[2],
+                 axis[0] * side[1] - axis[1] * side[0]]
+        out.append([tuple(point[k] + wide * (math.cos(a) * side[k] + math.sin(a) * other[k])
+                          for k in range(3))
+                    for a in (2 * math.pi * j / span for j in range(span))])
+    return out, in_roll, spine[-1]
+
+
+def ball(centre, radius, rows=6, span=10):
+    """A little sphere as rings, for the bobble on the end of a cap."""
+    out = []
+    for i in range(1, rows):
+        phi = math.pi * i / rows
+        r = radius * math.sin(phi)
+        z = centre[2] + radius * math.cos(phi)
+        out.append([(centre[0] + r * math.cos(2 * math.pi * j / span),
+                     centre[1] + r * math.sin(2 * math.pi * j / span), z) for j in range(span)])
+    return out

@@ -2,7 +2,8 @@
 import {Check, Ban} from "lucide-react";
 import {Json} from "../../api";
 
-export interface Look { value: string; asset: string; thumb: string | null; mine?: string }
+export interface Look { value: string; asset: string | null; thumb: string | null; mine?: string;
+                        made?: boolean }
 
 /** A piece someone cut themselves (core/wardrobe.py), as the studio lists them. */
 export interface Piece { id: string; name: string; base: string; role: string; says?: string }
@@ -31,6 +32,7 @@ export function LookPicker({title, looks, value, none, onPick}: {
               {l.thumb ? <img src={l.thumb} alt={pretty(l.value)} loading="lazy" />
                        : <span className="look-wait">{(l.mine || pretty(l.value)).slice(0, 2)}</span>}
               {l.mine && <i className="look-mine">yours</i>}
+              {l.made && <i className="look-mine made">fits</i>}
               {chosen === l.value && <i className="look-tick"><Check size={12} /></i>}
             </span>
             <span className="look-name">{l.mine || pretty(l.value)}</span>

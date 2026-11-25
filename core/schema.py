@@ -280,7 +280,9 @@ FINISH_SETTINGS = {
 # keys with a dot are nested: "hair.color" is design["hair"]["color"]
 BODY_BUILDS = ["slim", "average", "athletic", "heavy", "muscular"]
 BEARDS = ["none", "scruffy", "full", "long", "faun", "moustache", "santa"]
-HATS = ["none", "santa", "newsboy", "fedora", "cloche", "flat_cap"]
+# The wardrobe itself is core/appearance.py; these names come from there so a hat added to the wardrobe
+# turns up in the designer, the checker and the Gemini prompt without being listed again here.
+HATS = ["none"] + sorted(appearance.HATS) + sorted(appearance.MADE_HATS)
 EYES = ["brown", "brownlight", "green", "grey", "blue", "bluegreen", "deepblue", "lightblue", "ice"]
 CHARACTER = {
     "gender": p("enum", "body type", required=True, values=["male", "female"]),
@@ -292,7 +294,13 @@ CHARACTER = {
     "hair.length": p("enum", "hair length", default="short", values=["none", "short", "medium", "long"]),
     "hair.color": p("color", "hair colour (a beard takes it too)"),
     "beard": p("enum", "beard", default="none", values=BEARDS),
-    "hat": p("enum", "hat (hides the hair)", default="none", values=HATS),
+    "hat": p("enum", "hat (hides the hair). santa_made is built for this character's own head",
+             default="none", values=HATS),
+    "cap.droop": p("number", "how far a made cap flops over, 0 straight up to 1 right over", default=0.6),
+    "cap.towards": p("number", "which way it flops, in degrees round the head (0 is their left, 90 behind)",
+                     default=20.0),
+    "cap.band": p("number", "how much of a made cap is fur, 0.15 a trim to 0.45 a deep roll", default=0.3),
+    "cap.bobble": p("number", "the bobble on the end, 0 none to 1.5 enormous", default=1.0),
     "parts": p("parts", "parts of the body or of something worn, reshaped by hand: a list of "
                         "{on, at: [x, y, z], radius, scale, move: [x, y, z] metres, turn: [x, y, z] "
                         "degrees}. The studio writes these when you click a part and work on it; leave "

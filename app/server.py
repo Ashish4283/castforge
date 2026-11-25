@@ -121,7 +121,10 @@ def character_looks():
         "hair": tiles([(k, v) for k, v in look.HAIR_STYLES.items() if v and v != "none"], "hair"),
         "eyebrows": tiles(list(look.EYEBROWS.items()), "eyebrows"),
         "beard": tiles(beards, "clothes"),
-        "hat": tiles(list(look.HATS.items()), "clothes"),
+        # A made hat has no asset and no picture: it is built on the character's own head, so it is
+        # offered first - it is the one that always fits.
+        "hat": ([{"value": made, "asset": None, "thumb": None, "made": True}
+                 for made in sorted(look.MADE_HATS)] + tiles(list(look.HATS.items()), "clothes")),
         "outfit": tiles([(k, v["male"]) for k, v in look.OUTFITS.items()], "clothes"),
         "garment": tiles(list(look.BOTTOMS.items()) + [("dress", look.DRESS)], "clothes"),
         "taking": thumbs_state["running"],
