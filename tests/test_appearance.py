@@ -241,3 +241,20 @@ def test_an_asset_hat_still_takes_the_hair_off():
 
 def test_every_made_hat_is_offered_by_the_vocabulary():
     assert set(appearance.MADE_HATS) <= set(schema.CHARACTER["hat"]["values"])
+
+
+def test_made_footwear_takes_the_librarys_one_size_shoes_off():
+    """Two pairs of shoes on one pair of feet is what the wardrobe did before tailor.py existed."""
+    plain = [w["role"] for w in appearance.wearables({"gender": "male"})]
+    assert "shoes" in plain
+    made = [w["role"] for w in appearance.wearables({"gender": "male",
+                                                     "outfit": {"shoe_style": "boot"}})]
+    assert "shoes" not in made
+    assert [r for r in made if r != "shoes"] == [r for r in plain if r != "shoes"]
+
+
+def test_asking_for_no_made_footwear_leaves_the_wardrobe_alone():
+    for value in ("none", None):
+        worn = [w["role"] for w in appearance.wearables({"gender": "female",
+                                                         "outfit": {"shoe_style": value}})]
+        assert "shoes" in worn

@@ -8,7 +8,7 @@ import json
 import math
 import os
 
-from blender import acting, motion
+from blender import acting, motion, tailor
 from core import appearance, config, finish, media, sets
 
 # --- names ------------------------------------------------------------------------------------------------
@@ -327,6 +327,25 @@ CHARACTER = {
     "costume.cape_length": p("number", "how far the cape falls, 0.3 short to 1.2 past the knees", default=0.75),
     "costume.armour": p("color", "metal plates: breastplate, shoulders, forearms, shins (empty: none)"),
     "costume.hood": p("color", "a hood over the head, open at the face (empty: none)"),
+    # Worn things that are MADE for this body rather than fetched from the wardrobe (blender/tailor.py).
+    # The wardrobe has twenty-six garments and not one sock, tie, scarf, watch or band among them, and its
+    # two pairs of shoes are one size - so these are cut to the character's own ankle, wrist and chest
+    # every time, which is why they fit anybody. A colour is what asks for one; footwear asks by style.
+    "outfit.shoe_style": p("enum", "footwear made for this foot, instead of the library's one-size shoes",
+                           default="none", values=list(tailor.SHOE_STYLES)),
+    "costume.socks": p("color", "socks (empty: none)"),
+    "costume.sock_height": p("enum", "how far the socks come up", default="crew",
+                             values=list(tailor.SOCK_HEIGHTS)),
+    "costume.tie": p("color", "a tie knotted at the collar (empty: none)"),
+    "costume.tie_length": p("number", "how far the tie hangs, 0.7 short to 1.3 long", default=1.0),
+    "costume.scarf": p("color", "a scarf round the neck (empty: none)"),
+    "costume.watch": p("color", "a watch on the wrist (empty: none)"),
+    "costume.watch_side": p("enum", "which wrist the watch is on", default="left",
+                            values=list(tailor.SIDES)),
+    "costume.wristband": p("color", "a band or bracer round the forearm (empty: none)"),
+    "costume.wristband_side": p("enum", "which arm the band is on", default="both",
+                                values=list(tailor.SIDES)),
+    "costume.wristband_width": p("number", "1 a cuff, 3 a bracer up the forearm", default=1.0),
 }
 # Everything a person can shape themselves: the face and body sliders (core/appearance.py), the whole-head
 # shape, and the hair and eyebrows they can pick. Built from that one table so a new slider needs no edit
@@ -373,6 +392,29 @@ COSTUMES = {
               # be asked for in that neighbourhood or the two do not look like one costume
               "costume.coat": "long", "costume.fabric": "velvet", "costume.trim": "#f3efe8", "costume.belt": "#141414",
               "costume.buckle": "#c9a227", "costume.gloves": "#f3efe8", "costume.boots": "#141414"},
+    # Everyday looks, each one COMPLETE: a suit with no shoes, no socks and no watch is not a look, it is
+    # a garment. The wardrobe has nothing below the ankle but two pairs of shoes, so these ask for
+    # footwear and accessories that are MADE for the body (blender/tailor.py, `outfit.shoe_style` and the
+    # `costume.*` colours below) and so arrive at the right size on anybody.
+    "business": {"outfit.style": "formal", "outfit.top": "#23262e", "outfit.bottom": "#23262e",
+                 "outfit.shoe_style": "shoe", "outfit.shoes": "#17161a", "costume.socks": "#1b1d24",
+                 "costume.sock_height": "crew", "costume.tie": "#8c1018", "costume.watch": "#c7ccd1"},
+    "office": {"outfit.style": "suit", "outfit.top": "#3d4654", "outfit.bottom": "#2f3540",
+               "outfit.shoe_style": "shoe", "outfit.shoes": "#3a2a1c", "costume.socks": "#2f3540",
+               "costume.watch": "#b08d57"},
+    "street": {"outfit.garment": "trousers", "outfit.sleeves": "short", "outfit.top": "#d8dde3",
+               "outfit.bottom": "#36476b", "outfit.shoe_style": "sneaker", "outfit.shoes": "#f2f2f0",
+               "costume.socks": "#ffffff", "costume.sock_height": "ankle", "costume.watch": "#2a2d33"},
+    "sport": {"outfit.style": "work", "outfit.top": "#1f2a44", "outfit.bottom": "#1f2a44",
+              "outfit.shoe_style": "sneaker", "outfit.shoes": "#e8482c", "costume.socks": "#ffffff",
+              "costume.sock_height": "ankle", "costume.wristband": "#e8482c", "build": "athletic"},
+    "winter": {"outfit.garment": "trousers", "outfit.sleeves": "long", "outfit.top": "#5c6b7a",
+               "outfit.bottom": "#2f3540", "outfit.shoe_style": "boot", "outfit.shoes": "#3a2a1c",
+               "costume.socks": "#8a7355", "costume.sock_height": "knee", "costume.scarf": "#a33a2e",
+               "costume.gloves": "#4a3524"},
+    "summer": {"outfit.garment": "shorts", "outfit.sleeves": "short", "outfit.top": "#f0e6c8",
+               "outfit.bottom": "#c9a66b", "outfit.shoe_style": "sandal", "outfit.shoes": "#7a5a3a",
+               "costume.watch": "#c7ccd1"},
 }
 
 

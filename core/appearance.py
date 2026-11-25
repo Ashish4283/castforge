@@ -267,7 +267,10 @@ def wearables(design, pieces=None):
         add("bottom", BOTTOMS.get(outfit.get("garment", "trousers"), BOTTOMS["trousers"]))
         add("top", TOPS[(gender, outfit.get("sleeves", "long") if outfit.get("sleeves") in ("short", "long")
                          else "long")])
-    add("shoes", BOOTS if costume.get("boots") else SHOES)
+    # ...unless footwear is being cut for this foot (blender/tailor.py): then the library's one-size
+    # pair would be worn straight through the made one.
+    if outfit.get("shoe_style", "none") in ("none", None):
+        add("shoes", BOOTS if costume.get("boots") else SHOES)
     return out
 
 

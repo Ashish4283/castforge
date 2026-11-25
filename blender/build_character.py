@@ -676,14 +676,17 @@ else:
     bottom_name = BOTTOM[clothing["garment"]]
     bottom_obj, top_obj = cloth(bottom_name), cloth(top_name)
     worn = [top_name, bottom_name]
-shoes_name = "shoes03" if COSTUME.get("boots") else "shoes04"     # shoes03: black boots
-shoes_obj = cloth(shoes_name)
+# Footwear made for this foot replaces the library's: two pairs of shoes on one pair of feet is what
+# "automatically picking, but not in a professional way" looks like.
+_made_shoes = (DESIGN or {}).get("outfit", {}).get("shoe_style", "none") not in ("none", None)
+shoes_name = None if _made_shoes else ("shoes03" if COSTUME.get("boots") else "shoes04")
+shoes_obj = cloth(shoes_name) if shoes_name else None
 
 # and the parts of what is worn, once each garment is on: the same shaping the studio showed
 for _obj, _role in ((top_obj, "top"), (bottom_obj, "bottom"), (dress_obj, "outfit"),
                     (shoes_obj, "shoes"), (hat_obj, "hat")):
     resize_parts(_obj, _role)
-log("wearing", worn + [shoes_name], clothing)
+log("wearing", worn + ([shoes_name] if shoes_name else ["shoes cut for this foot"]), clothing)
 
 # layering: push each garment out along its (posed) normals so the outer layer always covers
 # the inner one and the body never pokes through, also while animating
@@ -889,13 +892,20 @@ log("rig", rig.name, len(rig.pose.bones), "pose bones")
 
 # --- costume: long coat, fur trim, belt, gloves, boot tops (after the rig: every piece copies the bone
 # --- weights of the garment or skin it is made from; geometry maths in costume.py) ---------------------
-if COSTUME:
+# `COSTUME` is the hand-made layer; `made_wear` is what tailor.py cuts for this body. Footwear is asked
+# for by `outfit.shoe_style`, which is NOT a costume key, so someone in made shoes and an ordinary shirt
+# has to get in here too.
+made_wear = bool((DESIGN or {}).get("outfit", {}).get("shoe_style", "none") not in ("none", None)
+                 or any(((DESIGN or {}).get("costume") or {}).get(k) for k in
+                        ("socks", "tie", "scarf", "watch", "wristband")))
+if COSTUME or made_wear:
     import bmesh
     from mathutils import Vector
     from mathutils.bvhtree import BVHTree
     from mathutils.kdtree import KDTree
     sys.path.insert(0, HERE)
     import costume as kit
+    import tailor                     # socks, footwear and the small things, cut to this body
     bpy.context.view_layer.update()
 
     def lin(h):
@@ -1352,6 +1362,92 @@ if COSTUME:
                     m.vertex_group, m.invert_vertex_group = "cf_under_cap", True
                     made.append(f"hair tucked under the cap ({len(under)} of {len(hair_w)})")
             made.append(f"santa cap ({len(rings)} rings, {fur} fur, head {wide * 100:.0f} cm)")
+
+    # --- things cut for THIS body: socks, footwear, a tie, a scarf, a watch, a band ---------------------
+    # The wardrobe has twenty-six garments and not one sock, tie or watch among them, and its two pairs of
+    # shoes are one size. These are measured off the body's own joint markers every time (blender/tailor.py
+    # explains the arithmetic), so they fit a child and a heavy man without anybody choosing a size. Each
+    # vertex takes the bone weights of the body vertex nearest it, which is what makes a sock bend with
+    # the ankle and keeps a watch on the wrist through a whole scene.
+    asked = tailor.asked_for(DESIGN or {})
+    if asked:
+        import preview_mesh as _pm
+        joints = _pm.joint_centres(human, body_w)
+        STUFF = {"knit": (0.90, 0.0, 0.85, 0.0), "cloth": (0.72, 0.0, 0.45, 0.0),
+                 "leather": (0.55, 0.0, 0.10, 0.06), "rubber": (0.88, 0.0, 0.00, 0.0),
+                 "metal": (0.22, 0.95, 0.0, 0.35)}
+
+        def wear_made(what, want):
+            """One made wearable as its own object, rigged to whatever the body does at that point."""
+            pieces = tailor.cut(what, joints, want)
+            if not pieces:
+                log(f"no {what}: this body has no joint markers to measure it on")
+                return
+            colour = lin(want.get("colour")) or (0.2, 0.2, 0.2)
+            bm = bmesh.new()
+            slots, tagged = [], []
+            for part in pieces:
+                if part["stuff"] not in slots:
+                    slots.append(part["stuff"])
+                slot = slots.index(part["stuff"])
+                rows = [[bm.verts.new(p) for p in ring] for ring in part["rings"]]
+                span = len(rows[0])
+                for r in range(len(rows) - 1):
+                    for i in range(span):
+                        j = (i + 1) % span
+                        try:
+                            f = bm.faces.new([rows[r][i], rows[r][j], rows[r + 1][j], rows[r + 1][i]])
+                        except ValueError:
+                            continue
+                        f.smooth = True
+                        tagged.append((f, slot))
+                for end, close in ((rows[0], part["shut"]), (rows[-1], part["lid"])):
+                    if not close:
+                        continue
+                    try:
+                        f = bm.faces.new(end)
+                    except ValueError:
+                        continue
+                    f.smooth = True
+                    tagged.append((f, slot))
+            if not tagged:
+                bm.free()
+                return
+            bmesh.ops.recalc_face_normals(bm, faces=[f for f, _s in tagged])
+            mesh = bpy.data.meshes.new(f"cf_{what}")
+            bm.to_mesh(mesh)
+            bm.free()
+
+            obj = bpy.data.objects.new(f"cf_{what}", mesh)
+            for c in human.users_collection:
+                c.objects.link(obj)
+            for stuff in slots:
+                rough, metal, sheen, coat = STUFF.get(stuff, STUFF["cloth"])
+                # a sole is the same leather, darker: nobody wears a shoe whose sole matches its upper
+                shade = colour if stuff != "rubber" else tuple(x * 0.35 for x in colour)
+                obj.data.materials.append(material(f"cf_{what}_{stuff}", shade, rough, metal=metal,
+                                                   sheen=sheen, coat=coat))
+            for poly, (_f, slot) in zip(obj.data.polygons, tagged):
+                poly.material_index = slot
+            # a new object sits at the origin, so its mesh coordinates are already the world ones the
+            # pattern was cut in - the same reason the Santa cap can be built straight from measurements
+            groups, hold = {}, {}
+            for v in obj.data.vertices:
+                _, near, _ = body_kd.find(tuple(v.co))
+                for bone, weight in rigging.keep_strongest(body_weights(near)).items():
+                    hold.setdefault(bone, []).append((v.index, weight))
+            for bone, members in hold.items():
+                groups[bone] = obj.vertex_groups.new(name=bone)
+                for index, weight in members:
+                    groups[bone].add([index], weight, "REPLACE")
+            rigged = obj.modifiers.new(f"cf_{what}_rig", "ARMATURE")
+            rigged.object = rig
+            obj.parent = rig
+            made.append(f"{what} for this body ({len(pieces)} pieces, {len(mesh.vertices)} vertices, "
+                        f"{len(hold)} bones)")
+
+        for _what, _want in asked:
+            wear_made(_what, _want)
 
     # a cape: a sheet hanging from the back of the collar to the knees, weighted to the chest so it swings
     cape = lin(COSTUME.get("cape"))

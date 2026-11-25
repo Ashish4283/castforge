@@ -35,10 +35,19 @@ no explanation. Format:
   "outfit": {"garment": "trousers" | "shorts" | "skirt" | "dress", "sleeves": "short" | "long",
              "top": "#rrggbb", "bottom": "#rrggbb", "shoes": "#rrggbb"},
   "outfit.style": "casual" | "suit" | "formal" | "work" | "robe" | "tunic",
+  // Footwear and the small things, MADE for this character's own foot, wrist and chest - so they fit
+  // anybody, and so everybody can have them. Give everyday people these: a dressed person has shoes and
+  // socks. "shoe_style" replaces the library's one-size shoes; the rest are asked for by colour.
+  "outfit.shoe_style": "none" | "shoe" | "boot" | "sneaker" | "sandal" | "heel",
   "costume": {"coat": "none" | "long", "fabric": "garment" | "velvet" | "leather" | "cotton",
               "trim": "#rrggbb", "belt": "#rrggbb", "buckle": "#rrggbb", "gloves": "#rrggbb",
               "boots": "#rrggbb", "cape": "#rrggbb", "cape_length": 0.75, "armour": "#rrggbb",
-              "hood": "#rrggbb"}
+              "hood": "#rrggbb",
+              "socks": "#rrggbb", "sock_height": "ankle" | "crew" | "knee",
+              "tie": "#rrggbb", "tie_length": 1.0, "scarf": "#rrggbb",
+              "watch": "#rrggbb", "watch_side": "left" | "right" | "both",
+              "wristband": "#rrggbb", "wristband_side": "left" | "right" | "both",
+              "wristband_width": 1.0}      // 1 a cuff, 3 a bracer up the forearm
   // Optional. The face and body, shaped feature by feature: every value is a number from -1 to +1, where
   // 0 is an ordinary face and the sign says which way (jaw_width -1 narrow, +1 wide). Leave out everything
   // you do not mean to change: a key you do not write is left alone. Use a few strong ones rather than
@@ -67,6 +76,10 @@ Rules:
   wrestler's shoulders). An ordinary person needs none of them.
 - "costume" is only for costumes (Santa, uniforms, fantasy): leave it out for everyday clothes. Leave out
   any costume piece the character does not wear (no trim, no belt...).
+- The exception is what goes below the ankle and on the wrist. Everyone wears shoes, and almost everyone
+  wears socks, so give an everyday character "outfit.shoe_style" and "costume.socks" whatever else you
+  leave out. A tie, a scarf, a watch or a band is a choice: use them when they say something about the
+  person (a watch on a doctor, a scarf in winter, a band on an athlete).
 
 Character: <DESCRIBE THE CHARACTER HERE>
 ```
