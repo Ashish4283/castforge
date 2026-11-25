@@ -256,6 +256,16 @@ def start(place=None, wait=240, lean=False):
     if _running.get("comfy") and _running["comfy"].poll() is None:
         say("ComfyUI is already running")
         return True
+    # ...and ask the PORT as well, not just this module's memory of it. Re-running cell 1 reloads this
+    # module, which empties `_running` - but the ComfyUI started by the previous run is still there and
+    # still holding 8188. Without this, a second one is launched, fails to bind, and the old one answers
+    # the health check anyway: it looks like it worked and leaves a process nobody is tracking.
+    try:
+        urllib.request.urlopen(URL + "/system_stats", timeout=3)
+        say("ComfyUI is already up on", URL, "- using that one")
+        return True
+    except Exception:
+        pass
     swatches = place["keep"] / "swatches"
     swatches.mkdir(parents=True, exist_ok=True)
     log = place["work"] / "comfy.log"
