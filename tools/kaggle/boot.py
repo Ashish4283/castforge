@@ -281,7 +281,7 @@ def supported_flags(place=None):
     return set(re.findall(r"--[a-z0-9][a-z0-9-]+", (done.stdout or "") + (done.stderr or "")))
 
 
-def start(place=None, wait=240, lean=False):
+def start(place=None, wait=480, lean=False):
     """Start ComfyUI and wait for it to answer. Prints its OWN words when it will not."""
     place = place or where()
     if _running.get("comfy") and _running["comfy"].poll() is None:
@@ -313,10 +313,14 @@ def start(place=None, wait=240, lean=False):
                             stderr=subprocess.STDOUT)
     _running["comfy"] = proc
     until = time.time() + wait
+    spoke = time.time()
     while time.time() < until:
         time.sleep(2)
         if proc.poll() is not None:
             break
+        if time.time() - spoke >= 30:      # starting is slow; silence while it does is not a fault
+            spoke = time.time()
+            say(f"    ... waiting for ComfyUI, {time.time() - (until - wait):.0f}s{memory_now()}")
         try:
             urllib.request.urlopen(URL + "/system_stats", timeout=3)
             say("ComfyUI is up." + memory_now())
