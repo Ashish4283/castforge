@@ -237,7 +237,9 @@ def start(place=None, wait=240):
     swatches = place["keep"] / "swatches"
     swatches.mkdir(parents=True, exist_ok=True)
     log = place["work"] / "comfy.log"
-    proc = subprocess.Popen([sys.executable, "main.py", "--listen", "127.0.0.1",
+    # --normalvram: on a 15 GB card ComfyUI will otherwise keep everything resident, which leaves no
+    # room for the patched copies a tiling run makes.
+    proc = subprocess.Popen([sys.executable, "main.py", "--listen", "127.0.0.1", "--normalvram",
                              "--port", str(PORT), "--output-directory", str(swatches)],
                             cwd=str(place["comfy"]), stdout=open(log, "w"),
                             stderr=subprocess.STDOUT)
@@ -332,8 +334,24 @@ def graph_for(prompt, checkpoint_name, seed=0, size=1024):
     }
 
 
+def unload():
+    """Drop the cached checkpoint between swatches.
+
+    ComfyUI keeps the loaded model between prompts, and SeamlessTile with "Modify in place" patches
+    THAT CACHED OBJECT - so the second swatch runs on an already-patched model and before long the
+    process dies. A few seconds of reloading each time, against having to restart everything."""
+    try:
+        body = json.dumps({"free_memory": True, "unload_models": True}).encode()
+        req = urllib.request.Request(URL + "/free", data=body,
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=60).read()
+    except Exception:
+        pass
+
+
 def ask(graph, wait=900):
     """Run one graph and come back with what it saved."""
+    unload()
     body = json.dumps({"prompt": graph}).encode()
     req = urllib.request.Request(URL + "/prompt", data=body,
                                  headers={"Content-Type": "application/json"})

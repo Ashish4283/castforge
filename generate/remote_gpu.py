@@ -80,6 +80,22 @@ def ping(url):
                             .get("ckpt_name", [[]])[0])}
 
 
+def unload(url):
+    """Make ComfyUI drop the model it is holding, between one swatch and the next.
+
+    Two reasons, and the second is the one that was killing it. ComfyUI keeps the loaded checkpoint
+    cached between prompts, and `SeamlessTile` with "Modify in place" PATCHES THAT CACHED OBJECT - so
+    the second swatch runs on an already-patched model, the third on a twice-patched one, and the
+    process dies with nothing to show for it but a 502 from the tunnel. Unloading means every swatch
+    starts from a clean checkpoint. It costs a few seconds of reloading, which is nothing next to
+    re-running the whole notebook."""
+    try:
+        call(url, "/free", {"free_memory": True, "unload_models": True}, timeout=60)
+        return True
+    except Exception:
+        return False
+
+
 def submit(url, graph, wait=600):
     """Run a graph and come back with [(name, subfolder, type)] of whatever it saved."""
     who = str(uuid.uuid4())
@@ -221,6 +237,7 @@ def main():
         seed = a.seed + attempt * 1013
         chosen = settings_for(a.checkpoint, a.steps)
         log(f"asking for {a.kind}: {a.prompt!r} (seed {seed}, {chosen[0]} steps, cfg {chosen[1]})")
+        unload(a.url)                      # a clean checkpoint for every swatch: see `unload`
         got = submit(a.url, tiling_graph(a.prompt, a.checkpoint, a.size, a.steps, seed=seed))
         if not got:
             log("the graph saved nothing")
