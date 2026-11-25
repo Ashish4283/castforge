@@ -233,7 +233,17 @@ def wanted_flags(lean=False):
 
     `lean` is for coming back after a crash: --lowvram keeps far less of the model resident, which is
     slower and is the right trade when the alternative is dying again on the same fabric."""
-    flags = ["--disable-smart-memory"]    # drops the model after each run, so `unload` need not
+    # Deliberately EMPTY by default, and that is a reversal of what was here.
+    #
+    # --disable-smart-memory was here on the reasoning that a model held between runs accumulated the
+    # tiling patch. Wrong twice over. Setting a convolution's padding to circular a second time changes
+    # nothing - the patch is idempotent, so there was never anything to accumulate. And unloading means
+    # re-reading 6.9 GB from disk into RAM for every swatch, which is what actually killed it: the
+    # NOTEBOOK KERNEL died, and on Kaggle that is the container running out of system memory, not the
+    # card running out of VRAM.
+    #
+    # Letting ComfyUI keep the model loaded is both faster and far lighter on RAM.
+    flags = []
     if lean:
         flags.append("--lowvram")
     return flags
@@ -288,7 +298,7 @@ def start(place=None, wait=240, lean=False):
             break
         try:
             urllib.request.urlopen(URL + "/system_stats", timeout=3)
-            say("ComfyUI is up")
+            say("ComfyUI is up." + memory_now())
             return True
         except Exception:
             pass
