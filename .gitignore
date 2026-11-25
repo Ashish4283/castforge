@@ -5,7 +5,16 @@ models/
 test/
 movies/
 sfx/
-tools/
+# tools/ holds third-party binaries (Rhubarb and friends), which do not belong in the repo - but our
+# OWN scripts live there too, and they were being silently dropped by `git add -A`. A notebook in the
+# repo whose generator is not is worse than neither.
+# ...and it must be tools/* rather than tools/, because git does not descend into an excluded
+# DIRECTORY at all, so a negation inside one never fires.
+tools/*
+!tools/*.py
+!tools/kaggle/
+tools/kaggle/*
+!tools/kaggle/*.py
 asset_index.json
 __pycache__/
 .pytest_cache/
