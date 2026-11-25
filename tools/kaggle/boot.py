@@ -245,21 +245,26 @@ def setup(which="realvis_lightning"):
 # --- running it -----------------------------------------------------------------------------------------
 
 def wanted_flags(lean=False):
-    """Flags worth passing IF this ComfyUI has them. Nothing here is required.
+    """Flags worth passing IF this ComfyUI has them. Only the ones there is evidence for.
 
-    `lean` is for coming back after a crash: --lowvram keeps far less of the model resident, which is
-    slower and is the right trade when the alternative is dying again on the same fabric."""
-    # Deliberately EMPTY by default, and that is a reversal of what was here.
-    #
-    # --disable-smart-memory was here on the reasoning that a model held between runs accumulated the
-    # tiling patch. Wrong twice over. Setting a convolution's padding to circular a second time changes
-    # nothing - the patch is idempotent, so there was never anything to accumulate. And unloading means
-    # re-reading 6.9 GB from disk into RAM for every swatch, which is what actually killed it: the
-    # NOTEBOOK KERNEL died, and on Kaggle that is the container running out of system memory, not the
-    # card running out of VRAM.
-    #
-    # Letting ComfyUI keep the model loaded is both faster and far lighter on RAM.
-    flags = []
+    The crash that cost four attempts was not VRAM, not RAM and not the patch accumulating. It was a
+    SEGMENTATION FAULT, and the log named the line:
+
+        Fatal Python error: Segmentation fault
+          comfy_aimdo/host_buffer.py:148 in __del__
+          comfy/model_patcher.py:1974 in load
+          comfy/model_management.py:844 in model_use_more_vram
+          comfy/sd.py:1376 in decode
+
+    ComfyUI's async offload keeps pinned host buffers, and freeing one while a model is being brought
+    back for a VAE decode takes the process out at the C level. It always went on the SECOND swatch
+    because that is the first time anything is reloaded. Turning that machinery off avoids the code
+    path entirely, and costs a little speed rather than the whole run.
+
+    `lean` is the fallback for coming back after a crash: --lowvram changes the memory path again, and
+    is what got six swatches out of the first run once it had died once.
+    """
+    flags = ["--disable-async-offload", "--disable-pinned-memory"]
     if lean:
         flags.append("--lowvram")
     return flags
