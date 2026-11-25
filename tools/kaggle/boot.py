@@ -228,6 +228,22 @@ def setup(which="realvis_lightning"):
 
 # --- running it -----------------------------------------------------------------------------------------
 
+def wanted_flags():
+    """Flags worth passing IF this ComfyUI has them. Nothing here is required."""
+    return ["--disable-smart-memory"]     # do not hold a model between runs; see `unload`
+
+
+def supported_flags(place=None):
+    """Every long option this ComfyUI actually accepts, read out of its own --help."""
+    place = place or where()
+    try:
+        done = subprocess.run([sys.executable, "main.py", "--help"], cwd=str(place["comfy"]),
+                              capture_output=True, text=True, timeout=120)
+    except Exception:
+        return set()
+    return set(re.findall(r"--[a-z0-9][a-z0-9-]+", (done.stdout or "") + (done.stderr or "")))
+
+
 def start(place=None, wait=240):
     """Start ComfyUI and wait for it to answer. Prints its OWN words when it will not."""
     place = place or where()
@@ -237,9 +253,13 @@ def start(place=None, wait=240):
     swatches = place["keep"] / "swatches"
     swatches.mkdir(parents=True, exist_ok=True)
     log = place["work"] / "comfy.log"
-    # --normalvram: on a 15 GB card ComfyUI will otherwise keep everything resident, which leaves no
-    # room for the patched copies a tiling run makes.
-    proc = subprocess.Popen([sys.executable, "main.py", "--listen", "127.0.0.1", "--normalvram",
+    # ComfyUI's own flags change between versions - --normalvram was there and then was not, and the
+    # only sign is "unrecognized arguments" and a process that never starts. So ask it what it takes
+    # before passing anything optional. An empty answer is fine: the defaults are sensible.
+    extra = [flag for flag in wanted_flags() if flag in supported_flags(place)]
+    if extra:
+        say("starting with", " ".join(extra))
+    proc = subprocess.Popen([sys.executable, "main.py", "--listen", "127.0.0.1", *extra,
                              "--port", str(PORT), "--output-directory", str(swatches)],
                             cwd=str(place["comfy"]), stdout=open(log, "w"),
                             stderr=subprocess.STDOUT)
