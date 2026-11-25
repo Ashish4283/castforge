@@ -7,6 +7,7 @@ Plain Python, importable from Blender too.
 import json
 import math
 import os
+import re
 
 from blender import acting, motion, tailor
 from core import appearance, config, finish, media, sets
@@ -127,12 +128,17 @@ PROP_TYPES = {
 SEAT_TYPES = ["chair", "armchair", "stool", "bench", "sofa", "seat"]
 
 # --- actions -----------------------------------------------------------------------------------------------
-def p(kind, help_, required=False, default=None, values=None):
+def p(kind, help_, required=False, default=None, values=None, open_to=None):
+    """One parameter. `open_to` marks an enum whose list is a STARTING POINT - something on the machine
+    may add to it (a fabric made on a GPU), so a plain name is let through and the words say where
+    those names come from."""
     out = {"type": kind, "help": help_, "required": required}
     if default is not None:
         out["default"] = default
     if values is not None:
         out["values"] = list(values)
+    if open_to is not None:
+        out["open_to"] = open_to
     return out
 
 
@@ -316,8 +322,14 @@ CHARACTER = {
     "outfit.bottom": p("color", "trousers / skirt colour"),
     "outfit.shoes": p("color", "shoe colour"),
     "costume.coat": p("enum", "long: the top becomes a coat down to mid-thigh", default="none", values=["none", "long"]),
-    "costume.fabric": p("enum", "garment: its own knit/cloth texture; or a plain velvet, leather or cotton",
-                        default="garment", values=["garment", "velvet", "leather", "cotton"]),
+    # An enum that GROWS. The four below are shader numbers and nothing else; a fabric made on a GPU
+    # (library/fabrics, see generate/make_fabric.py) is a real surface with a weave, and is named here
+    # directly. Those names are not known when this file is read, so the check lets a plain slug
+    # through and the build says plainly when there is no such fabric on this machine.
+    "costume.fabric": p("enum", "garment: its own knit/cloth texture; a plain velvet, leather or "
+                                "cotton; or the name of a fabric made on a GPU",
+                        default="garment", values=["garment", "velvet", "leather", "cotton"],
+                        open_to="a fabric in library/fabrics"),
     "costume.trim": p("color", "fur trim on cuffs, hem, collar, front and boot tops (empty: none)"),
     "costume.belt": p("color", "belt at the waist (empty: none)"),
     "costume.buckle": p("color", "belt buckle"),
@@ -436,7 +448,14 @@ def check_design(design):
             if spec["required"]:
                 problems.append(f"the design needs {key!r}")
         elif spec["type"] == "enum" and v not in spec["values"]:
-            problems.append(f"{key}: {v!r} is not one of {', '.join(spec['values'])}")
+            # Some enums grow: `open_to` says the list here is a starting point and anything that looks
+            # like a name may be added by what is on the machine. Still checked, just not against a
+            # list that cannot know about it.
+            if spec.get("open_to") and isinstance(v, str) and re.fullmatch(r"[a-z0-9][a-z0-9_]{1,46}", v):
+                pass
+            else:
+                problems.append(f"{key}: {v!r} is not one of {', '.join(spec['values'])}"
+                                + (f" (or {spec['open_to']})" if spec.get("open_to") else ""))
         elif spec["type"] == "number" and not isinstance(v, (int, float)):
             problems.append(f"{key}: {v!r} must be a number")
         elif spec["type"] == "slider" and not (isinstance(v, (int, float)) and not isinstance(v, bool)

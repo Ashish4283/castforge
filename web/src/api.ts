@@ -97,6 +97,15 @@ export interface ScreenReport {
   body?: BodyShape | null; walk?: WalkLike | null;
 }
 
+/** A fabric on this machine: the GPU made the colour, the laptop derived the rest. */
+export interface Fabric {
+  name: string; kind: string | null; scale: number | null; seam: number | null;
+  source: string | null; made: string | null; swatch: string | null;
+}
+/** Where heavy work can go, and what to do about the place that cannot take it. */
+export interface GpuPlace { ready: boolean; why: string; how: string }
+export interface GpuWhere { places: Record<string, GpuPlace>; using: string }
+
 export interface CharacterDetail {
   name: string; design: Json; photo: string | null; face: string | null;
   previews: Partial<Record<"front" | "side" | "back", string>>; log: string[];

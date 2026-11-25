@@ -731,3 +731,26 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
   border-top: 1px solid var(--line); }
 .clip-bar .muted { margin-left: auto; }
 .stage video { max-width: 100%; max-height: 100%; border-radius: 10px; display: block; }
+
+/* --- what the clothes are made of (CharacterDesigner.FabricPanel) ----------------------------------- */
+.fabric-tiles { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 12px; }
+.fabric-tile { width: 84px; padding: 0; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2); overflow: hidden; cursor: pointer; color: var(--text-2); }
+.fabric-tile:hover { border-color: var(--accent-line); }
+.fabric-tile.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); color: var(--text); }
+.fabric-tile img { width: 84px; height: 62px; object-fit: cover; display: block; }
+.fabric-tile b { display: block; font-size: 10px; font-weight: 600; padding: 5px 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fabric-tile .fabric-none { display: flex; align-items: center; justify-content: center; height: 62px;
+  font-size: 10px; color: var(--muted); background: rgba(255, 255, 255, 0.03); text-align: center;
+  padding: 0 6px; }
+
+.gpu-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.gpu-no { font-style: normal; font-size: 10px; margin-left: 6px; padding: 1px 5px; border-radius: 5px;
+  background: var(--err-soft); color: var(--err); }
+
+.fabric-ask { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 4px; }
+.fabric-ask input { flex: 1 1 220px; min-width: 0; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font: inherit;
+  font-size: 12.5px; }
+.fabric-ask input:focus { outline: none; border-color: var(--accent-line); }

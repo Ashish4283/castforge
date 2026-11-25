@@ -1404,6 +1404,80 @@ def character_clips(body: dict):
     return {"clips": made}
 
 
+@app.get("/api/fabrics")
+def fabrics_here():
+    """Every fabric on this machine, with a picture of each - what `costume.fabric` can be set to."""
+    sys.path.insert(0, os.path.join(ROOT, "generate"))
+    import make_fabric
+    out = []
+    for name, spec in make_fabric.load_all().items():
+        swatch = os.path.join(spec["folder"], "albedo.png")
+        out.append({"name": name, "kind": spec.get("kind"), "scale": spec.get("scale"),
+                    "seam": (spec.get("seam") or {}).get("worst"),
+                    "source": spec.get("source"), "made": spec.get("made"),
+                    "swatch": library_media_url(swatch) if os.path.exists(swatch) else None})
+    return {"fabrics": out, "plain": ["garment", "velvet", "leather", "cotton"]}
+
+
+@app.get("/api/gpu/where")
+def gpu_where():
+    """The two places heavy work can go, whether each is usable, and what to do about the one that is not."""
+    sys.path.insert(0, os.path.join(ROOT, "generate"))
+    import gpu_where as finder
+    from core import gpu as rules
+    facts = finder.facts()
+    return {"places": rules.look(facts), "using": finder.remembered() or rules.best(facts),
+            "facts": facts}
+
+
+@app.post("/api/gpu/use")
+def gpu_use(body: dict):
+    """Remember where work should go."""
+    sys.path.insert(0, os.path.join(ROOT, "generate"))
+    import gpu_where as finder
+    from core import gpu as rules
+    place = str(body.get("place") or "")
+    if place not in rules.PLACES:
+        raise HTTPException(400, f"{place!r} is not one of {', '.join(rules.PLACES)}")
+    finder.remember(place)
+    facts = finder.facts()
+    return {"places": rules.look(facts), "using": place}
+
+
+@app.post("/api/gpu/make")
+def gpu_make(body: dict):
+    """Make one square of cloth wherever work is going, and turn it into a material.
+
+    Kaggle is pushed, run headless and fetched - which takes a few minutes and holds this request open
+    for all of them. One job at a time, which is what was asked for and is also the honest shape of a
+    single rented GPU."""
+    sys.path.insert(0, os.path.join(ROOT, "generate"))
+    import gpu_where as finder
+    from core import gpu as rules
+    prompt = (body.get("prompt") or "").strip()
+    kind = body.get("kind") or "cotton"
+    name = re.sub(r"[^a-z0-9]+", "_", (body.get("name") or prompt).lower()).strip("_")[:46]
+    if not prompt:
+        raise HTTPException(400, "say what the cloth should look like")
+    if not name or len(name) < 2:
+        raise HTTPException(400, "give the fabric a name")
+    facts = finder.facts()
+    place = body.get("place") or finder.remembered() or rules.best(facts)
+    problems = rules.check(place, facts)
+    if problems:
+        raise HTTPException(400, problems[0])
+    cmd = [sys.executable, os.path.join(ROOT, "generate", "gpu_where.py"),
+           "--fabric", prompt, "--kind", kind, "--name", name]
+    run = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+    import make_fabric
+    made = make_fabric.load_all().get(name)
+    if not made:
+        tail = " / ".join((run.stdout or run.stderr or "").strip().splitlines()[-3:])
+        raise HTTPException(500, f"it did not come back: {tail}")
+    return {"name": name, "where": place,
+            "said": (run.stdout or "").strip().splitlines()[-6:]}
+
+
 @app.post("/api/character/rebuild")
 def character_rebuild(body: dict):
     """Rebuild a character from its edited design; with use_photo, the photo still gives face and body."""

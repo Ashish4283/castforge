@@ -63,10 +63,22 @@ def kaggle_ready():
         return True, False          # installed, but it could not authenticate
 
 
-def facts():
+_known = {"when": 0.0, "what": None}
+FRESH = 30.0          # seconds. A card does not appear and credentials do not expire mid-click.
+
+
+def facts(again=False):
+    """What `core/gpu.py` needs, measured - and kept for half a minute.
+
+    Measuring costs about three seconds: nvidia-smi is a subprocess and importing kaggle is not free.
+    That is fine once and far too slow for a panel that asks every time somebody opens a step."""
+    if not again and _known["what"] and time.time() - _known["when"] < FRESH:
+        return _known["what"]
     cli, auth = kaggle_ready()
-    return {"local_comfy": answering(), "local_vram": local_vram(),
-            "kaggle_cli": cli, "kaggle_auth": auth}
+    _known["what"] = {"local_comfy": answering(), "local_vram": local_vram(),
+                      "kaggle_cli": cli, "kaggle_auth": auth}
+    _known["when"] = time.time()
+    return _known["what"]
 
 
 def remembered():

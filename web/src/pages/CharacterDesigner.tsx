@@ -2,10 +2,11 @@
 // front/side/back previews, and Rebuild. Photo characters keep their face and body from the photo.
 import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {ArrowLeft, ArrowRight, Bone, Check, ChevronRight, Clapperboard, Dumbbell, Hammer, ListChecks,
-        Film, Footprints, PersonStanding, Play, Redo2, RotateCcw, Shirt, Sparkles, TriangleAlert, Undo2,
+        Cloud, Film, Footprints, Laptop, PersonStanding, Play, Redo2, RotateCcw, Shirt, Sparkles,
+        TriangleAlert, Undo2,
         UserRound, Wand2, X} from "lucide-react";
-import {api, CharacterDetail, Json, label, ParamDef, post, q, RigReport, ScreenReport,
-        ScreenRow} from "../api";
+import {api, CharacterDetail, Fabric, GpuWhere, Json, label, ParamDef, post, q, RigReport,
+        ScreenReport, ScreenRow} from "../api";
 import {useStore} from "../app/store";
 import {Badge, Button, ColorField, Field, Notice, PageHead, Segmented, Select, Switch} from "../components/ui";
 // three.js is 500 kB: it loads the first time someone opens the live body, not with the app
@@ -364,6 +365,11 @@ export function CharacterDesigner({name}: {name: string}) {
                     </div>
                   </div>
                 )}
+                {here.id === "costume" && (
+                  <FabricPanel value={String(get(design, "costume.fabric") || "garment")}
+                               toast={toast}
+                               onPick={name => change("costume.fabric", name)} />
+                )}
                 {here.id === "build" && <RigPanel rig={rig} checking={checking} isNew={isNew}
                                                   onCheck={async (fix: boolean) => {
                                                     setChecking(true);
@@ -557,6 +563,112 @@ function RigPanel({rig, checking, isNew, onCheck}: {
           <Button variant="primary" busy={checking} onClick={() => onCheck(true)}>Tidy it</Button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The cloth a character can be dressed in, and where new cloth gets made.
+ *
+ *  A plain fabric - velvet, leather, cotton - is four shader numbers. A made one is a real surface
+ *  with a weave in it, and the weave is what the eye reads as cloth rather than as a tinted shape.
+ *  `generate/make_fabric.py` explains the split: a GPU makes one square picture and this laptop
+ *  derives the relief and the roughness from it, in milliseconds, identically every time. */
+function FabricPanel({value, onPick, toast}: {
+  value: string; onPick: (name: string) => void; toast: (m: string, k?: "ok" | "err") => void;
+}) {
+  const [have, setHave] = useState<Fabric[]>([]);
+  const [plain, setPlain] = useState<string[]>([]);
+  const [where, setWhere] = useState<GpuWhere | null>(null);
+  const [asking, setAsking] = useState("");
+  const [kind, setKind] = useState("cotton");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const got = await api<{fabrics: Fabric[]; plain: string[]}>("/api/fabrics");
+      setHave(got.fabrics);
+      setPlain(got.plain);
+    } catch { /* a missing list must not take the step down */ }
+    try { setWhere(await api<GpuWhere>("/api/gpu/where")); } catch { /* same */ }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const making = where ? where.places[where.using] : null;
+  // Measuring takes a moment the first time. Say so, rather than showing two buttons that look alike.
+  if (!where) {
+    return (
+      <div className="rig-panel fabric-panel">
+        <h3><Shirt size={15} color="var(--paint-lime)" />What the clothes are made of</h3>
+        <p className="muted small"><span className="spinner" /> looking at what this machine has...</p>
+      </div>
+    );
+  }
+  return (
+    <div className="rig-panel fabric-panel">
+      <h3><Shirt size={15} color="var(--paint-lime)" />What the clothes are made of</h3>
+      <div className="fabric-tiles">
+        {plain.map(name => (
+          <button key={name} type="button" className={`fabric-tile plain ${value === name ? "on" : ""}`}
+                  onClick={() => onPick(name)}>
+            <span className="fabric-none">{name === "garment" ? "as it comes" : name}</span>
+            <b>{name}</b>
+          </button>
+        ))}
+        {have.map(f => (
+          <button key={f.name} type="button" className={`fabric-tile ${value === f.name ? "on" : ""}`}
+                  onClick={() => onPick(f.name)}
+                  title={`${f.kind} - seam ${f.seam?.toFixed(2)} (1.00 is perfect)`}>
+            {f.swatch ? <img src={f.swatch} alt={f.name} /> : <span className="fabric-none">?</span>}
+            <b>{f.name.replace(/_/g, " ")}</b>
+          </button>
+        ))}
+      </div>
+
+      <div className="gpu-row">
+        {(["local", "kaggle"] as const).map(place => {
+          const it = where?.places[place];
+          return (
+            <Button key={place} variant={where?.using === place ? "primary" : "ghost"}
+                    icon={place === "local" ? <Laptop size={14} /> : <Cloud size={14} />}
+                    onClick={async () => {
+                      try { setWhere(await post<GpuWhere>("/api/gpu/use", {place})); }
+                      catch (e) { toast((e as Error).message, "err"); }
+                    }}>
+              {place === "local" ? "This laptop" : "Rented GPU"}
+              {it && !it.ready && <i className="gpu-no" title={it.how}>not ready</i>}
+            </Button>
+          );
+        })}
+      </div>
+      {making && !making.ready && <Notice kind="warn">{making.why} — {making.how}</Notice>}
+      {making && making.ready && <p className="muted small">{making.why}</p>}
+
+      <div className="fabric-ask">
+        <input placeholder="worn indigo denim, visible twill" value={asking}
+               onChange={e => setAsking(e.target.value)} />
+        <Select value={kind} onChange={setKind}
+                options={["denim", "knit", "velvet", "leather", "cotton", "wool", "silk", "canvas",
+                          "fur"].map(k => [k, k] as [string, string])} />
+        <Button variant="primary" busy={busy}
+                disabled={!asking.trim() || !making?.ready}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    const got = await post<{name: string}>("/api/gpu/make",
+                                                           {prompt: asking, kind});
+                    await load();
+                    onPick(got.name);
+                    toast(`${got.name} is made, and on them.`);
+                    setAsking("");
+                  } catch (e) { toast((e as Error).message, "err"); }
+                  finally { setBusy(false); }
+                }}>Make it</Button>
+      </div>
+      <p className="muted small">
+        A square is made on the chosen machine and the weave, relief and roughness are worked out here.
+        Anything with a visible join is refused rather than put on a character. A rented one takes a
+        few minutes.
+      </p>
     </div>
   );
 }
