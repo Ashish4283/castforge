@@ -297,6 +297,11 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   (`LivePreview.colourKey` / `outfitKey`). Twice now a feature was built correctly and did nothing
   because its design key was in neither.
 
+- A MADE cap sits ON hair and nobody goes bald: `wearables` keeps the hair, and what is under the band is
+  hidden where it is DRAWN (the live view drops those triangles, the build masks them), so sideburns and
+  the hair at the back still show. An ASSET hat is a solid shell and still takes the hair off, because
+  hair underneath pokes straight through it.
+
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).
 Scene vocabulary for Gemini: `docs/GEMINI_SCENE_PROMPT.md`.

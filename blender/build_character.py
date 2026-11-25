@@ -564,7 +564,10 @@ hair_obj = None
 # a named style (translated above) wins over the length, which is only what a photo could tell
 h_name = args.hair or (HAIR[(args.gender, spec["hair_length"])] if spec.get("hair_length", "none") != "none"
                        else "none")
-if (DESIGN or {}).get("hat", "none") != "none":     # a hat covers the hair: leave the hair off
+_hat_asked = (DESIGN or {}).get("hat", "none")
+# An asset hat is a solid shell and the hair would poke through it, so it is left off. A MADE cap is built
+# on the head and sits ON the hair: the hair stays, and what is under the band is masked off below.
+if _hat_asked != "none" and _hat_asked not in appearance.MADE_HATS:
     h_name = "none"
 if h_name != "none":
     hair_obj = asset(f"{h_name}/{h_name}.mhclo", "hair", "Hair")
@@ -1337,6 +1340,17 @@ if COSTUME:
             cap_obj.parent = rig
             solid = cap_obj.modifiers.new("cf_cap_thick", "SOLIDIFY")
             solid.thickness, solid.offset = 0.006, -1.0
+            # A cap sits ON hair: hide the hair that is under the band and keep the rest, so sideburns
+            # and the hair at the back still show. Only a mask, so nothing is lost.
+            if hair_obj:
+                _, hair_w = rest(hair_obj)
+                under = [i for i, p_ in enumerate(hair_w) if p_[2] > sit + 0.012]
+                if under:
+                    vg = hair_obj.vertex_groups.new(name="cf_under_cap")
+                    vg.add(under, 1.0, "REPLACE")
+                    m = hair_obj.modifiers.new("cf_hide_under_cap", "MASK")
+                    m.vertex_group, m.invert_vertex_group = "cf_under_cap", True
+                    made.append(f"hair tucked under the cap ({len(under)} of {len(hair_w)})")
             made.append(f"santa cap ({len(rings)} rings, {fur} fur, head {wide * 100:.0f} cm)")
 
     # a cape: a sheet hanging from the back of the collar to the knees, weighted to the chest so it swings

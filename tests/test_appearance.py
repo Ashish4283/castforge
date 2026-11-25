@@ -222,12 +222,21 @@ def test_a_piece_only_counts_in_the_slot_it_was_cut_for():
     assert any(w["role"] in ("top", "bottom") for w in worn)    # it fell back to separates
 
 
-def test_a_made_hat_is_not_fetched_and_still_covers_the_hair():
-    """It is built on the character's own head, so there is nothing to export - but it is still a hat."""
+def test_a_made_hat_is_not_fetched_but_the_hair_stays_on_under_it():
+    """A cap sits ON hair. It is built on the head, so there is nothing to export - and nobody goes bald:
+    what is under the band is hidden where it is drawn, not taken off the character."""
     worn = appearance.wearables({"gender": "male", "hat": "santa_made", "hair": {"style": "inverted_bob"}})
     roles = [w["role"] for w in worn]
-    assert "hat" not in roles and "hair" not in roles
-    assert "top" in roles                                # everything else is worn as usual
+    assert "hat" not in roles                            # nothing to fetch: it is made
+    assert "hair" in roles                               # and the hair is still worn
+    assert "top" in roles
+
+
+def test_an_asset_hat_still_takes_the_hair_off():
+    """A hat from the library is a solid shell: hair underneath pokes through it."""
+    worn = appearance.wearables({"gender": "male", "hat": "santa", "hair": {"style": "inverted_bob"}})
+    roles = [w["role"] for w in worn]
+    assert "hat" in roles and "hair" not in roles
 
 
 def test_every_made_hat_is_offered_by_the_vocabulary():

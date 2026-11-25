@@ -233,13 +233,16 @@ def wearables(design, pieces=None):
     add("eyebrows", EYEBROWS.get(d.get("eyebrows"), "eyebrow001"))
     hat = d.get("hat", "none")
     hat_piece = chosen(hat, "hat")
-    if hat in MADE_HATS:
-        pass                                   # made for this head: nothing to fetch, and it covers the hair
-    elif hat_piece:
+    # A made hat has nothing to fetch - it is built on the head - and it does NOT take the hair off: a cap
+    # sits ON hair. What is under it is hidden where it is under it (the band line), which the build and
+    # the live view both do, so sideburns and the hair at the back still show.
+    if hat_piece:
         add("hat", hat_piece["base"], hat_piece)
-    elif hat in HATS:
+    elif hat in HATS and hat not in MADE_HATS:
         add("hat", HATS[hat])
-    else:                                      # a hat covers the hair, so the hair is left off
+    if hat in HATS and hat not in MADE_HATS or hat_piece:
+        pass                                   # an asset hat is a solid shell: the hair would poke through
+    else:
         style = HAIR_STYLES.get(hair.get("style"), hair.get("style") or "")
         if not style:
             style = {"none": "none", "short": "short01", "medium": "culturalibre_hair_05",

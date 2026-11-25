@@ -824,7 +824,15 @@ export class BodyView {
       }
       this.cap = null;
     }
-    if (!this.capWants || !this.work || !this.tris) return;
+    if (!this.capWants || !this.work || !this.tris) {
+      for (const w of this.wearing) {                 // no cap: every hair triangle is drawn again
+        if (w.worn.spec.role === "hair") {
+          w.mesh.geometry.setIndex(new THREE.BufferAttribute(Uint32Array.from(w.faces), 1));
+          w.mesh.geometry.computeVertexNormals();
+        }
+      }
+      return;
+    }
     const neck = this.joints["joint-neck"];
     const head = headAt(this.work, this.tris, neck ? neck[1] + 0.02 : this.height * 0.82);
     if (!head) return;
@@ -844,6 +852,29 @@ export class BodyView {
     };
     this.cap = {cloth: piece(cloth, this.capWants.cloth, 0.55, 0.6),
                 fur: piece(fur, this.capWants.fur, 0.95, 1.0)};
+    this.tuckHairUnder(head.sit);
+  }
+
+  /** Hide the hair that is under the cap, and only that.
+   *
+   *  A cap sits ON hair - it does not shave anyone. What is under the band would poke through the cloth,
+   *  so the hair above the band line is dropped and everything below it (sideburns, the back of the neck)
+   *  is kept. Put the cap away again and all of it comes back, because only the drawing is changed. */
+  private tuckHairUnder(line: number) {
+    for (const w of this.wearing) {
+      if (w.worn.spec.role !== "hair" && w.worn.spec.role !== "beard") continue;
+      const whole = w.faces;
+      const keep: number[] = [];
+      for (let t = 0; t + 2 < whole.length; t += 3) {
+        const a = whole[t], b = whole[t + 1], c = whole[t + 2];
+        const top = Math.max(w.pos[a * 3 + 1], w.pos[b * 3 + 1], w.pos[c * 3 + 1]);
+        if (!this.capWants || w.worn.spec.role === "beard" || top < line + 0.012) keep.push(a, b, c);
+      }
+      if (keep.length !== whole.length) {
+        w.mesh.geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(keep), 1));
+        w.mesh.geometry.computeVertexNormals();
+      }
+    }
   }
 
   /** Look at the whole person, or close in on what is being edited. */
