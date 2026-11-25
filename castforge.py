@@ -18,6 +18,7 @@
     python castforge.py library-build [--refresh] build missing (or refresh unchanged) city-library starters
     python castforge.py rig NAME [MOVIE_FOLDER] [--fix]   is that character fit to animate? (--fix tidies it)
     python castforge.py screen NAME [MOVIE_FOLDER] [--shots]  a screen test: can it walk, run, bend, grip?
+    python castforge.py gpu connect URL | status | fabric "worn denim" --kind denim   a rented GPU (Colab, Kaggle, gpubox)
     python castforge.py doctor                   check that every tool CastForge needs is installed
 """
 import argparse
@@ -708,6 +709,62 @@ def main():
         if "--shots" in a.args:
             cmd += ["--shots", os.path.splitext(path)[0] + "_screen"]
         sys.exit(subprocess.run(cmd).returncode)
+    elif a.command == "gpu":
+        # The rented GPU: a ComfyUI somewhere else (a Colab or Kaggle notebook behind a cloudflared
+        # tunnel, the gpubox instance, or one on this machine). Its address is remembered here so it is
+        # pasted ONCE - a tunnel gets a new address every time the notebook is started, and retyping it
+        # into every command is how the wrong one ends up being used.
+        import urllib.error
+        sys.path.insert(0, os.path.join(ROOT, "generate"))
+        import remote_gpu
+        kept = os.path.join(ROOT, ".gpu.json")
+
+        def remember(url=None):
+            if url:
+                json.dump({"url": url.rstrip("/"), "when": time.strftime("%Y-%m-%d %H:%M")},
+                          open(kept, "w", encoding="utf-8"))
+                return url.rstrip("/")
+            if os.path.exists(kept):
+                try:
+                    return json.load(open(kept, encoding="utf-8")).get("url")
+                except ValueError:
+                    return None
+            return None
+
+        what = a.args[0] if a.args else "status"
+        rest = a.args[1:]
+        if what == "connect":
+            if not rest:
+                sys.exit("usage: python castforge.py gpu connect https://xxxx.trycloudflare.com")
+            url = remember(rest[0])
+        else:
+            url = next((x for x in rest if x.startswith("http")), None) or remember()
+        if not url:
+            sys.exit("no GPU connected yet: python castforge.py gpu connect <URL from the notebook>")
+
+        if what in ("connect", "status"):
+            try:
+                seen = remote_gpu.ping(url)
+            except (urllib.error.URLError, TimeoutError, OSError) as e:
+                print(f"CF: {url} does not answer ({e}).")
+                print("CF: cell 5 of the notebook has to be running, and a tunnel gets a NEW "
+                      "address every time it is started.")
+                sys.exit(1)
+            print(f"CF: connected to {url}")
+            print(f"CF: {seen['devices']}, {seen['nodes']} node types, "
+                  f"seamless tiling {'installed' if seen['seamless'] else 'NOT installed'}")
+            print(f"CF: checkpoints: {', '.join(seen['checkpoints'][:6]) or 'none'}")
+            if not seen["seamless"]:
+                print("CF: cell 3 of the notebook did not finish - run it again, or every swatch will "
+                      "have a seam in it")
+            return
+        if what == "fabric":
+            if not rest:
+                sys.exit('usage: python castforge.py gpu fabric "worn indigo denim" --kind denim')
+            sys.exit(subprocess.run([sys.executable,
+                                     os.path.join(ROOT, "generate", "remote_gpu.py"),
+                                     "--url", url, "fabric", *rest]).returncode)
+        sys.exit(f"gpu: connect | status | fabric  (not {what!r})")
     elif a.command == "doctor":
         sys.exit(1 if doctor() else 0)
     elif a.command == "app":
