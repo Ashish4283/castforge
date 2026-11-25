@@ -365,7 +365,8 @@ def main():
     masks = only_the_rig(body)
     rest = mesh_now(body)
     # How THIS body walks, which is also how far the walking poses below should reach (core/gait.py)
-    shape = gait.shape_of(markers_of(body, rest))
+    joints = markers_of(body, rest)
+    shape = gait.shape_of(joints)
     how = gait.walk_like(shape, (1.1, 0.62, 1.0, 0.0))
     size = (shape["leg"] / gait.LEG_REF) if shape else 1.0
     if shape:
@@ -397,6 +398,11 @@ def main():
             facts["moved"] = furthest(rest, now)
             if at is not None:
                 facts["worst_at"] = [round(float(x), 3) for x in at]
+                # ...and which part of the body that is, because nobody can act on a coordinate
+                marks = {k: v for k, v in (joints or {}).items() if k != "joint-head-2"}
+                if marks:
+                    facts["worst_near"] = min(marks, key=lambda k: sum(
+                        (marks[k][i] - at[i]) ** 2 for i in range(3)))
         if move.get("shapes"):
             facts["shapes"] = shapes_on(body, move["shapes"][0])
         if move.get("watch") == "slide":

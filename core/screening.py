@@ -160,6 +160,31 @@ def every_bone():
     return out
 
 
+# What a joint marker is called when you are telling somebody where their character went soft. A number
+# and a 3D coordinate is not something anybody can act on; "the right shoulder" is.
+PLACES = {
+    "joint-l-shoulder": "the left shoulder", "joint-r-shoulder": "the right shoulder",
+    "joint-l-clavicle": "the left collarbone", "joint-r-clavicle": "the right collarbone",
+    "joint-l-scapula": "the left shoulder blade", "joint-r-scapula": "the right shoulder blade",
+    "joint-l-elbow": "the left elbow", "joint-r-elbow": "the right elbow",
+    "joint-l-hand": "the left wrist", "joint-r-hand": "the right wrist",
+    "joint-l-knee": "the left knee", "joint-r-knee": "the right knee",
+    "joint-l-ankle": "the left ankle", "joint-r-ankle": "the right ankle",
+    "joint-l-upper-leg": "the left hip", "joint-r-upper-leg": "the right hip",
+    "joint-neck": "the neck", "joint-head": "the head", "joint-head-2": "the crown",
+    "joint-jaw": "the jaw", "joint-pelvis": "the waist",
+    "joint-spine-1": "the chest", "joint-spine-2": "the midriff", "joint-spine-3": "the belly",
+    "joint-ground": "the feet",
+}
+
+
+def where(marker):
+    """A place a person can look at, from a joint marker's name."""
+    if not marker:
+        return None
+    return PLACES.get(marker) or marker.replace("joint-", "").replace("-", " ")
+
+
 def look(name, facts):
     """Plain-language problems with one move; empty when the character can do it.
 
@@ -190,7 +215,9 @@ def look(name, facts):
     stretch = facts.get("stretch")
     if rough is not None and rough > ROUGH_SKIN:
         worst = f", the worst of it {stretch:.1f}x" if stretch and stretch > STRETCH_SHOW else ""
-        out.append(f"{rough * 100:.2f}% of the skin is pulled out of shape doing this{worst}"
+        spot = where(facts.get("worst_near"))
+        at = f" at {spot}" if spot else ""
+        out.append(f"{rough * 100:.2f}% of the skin is pulled out of shape doing this{worst}{at}"
                    f"{' - the joint melts' if rough > TORN_SKIN else ' - it goes soft where it bends'}")
     slide = facts.get("slide")
     if move.get("watch") == "slide" and slide is not None and slide > SLIDE_OK:
@@ -235,6 +262,7 @@ def card(results):
         state = "failed" if bad(name, facts) else ("works" if not problems else "rough")
         out.append({"move": name, "title": move["title"], "why": move["why"], "state": state,
                     "problems": problems, "stretch": facts.get("stretch"),
+                    "worst_near": where(facts.get("worst_near")),
                     "rough_skin": facts.get("rough_skin"), "reach": facts.get("reach"),
                     "moved": facts.get("moved"), "slide": facts.get("slide")})
     return out

@@ -499,7 +499,11 @@ def main():
         c = p.parse_args(a.args)
         claim_build(f"a character build ({c.name})")
         os.makedirs(c.out_dir, exist_ok=True)
-        build = [BLENDER, "-b", "--factory-startup", "-P", os.path.join(ROOT, "blender", "build_character.py"), "--",
+        # --python-exit-code 1 or Blender reports SUCCESS after the script has crashed. That is how a
+        # build that died rendering the previews still said "character ready", and the only sign was a
+        # hat missing from a picture.
+        build = [BLENDER, "-b", "--factory-startup", "--python-exit-code", "1",
+                 "-P", os.path.join(ROOT, "blender", "build_character.py"), "--",
                  "--out", os.path.join(c.out_dir, f"{c.name}.blend"),
                  "--preview", os.path.join(c.out_dir, f"{c.name}_preview")]
         design = json.load(open(c.design, encoding="utf-8")) if c.design else {}

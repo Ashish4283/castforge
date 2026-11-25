@@ -186,3 +186,20 @@ def test_skin_that_moves_is_not_complained_about():
 def test_a_dead_move_is_not_blamed_on_the_body_when_the_control_is_missing():
     said = screening.look("arms", good(missing=["upper_arm_fk.L"], moved=0.0))
     assert len(said) == 1 and "nothing at all" in said[0]
+
+
+def test_it_says_where_the_skin_went_soft_not_just_how_much():
+    """A number and a 3D coordinate is not something anybody can act on."""
+    said = screening.look("arms", good(rough_skin=0.006, stretch=8.7,
+                                       worst_near="joint-r-shoulder"))
+    assert "at the right shoulder" in said[0], said
+    assert screening.where("joint-spine-3") == "the belly"
+    assert screening.where("joint-l-knee") == "the left knee"
+    assert screening.where(None) is None
+    assert screening.where("joint-made-up") == "made up"   # never a crash, never a raw marker name
+
+
+def test_a_place_is_carried_on_the_card_too():
+    rows = screening.card(all_good(arms=good(rough_skin=0.006, worst_near="joint-l-elbow")))
+    arms = [r for r in rows if r["move"] == "arms"][0]
+    assert arms["worst_near"] == "the left elbow"

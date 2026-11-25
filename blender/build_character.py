@@ -892,10 +892,12 @@ log("rig", rig.name, len(rig.pose.bones), "pose bones")
 
 # --- costume: long coat, fur trim, belt, gloves, boot tops (after the rig: every piece copies the bone
 # --- weights of the garment or skin it is made from; geometry maths in costume.py) ---------------------
-# `COSTUME` is the hand-made layer; `made_wear` is what tailor.py cuts for this body. Footwear is asked
-# for by `outfit.shoe_style`, which is NOT a costume key, so someone in made shoes and an ordinary shirt
-# has to get in here too.
-made_wear = bool((DESIGN or {}).get("outfit", {}).get("shoe_style", "none") not in ("none", None)
+# `COSTUME` is the hand-made layer. Everything else MADE for this body is built in here too and is asked
+# for by keys that are NOT costume keys - footwear by `outfit.shoe_style`, and a cap by `hat` - so
+# somebody in a made Santa cap and an ordinary jumper, with no costume at all, has to get in here or
+# their hat is silently not built. That is exactly what happened.
+made_wear = bool((DESIGN or {}).get("hat") in appearance.MADE_HATS
+                 or (DESIGN or {}).get("outfit", {}).get("shoe_style", "none") not in ("none", None)
                  or any(((DESIGN or {}).get("costume") or {}).get(k) for k in
                         ("socks", "tie", "scarf", "watch", "wristband")))
 if COSTUME or made_wear:
@@ -1272,7 +1274,7 @@ if COSTUME or made_wear:
     # its opening, which means it cannot bulge through. The live view builds the same shape from the same
     # measurements, so what you shape in the studio is what gets built. Maths: costume.santa_cap.
     if (DESIGN or {}).get("hat") in appearance.MADE_HATS:
-        want = (DESIGN or {}).get("cap") or {}
+        cap_want = (DESIGN or {}).get("cap") or {}   # NOT `want`: that is the height, and the preview camera needs it
         head_bone = next((h for h in (head("DEF-spine.006"), head("head")) if h is not None), None)
         skull = [body_w[v] for v in in_body if head_bone is not None and body_w[v][2] > head_bone.z + 0.03]
         if not skull:
@@ -1294,9 +1296,9 @@ if COSTUME or made_wear:
             wide = ((high_x - low_x) + (high_y - low_y)) / 4 + 0.006
             rings, fur, tip = kit.santa_cap(
                 (cx, cy), sit, wide, wide * 3.0 * size,
-                droop=float(want.get("droop", 0.6)), towards=float(want.get("towards", 20.0)),
-                band=float(want.get("band", 0.3)))
-            bobble = float(want.get("bobble", 1.0))
+                droop=float(cap_want.get("droop", 0.6)), towards=float(cap_want.get("towards", 20.0)),
+                band=float(cap_want.get("band", 0.3)))
+            bobble = float(cap_want.get("bobble", 1.0))
             balls = kit.ball(tip, wide * 0.42 * bobble) if bobble > 0.05 else []
 
             bm = bmesh.new()
@@ -1338,7 +1340,7 @@ if COSTUME or made_wear:
                 c.objects.link(cap_obj)
             cap_obj.data.materials.append(material("cf_cap_fur", lin(COSTUME.get("trim") or "#f3efe8"),
                                                    0.95, sheen=1.0, fluff=0.5))
-            cap_obj.data.materials.append(material("cf_cap", lin(want.get("colour") or "#c8102e"),
+            cap_obj.data.materials.append(material("cf_cap", lin(cap_want.get("colour") or "#c8102e"),
                                                    0.55, sheen=0.6))
             for poly, (_face, slot_of) in zip(cap_obj.data.polygons, tagged):
                 poly.material_index = slot_of
