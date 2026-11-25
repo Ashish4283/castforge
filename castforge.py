@@ -18,7 +18,8 @@
     python castforge.py library-build [--refresh] build missing (or refresh unchanged) city-library starters
     python castforge.py rig NAME [MOVIE_FOLDER] [--fix]   is that character fit to animate? (--fix tidies it)
     python castforge.py screen NAME [MOVIE_FOLDER] [--shots]  a screen test: can it walk, run, bend, grip?
-    python castforge.py gpu connect URL | status | fabric "worn denim" --kind denim   a rented GPU (Colab, Kaggle, gpubox)
+    python castforge.py gpu where | use local|kaggle | make "worn denim" --kind denim | make --set
+    python castforge.py gpu connect URL | status | fabric "..."   (a ComfyUI you already have an address for)
     python castforge.py doctor                   check that every tool CastForge needs is installed
 """
 import argparse
@@ -731,7 +732,29 @@ def main():
                     return None
             return None
 
-        what = a.args[0] if a.args else "status"
+        what = a.args[0] if a.args else "where"
+        if what in ("where", "use"):
+            # Two places: this laptop, or a rented GPU. core/gpu.py decides what the facts mean;
+            # generate/gpu_where.py gathers them and does what it says.
+            cmd = [sys.executable, os.path.join(ROOT, "generate", "gpu_where.py")]
+            if what == "use":
+                if len(a.args) < 2:
+                    sys.exit("usage: python castforge.py gpu use local|kaggle")
+                cmd += ["--use", a.args[1]]
+            sys.exit(subprocess.run(cmd).returncode)
+        if what == "make":
+            cmd = [sys.executable, os.path.join(ROOT, "generate", "gpu_where.py")]
+            if "--set" in a.args:
+                cmd.append("--set")
+            else:
+                rest_args = [x for x in a.args[1:] if not x.startswith("--")]
+                if not rest_args:
+                    sys.exit('usage: python castforge.py gpu make "worn denim" --kind denim | --set')
+                cmd += ["--fabric", rest_args[0]]
+                for flag in ("--kind", "--name"):
+                    if flag in a.args:
+                        cmd += [flag, a.args[a.args.index(flag) + 1]]
+            sys.exit(subprocess.run(cmd).returncode)
         rest = a.args[1:]
         if what == "connect":
             if not rest:
