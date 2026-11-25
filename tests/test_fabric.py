@@ -151,3 +151,31 @@ def test_it_says_in_words_what_the_cloth_is_like():
 def test_a_tile_repeats_at_a_scale_a_person_reads_as_cloth():
     assert abs(fabric.tile_size(1024, 0.35) - 1 / 0.35) < 1e-6
     assert fabric.tile_size(1024, 0.0) > 0, "never a divide by zero"
+
+
+# --- the rented GPU's own settings -----------------------------------------------------------------------
+
+def test_a_lightning_checkpoint_is_not_run_at_a_full_models_settings():
+    """Run a distilled model at 28 steps and CFG 5.5 and it comes out burnt - and six times slower,
+    which on a free T4 is fifteen seconds a swatch against a minute and a half."""
+    sys.path.insert(0, str(Path(__file__).parent.parent / "generate"))
+    import remote_gpu
+
+    quick, slow = ("RealVisXL_V5.0_Lightning_fp16.safetensors", "sd_xl_base_1.0.safetensors")
+    assert remote_gpu.settings_for(quick)[0] < remote_gpu.settings_for(slow)[0]
+    assert remote_gpu.settings_for(quick)[1] < remote_gpu.settings_for(slow)[1]
+    for tag in ("lightning", "Turbo", "LCM", "hyper"):
+        assert remote_gpu.settings_for(f"some_{tag}_model.safetensors")[0] <= 8, tag
+    assert remote_gpu.settings_for(None)[0] == 28, "an unknown checkpoint gets the careful settings"
+    assert remote_gpu.settings_for(quick, steps=12, cfg=3.0)[:2] == (12, 3.0), "the caller may insist"
+
+
+def test_the_graph_carries_whatever_the_checkpoint_needs():
+    sys.path.insert(0, str(Path(__file__).parent.parent / "generate"))
+    import remote_gpu
+
+    g = remote_gpu.tiling_graph("worn denim", "RealVisXL_V5.0_Lightning_fp16.safetensors")
+    assert g["5"]["inputs"]["steps"] == 6 and g["5"]["inputs"]["sampler_name"] == "dpmpp_sde"
+    assert all("class_type" in n and "inputs" in n for n in g.values())
+    assert g["6"]["class_type"] == remote_gpu.SEAMLESS, "a swatch must be decoded seamlessly"
+    assert remote_gpu.tiling_graph("x", "y", seamless=False)["6"]["class_type"] == "VAEDecode"

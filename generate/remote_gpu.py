@@ -98,7 +98,21 @@ def fetch(url, item, into):
     return path
 
 
-def tiling_graph(prompt, checkpoint, size=1024, steps=28, cfg=5.5, seed=0, seamless=True,
+# A "Lightning" or "Turbo" checkpoint is distilled to work in a handful of steps at almost no guidance.
+# Run one at SDXL base's 28 steps and CFG 5.5 and it comes out burnt and over-contrasted - and six times
+# slower, which on a free T4 is the difference between fifteen seconds a swatch and a minute and a half.
+FAST = ("lightning", "turbo", "lcm", "hyper")
+
+
+def settings_for(checkpoint, steps=None, cfg=None):
+    """(steps, cfg, sampler, scheduler) suited to the checkpoint, unless the caller insists."""
+    quick = any(tag in (checkpoint or "").lower() for tag in FAST)
+    if quick:
+        return (steps or 6, cfg if cfg is not None else 1.8, "dpmpp_sde", "karras")
+    return (steps or 28, cfg if cfg is not None else 5.5, "dpmpp_2m", "karras")
+
+
+def tiling_graph(prompt, checkpoint, size=1024, steps=None, cfg=None, seed=0, seamless=True,
                  negative="seam, border, frame, text, watermark, person, hands, shadow, vignette"):
     """A ComfyUI graph for one square of cloth, lit flat and straight on.
 
@@ -106,6 +120,7 @@ def tiling_graph(prompt, checkpoint, size=1024, steps=28, cfg=5.5, seed=0, seaml
     that light into every garment it is ever put on, and no amount of relief fixes it. The prompt says
     so and the negative says so."""
     decode = SEAMLESS if seamless else "VAEDecode"
+    steps, cfg, sampler, schedule = settings_for(checkpoint, steps, cfg)
     return {
         "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": checkpoint}},
         "2": {"class_type": "CLIPTextEncode",
@@ -116,8 +131,8 @@ def tiling_graph(prompt, checkpoint, size=1024, steps=28, cfg=5.5, seed=0, seaml
         "4": {"class_type": "EmptyLatentImage",
               "inputs": {"width": size, "height": size, "batch_size": 1}},
         "5": {"class_type": "KSampler",
-              "inputs": {"seed": seed, "steps": steps, "cfg": cfg, "sampler_name": "dpmpp_2m",
-                         "scheduler": "karras", "denoise": 1.0,
+              "inputs": {"seed": seed, "steps": steps, "cfg": cfg, "sampler_name": sampler,
+                         "scheduler": schedule, "denoise": 1.0,
                          "model": ["1", 0], "positive": ["2", 0], "negative": ["3", 0],
                          "latent_image": ["4", 0]}},
         "6": {"class_type": decode, "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
@@ -135,9 +150,11 @@ def main():
     f.add_argument("prompt")
     f.add_argument("--kind", default="cotton", choices=list(kit.KINDS))
     f.add_argument("--name")
-    f.add_argument("--checkpoint", default="sd_xl_base_1.0.safetensors")
+    f.add_argument("--checkpoint", default="RealVisXL_V5.0_Lightning_fp16.safetensors",
+                   help="whatever the notebook said it would load")
     f.add_argument("--size", type=int, default=1024)
-    f.add_argument("--steps", type=int, default=28)
+    f.add_argument("--steps", type=int, default=None,
+                   help="left alone: a Lightning checkpoint gets 6, an ordinary one 28")
     f.add_argument("--seed", type=int, default=0)
     f.add_argument("--scale", type=float, default=0.35)
     f.add_argument("--tries", type=int, default=3, help="how many seeds to try for one that tiles")
@@ -171,7 +188,8 @@ def main():
     best = None
     for attempt in range(max(1, a.tries)):
         seed = a.seed + attempt * 1013
-        log(f"asking for {a.kind}: {a.prompt!r} (seed {seed})")
+        chosen = settings_for(a.checkpoint, a.steps)
+        log(f"asking for {a.kind}: {a.prompt!r} (seed {seed}, {chosen[0]} steps, cfg {chosen[1]})")
         got = submit(a.url, tiling_graph(a.prompt, a.checkpoint, a.size, a.steps, seed=seed))
         if not got:
             log("the graph saved nothing")
