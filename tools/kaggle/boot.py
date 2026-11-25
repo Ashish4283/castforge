@@ -228,9 +228,15 @@ def setup(which="realvis_lightning"):
 
 # --- running it -----------------------------------------------------------------------------------------
 
-def wanted_flags():
-    """Flags worth passing IF this ComfyUI has them. Nothing here is required."""
-    return ["--disable-smart-memory"]     # do not hold a model between runs; see `unload`
+def wanted_flags(lean=False):
+    """Flags worth passing IF this ComfyUI has them. Nothing here is required.
+
+    `lean` is for coming back after a crash: --lowvram keeps far less of the model resident, which is
+    slower and is the right trade when the alternative is dying again on the same fabric."""
+    flags = ["--disable-smart-memory"]    # do not hold a model between runs; see `unload`
+    if lean:
+        flags.append("--lowvram")
+    return flags
 
 
 def supported_flags(place=None):
@@ -244,7 +250,7 @@ def supported_flags(place=None):
     return set(re.findall(r"--[a-z0-9][a-z0-9-]+", (done.stdout or "") + (done.stderr or "")))
 
 
-def start(place=None, wait=240):
+def start(place=None, wait=240, lean=False):
     """Start ComfyUI and wait for it to answer. Prints its OWN words when it will not."""
     place = place or where()
     if _running.get("comfy") and _running["comfy"].poll() is None:
@@ -253,10 +259,11 @@ def start(place=None, wait=240):
     swatches = place["keep"] / "swatches"
     swatches.mkdir(parents=True, exist_ok=True)
     log = place["work"] / "comfy.log"
+    _running["log"] = log
     # ComfyUI's own flags change between versions - --normalvram was there and then was not, and the
     # only sign is "unrecognized arguments" and a process that never starts. So ask it what it takes
     # before passing anything optional. An empty answer is fine: the defaults are sensible.
-    extra = [flag for flag in wanted_flags() if flag in supported_flags(place)]
+    extra = [flag for flag in wanted_flags(lean) if flag in supported_flags(place)]
     if extra:
         say("starting with", " ".join(extra))
     proc = subprocess.Popen([sys.executable, "main.py", "--listen", "127.0.0.1", *extra,
@@ -369,17 +376,38 @@ def unload():
         pass
 
 
+def last_words(lines=30):
+    """What ComfyUI said just before it went away. Usually the whole answer."""
+    log = _running.get("log")
+    if not log or not pathlib.Path(log).exists():
+        return []
+    return pathlib.Path(log).read_text(errors="ignore").strip().splitlines()[-lines:]
+
+
+class Gone(Exception):
+    """ComfyUI stopped answering - it died rather than refused."""
+
+
 def ask(graph, wait=900):
-    """Run one graph and come back with what it saved."""
+    """Run one graph and come back with what it saved.
+
+    Raises `Gone` when ComfyUI stops answering, with its own last words printed - a connection
+    refused in the middle of a batch means the process died, and the reason is only ever in its log."""
     unload()
     body = json.dumps({"prompt": graph}).encode()
     req = urllib.request.Request(URL + "/prompt", data=body,
                                  headers={"Content-Type": "application/json"})
-    pid = json.loads(urllib.request.urlopen(req, timeout=60).read())["prompt_id"]
+    try:
+        pid = json.loads(urllib.request.urlopen(req, timeout=60).read())["prompt_id"]
+    except urllib.error.URLError as e:
+        raise Gone(str(e)) from None
     until = time.time() + wait
     while time.time() < until:
         time.sleep(2)
-        hist = json.loads(urllib.request.urlopen(f"{URL}/history/{pid}", timeout=30).read())
+        try:
+            hist = json.loads(urllib.request.urlopen(f"{URL}/history/{pid}", timeout=30).read())
+        except urllib.error.URLError as e:
+            raise Gone(str(e)) from None
         if pid in hist:
             for node in hist[pid].get("outputs", {}).values():
                 for img in node.get("images", []):
@@ -408,7 +436,29 @@ def batch(wanted=None, place=None, checkpoint_name=None):
             made.append({"name": name, "kind": kind})
             continue
         say("making", name, "...")
-        img = ask(graph_for(prompt, checkpoint_name))
+        img = None
+        for go in (1, 2):
+            try:
+                img = ask(graph_for(prompt, checkpoint_name))
+                break
+            except Gone as e:
+                # ComfyUI died mid-batch. Show what it said, stand it back up, and carry on - losing
+                # one fabric to a crash is a nuisance; losing the whole run to it is the difference
+                # between a session that was worth having and one that was not.
+                say(f"  ComfyUI went away ({e}). Its last words:")
+                for row in last_words():
+                    say("   ", row)
+                if go == 2:
+                    say("  giving up on", name)
+                    break
+                _running.pop("comfy", None)
+                say("  starting it again, leaner this time...")
+                try:
+                    start(place, lean=True)
+                except SystemExit:
+                    say("  it will not come back; stopping here")
+                    img = None
+                    break
         if not img:
             say("  nothing came back")
             continue
