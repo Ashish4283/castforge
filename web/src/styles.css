@@ -725,3 +725,9 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
 .move-facts.measured span { background: rgba(255, 255, 255, 0.02); }
 .move-facts b { font-size: 14px; font-variant-numeric: tabular-nums; }
 .move-facts i { font-style: normal; font-size: 10px; color: var(--muted); }
+
+/* --- turntable and walk clips (CharacterDesigner) --------------------------------------------------- */
+.clip-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px;
+  border-top: 1px solid var(--line); }
+.clip-bar .muted { margin-left: auto; }
+.stage video { max-width: 100%; max-height: 100%; border-radius: 10px; display: block; }

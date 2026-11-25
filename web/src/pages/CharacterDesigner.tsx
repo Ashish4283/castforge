@@ -2,7 +2,7 @@
 // front/side/back previews, and Rebuild. Photo characters keep their face and body from the photo.
 import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {ArrowLeft, ArrowRight, Bone, Check, ChevronRight, Clapperboard, Dumbbell, Hammer, ListChecks,
-        Footprints, PersonStanding, Redo2, RotateCcw, Shirt, Sparkles, TriangleAlert, Undo2,
+        Film, Footprints, PersonStanding, Play, Redo2, RotateCcw, Shirt, Sparkles, TriangleAlert, Undo2,
         UserRound, Wand2, X} from "lucide-react";
 import {api, CharacterDetail, Json, label, ParamDef, post, q, RigReport, ScreenReport,
         ScreenRow} from "../api";
@@ -58,6 +58,11 @@ export function CharacterDesigner({name}: {name: string}) {
   const [rig, setRig] = useState<RigReport | null>(null);
   const [screen, setScreen] = useState<ScreenReport | null>(null);
   const [screening, setScreening] = useState(false);
+  // Short clips of the built character: a turntable, and a walk at its OWN pace (core/gait.py). The live
+  // shape cannot be animated - it is a morphed mesh with no skeleton in it - so both play here.
+  const [clips, setClips] = useState<Partial<Record<"turntable" | "walk", string>>>({});
+  const [clipping, setClipping] = useState("");
+  const [playing, setPlaying] = useState<"turntable" | "walk" | "">("");
   const [checking, setChecking] = useState(false);
   const [touching, setTouching] = useState<string | null>(null);   // the slider the hand is on
   const [pieces, setPieces] = useState<Piece[]>([]);               // what people have cut themselves
@@ -69,6 +74,7 @@ export function CharacterDesigner({name}: {name: string}) {
       setDetail(d);
       setRig(d.rig || null);
       setScreen(d.screen || null);        // what the last screen test found, if there was one
+      setClips(d.clips || {});
       setIsNew(false);
       const start = Object.keys(d.design).length ? d.design : structuredClone(BLANK);
       setUsePhoto(start.use_photo ?? (!!d.photo && !start.costume));     // as it was last built
@@ -232,10 +238,39 @@ export function CharacterDesigner({name}: {name: string}) {
             </Suspense>
           )}
           <div className="stage" style={stage === "live" ? {display: "none"} : undefined}>
-            {img ? <img src={img} alt={`${name} ${view}`} /> : <UserRound size={64} className="muted" />}
+            {playing && clips[playing]
+              ? <video src={clips[playing]} autoPlay loop muted playsInline />
+              : img ? <img src={img} alt={`${name} ${view}`} /> : <UserRound size={64} className="muted" />}
             {job && <div className="building"><div className="stack" style={{justifyItems: "center"}}><span className="spinner" style={{width: 26, height: 26, borderWidth: 3}} /><b>Building…</b><span className="muted small">{job.last || "starting"}</span></div></div>}
           </div>
-          {stage === "built" && <div className="views"><Segmented value={view} onChange={setView} options={[["front", "Front"], ["side", "Side"], ["back", "Back"]]} /></div>}
+          {!isNew && (
+            <div className="clip-bar">
+              {([["turntable", "Turn it round", <Film size={14} key="t" />],
+                 ["walk", "Watch it walk", <Footprints size={14} key="w" />]] as const).map(
+                ([what, label, icon]) => (
+                  <Button key={what} variant={playing === what ? "primary" : "ghost"}
+                          icon={icon} busy={clipping === what}
+                          onClick={async () => {
+                            setStage("built");
+                            if (clips[what]) { setPlaying(playing === what ? "" : what); return; }
+                            setClipping(what);
+                            try {
+                              const got = await post<{clips: Record<string, string>}>(
+                                "/api/character/clips", {movie, name, what});
+                              setClips(c => ({...c, ...got.clips}));
+                              setPlaying(what);
+                            } catch (e) { toast((e as Error).message, "err"); }
+                            finally { setClipping(""); }
+                          }}>{clips[what] ? label : `Make the ${what}`}</Button>
+                ))}
+              {playing && <Button variant="ghost" icon={<Play size={14} />}
+                                  onClick={() => setPlaying("")}>Back to stills</Button>}
+              <span className="muted small">
+                {clipping ? "rendering - about a minute" : "the walk is cut to this body's own stride"}
+              </span>
+            </div>
+          )}
+          {stage === "built" && !playing && <div className="views"><Segmented value={view} onChange={setView} options={[["front", "Front"], ["side", "Side"], ["back", "Back"]]} /></div>}
           {detail.log.length > 0 && (
             <details style={{borderTop: "1px solid var(--line)", padding: "12px 16px"}}>
               <summary className="muted small" style={{cursor: "pointer"}}>Last build log</summary>

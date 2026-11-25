@@ -102,6 +102,7 @@ export interface CharacterDetail {
   previews: Partial<Record<"front" | "side" | "back", string>>; log: string[];
   rig?: RigReport | null;
   screen?: ScreenReport | null;
+  clips?: Partial<Record<"turntable" | "walk", string>>;
 }
 
 export async function api<T = Json>(url: string, opts: RequestInit = {}): Promise<T> {

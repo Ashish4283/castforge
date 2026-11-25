@@ -1330,7 +1330,10 @@ def character(movie: str, name: str):
             return None
     return {"name": name, "design": design, "photo": media_url(photo) if photo else None,
             "face": media_url(face) if face else None, "previews": previews, "log": lines[-14:],
-            "rig": kept("rig"), "screen": kept("screen")}
+            "rig": kept("rig"), "screen": kept("screen"),
+            "clips": {w: media_url(os.path.join(cdir, f"{name}_clips", f"{w}.mp4"))
+                      for w in ("turntable", "walk")
+                      if os.path.exists(os.path.join(cdir, f"{name}_clips", f"{w}.mp4"))}}
 
 
 @app.post("/api/character/rig")
@@ -1374,6 +1377,31 @@ def character_screen(body: dict):
         tail = " / ".join((run.stdout or run.stderr or "").strip().splitlines()[-3:])
         raise HTTPException(500, f"the screen test could not be run: {tail}")
     return json.load(open(report, encoding="utf-8"))
+
+
+@app.post("/api/character/clips")
+def character_clips(body: dict):
+    """A turntable and a walk cycle of a built character, as MP4s beside it.
+
+    The walk is this body's own: `core/gait.py` says how long its step is and how many it takes a
+    second, and the cycle is keyed from that - which is the only way to see whether a small character
+    actually moves like a small character. About a minute; EEVEE, no GPU lock."""
+    movie, name = safe(body.get("movie"), "movie"), safe(body.get("name"))
+    cdir, _photo, _face = character_files(movie, name)
+    blend = os.path.join(cdir, f"{name}.blend")
+    if not os.path.exists(blend):
+        raise HTTPException(404, "that character has not been built yet")
+    out = os.path.join(cdir, f"{name}_clips")
+    run = subprocess.run([config.BLENDER, "-b", "--python-exit-code", "1",
+                          "-P", os.path.join(ROOT, "blender", "character_clips.py"), "--", blend, out,
+                          "--what", str(body.get("what") or "turntable,walk")],
+                         capture_output=True, text=True, cwd=ROOT)
+    made = {w: media_url(os.path.join(out, f"{w}.mp4"))
+            for w in ("turntable", "walk") if os.path.exists(os.path.join(out, f"{w}.mp4"))}
+    if not made:
+        tail = " / ".join((run.stdout or run.stderr or "").strip().splitlines()[-3:])
+        raise HTTPException(500, f"the clips could not be made: {tail}")
+    return {"clips": made}
 
 
 @app.post("/api/character/rebuild")
