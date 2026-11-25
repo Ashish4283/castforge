@@ -364,5 +364,6 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   joint markers off the EVALUATED mesh, as `preview_mesh.joint_centres` does.
 
 ## Docs
+Which GPU does what, and the two notebook modes: `docs/GPU_PLAN.md`.
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).
 Scene vocabulary for Gemini: `docs/GEMINI_SCENE_PROMPT.md`.

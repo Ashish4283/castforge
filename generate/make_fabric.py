@@ -124,6 +124,7 @@ def main():
     ap.add_argument("--scale", type=float, default=0.35,
                     help="how much cloth, in metres, the square stands for")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--folder", help="a folder of swatches fetched from a batch run, with a manifest")
     ap.add_argument("--demo", action="store_true", help="weave one in code, with no GPU at all")
     ap.add_argument("--where", default=HOME)
     a = ap.parse_args()
@@ -135,6 +136,37 @@ def main():
         for name, r in have.items():
             log(f"{name:22s} {kit.describe(r['kind'], r['seam'])}  "
                 f"{r['size']}px over {r['scale']:.2f} m, from {r['source']}")
+        return
+
+    if a.folder:
+        # A batch run on Kaggle or Colab leaves a folder of squares and a manifest saying what each one
+        # is. Turning them into materials is laptop work, so it happens here, all at once.
+        folder = os.path.abspath(a.folder)
+        listed = os.path.join(folder, "manifest.json")
+        if os.path.exists(listed):
+            wanted = json.load(open(listed, encoding="utf-8"))
+        else:
+            wanted = [{"name": os.path.splitext(f)[0], "kind": a.kind}
+                      for f in sorted(os.listdir(folder)) if f.lower().endswith(".png")]
+            log(f"no manifest: taking every picture as {a.kind}")
+        good, bad = 0, 0
+        for item in wanted:
+            name, kind = item.get("name"), item.get("kind", a.kind)
+            path = os.path.join(folder, f"{name}.png")
+            if not os.path.exists(path):
+                log(f"{name}: no picture for it")
+                bad += 1
+                continue
+            try:
+                _where, report = make(read(path), kind, name, a.scale, a.where,
+                                      source=f"batch / {os.path.basename(folder)}")
+            except ValueError as e:
+                log(f"{name}: refused - {e}")
+                bad += 1
+                continue
+            log(f"{name}: {kit.describe(kind, report['seam'])}")
+            good += 1
+        log(f"{good} made, {bad} refused. They are in {a.where}")
         return
 
     if a.demo:
