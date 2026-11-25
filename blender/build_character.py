@@ -1122,13 +1122,73 @@ if COSTUME or made_wear:
 
     FABRICS = {"velvet": {"rough": 0.65, "sheen": 0.7, "fluff": 0.05}, "leather": {"rough": 0.4, "coat": 0.3},
                "cotton": {"rough": 0.85, "sheen": 0.25, "fluff": 0.03}}
-    fabric = FABRICS.get(COSTUME.get("fabric"))
-    for obj, col in ((top_obj, top_col), (bottom_obj, bottom_col), (dress_obj, top_col)) if fabric else ():
-        if obj and col:
-            obj.data.materials.clear()
-            obj.data.materials.append(material(f"cf_{COSTUME['fabric']}", lin(col), **fabric))
-            obj.data.polygons.foreach_set("material_index", [0] * len(obj.data.polygons))
-            made.append(f"{COSTUME['fabric']} {obj.name}")
+
+    def woven(name, colour):
+        """A material from a generated swatch of cloth: its colour, its weave and where it shines.
+
+        `generate/make_fabric.py` writes these (the GPU makes the colour square, the rest is derived on
+        the laptop). A plain fabric name - velvet, leather, cotton - is still just numbers; a generated
+        one is a real surface, tiled across the garment at the scale it was cut for."""
+        folder = os.path.join(HERE, "..", "library", "fabrics", name)
+        meta = os.path.join(folder, "fabric.json")
+        if not os.path.exists(meta):
+            return None
+        try:
+            spec = json.load(open(meta, encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        m = bpy.data.materials.new(f"cf_fabric_{name}")
+        m.use_nodes = True
+        nt = m.node_tree
+        b = nt.nodes["Principled BSDF"]
+        look = spec.get("look") or {}
+        b.inputs["Sheen Weight"].default_value = float(look.get("sheen", 0.2))
+        b.inputs["Coat Weight"].default_value = float(look.get("coat", 0.0))
+        # one UV scale for every map, so the weave, the relief and the shine stay in register
+        repeat = 1.0 / max(0.02, float(spec.get("scale", 0.35)))
+        uv = nt.nodes.new("ShaderNodeTexCoord")
+        mapping = nt.nodes.new("ShaderNodeMapping")
+        mapping.inputs["Scale"].default_value = (repeat, repeat, repeat)
+        nt.links.new(uv.outputs["UV"], mapping.inputs["Vector"])
+
+        def tex(file, space):
+            node = nt.nodes.new("ShaderNodeTexImage")
+            node.image = bpy.data.images.load(os.path.join(folder, file))
+            node.image.colorspace_settings.name = space
+            node.extension = "REPEAT"
+            nt.links.new(mapping.outputs["Vector"], node.inputs["Vector"])
+            return node
+
+        albedo = tex("albedo.png", "sRGB")
+        # the cloth's own colour times what was asked for, the same trick the skin and garment
+        # recolouring uses: the weave survives, the hue is the designer's
+        tint = nt.nodes.new("ShaderNodeMixRGB")
+        tint.blend_type = "MULTIPLY"
+        tint.inputs["Fac"].default_value = 1.0
+        tint.inputs["Color2"].default_value = (*[min(1.0, c * 1.9) for c in colour], 1)
+        nt.links.new(albedo.outputs["Color"], tint.inputs["Color1"])
+        nt.links.new(tint.outputs["Color"], b.inputs["Base Color"])
+        nt.links.new(tex("rough.png", "Non-Color").outputs["Color"], b.inputs["Roughness"])
+        bump = nt.nodes.new("ShaderNodeNormalMap")
+        bump.inputs["Strength"].default_value = float(look.get("bump", 0.6))
+        nt.links.new(tex("normal.png", "Non-Color").outputs["Color"], bump.inputs["Color"])
+        nt.links.new(bump.outputs["Normal"], b.inputs["Normal"])
+        return m, spec
+
+    asked_fabric = COSTUME.get("fabric")
+    fabric = FABRICS.get(asked_fabric)
+    generated = woven(asked_fabric, lin(top_col) or (0.5, 0.5, 0.5)) if asked_fabric and not fabric         else None
+    for obj, col in ((top_obj, top_col), (bottom_obj, bottom_col), (dress_obj, top_col))             if (fabric or generated) else ():
+        if not obj or not col:
+            continue
+        obj.data.materials.clear()
+        if generated:
+            obj.data.materials.append(woven(asked_fabric, lin(col) or (0.5, 0.5, 0.5))[0])
+        else:
+            obj.data.materials.append(material(f"cf_{asked_fabric}", lin(col), **fabric))
+        obj.data.polygons.foreach_set("material_index", [0] * len(obj.data.polygons))
+        made.append(f"{asked_fabric} {obj.name}"
+                    + (f" (woven, {generated[1]['size']}px)" if generated else ""))
 
     trim = lin(COSTUME.get("trim"))
     garment = top_obj or dress_obj

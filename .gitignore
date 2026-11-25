@@ -23,3 +23,6 @@ web/node_modules/
 
 # preview kits: machine-made bodies for the designer's live view, 2.4 MB each, remade in 9 seconds
 library/preview_kits/
+# Generated cloth: about 4 MB a fabric, and every one of them can be made again from its prompt
+# (generate/remote_gpu.py) or in code (generate/make_fabric.py --demo). Data, not source.
+library/fabrics/
