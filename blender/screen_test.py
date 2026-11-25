@@ -26,7 +26,7 @@ from mathutils import Matrix, Vector
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
-from core import screening  # noqa: E402
+from core import gait, screening  # noqa: E402
 
 TURN = math.radians
 
@@ -60,6 +60,9 @@ def _move(x=0.0, y=0.0, z=0.0):
     return ("move", (x, y, z))
 
 
+# Everything measured in METRES below is a stride, a lift or a drop, and none of them can be the same
+# number on every body: half of a 0.64 m stride is 97% of a 1.28 m girl's leg, which no leg does. They are
+# written here against the reference body and scaled to whoever is being tested (see `for_this_body`).
 POSES = {
     "stand": [],
     "walk": [("foot_ik.L", _move(y=-0.32)), ("foot_ik.R", _move(y=0.32)),
@@ -92,6 +95,29 @@ POSES = {
     "speak": [],
     "express": [],
 }
+
+
+def for_this_body(pose, size):
+    """The pose scaled to a body `size` times the reference one. Rotations are angles and do not scale."""
+    if abs(size - 1.0) < 1e-6:
+        return pose
+    return [(name, (how, tuple(x * size for x in what)) if how == "move" else (how, what))
+            for name, (how, what) in pose]
+
+
+def markers_of(body, coords):
+    """MakeHuman's joint markers on this body, measured on `coords` - what `core/gait.py` wants."""
+    named = {g.index: g.name for g in body.vertex_groups if g.name.startswith("joint-")}
+    members = {}
+    for v in body.data.vertices:
+        for g in v.groups:
+            if g.group in named:
+                members.setdefault(g.group, []).append(v.index)
+    out = {named[i]: tuple(sum(coords[k][a] for k in ks) / len(ks) for a in range(3))
+           for i, ks in members.items()}
+    if coords:
+        out["joint-head-2"] = (0.0, 0.0, max(p.z for p in coords))
+    return out
 
 
 def skin_edges(body, step=3):
@@ -338,6 +364,14 @@ def main():
     edges = skin_edges(body)
     masks = only_the_rig(body)
     rest = mesh_now(body)
+    # How THIS body walks, which is also how far the walking poses below should reach (core/gait.py)
+    shape = gait.shape_of(markers_of(body, rest))
+    how = gait.walk_like(shape, (1.1, 0.62, 1.0, 0.0))
+    size = (shape["leg"] / gait.LEG_REF) if shape else 1.0
+    if shape:
+        log(f"this body: {gait.describe(shape)}")
+        log(f"  {how['speed']:.2f} m/s, a {how['step']:.2f} m step, {how['cadence']:.2f} steps a second, "
+            f"feet {how['gap'] * 200:.0f} cm apart")
     if len(rest) != len(body.data.vertices):
         raise SystemExit(f"CF: the body evaluates to {len(rest)} vertices but has "
                          f"{len(body.data.vertices)}: something is still changing the mesh")
@@ -351,7 +385,7 @@ def main():
     results = {}
     for name in screening.ORDER:
         move = screening.MOVES[name]
-        pose = POSES.get(name, [])
+        pose = for_this_body(POSES.get(name, []), size)
         facts = hold(rig, pose) if pose else {"missing": [], "frozen": [], "reach": None}
         # a move with no pose of its own still needs its controls to be there
         for bone in move.get("needs", ()):
@@ -396,7 +430,10 @@ def main():
     log(out["line"])
     where = args.json or os.path.splitext(os.path.abspath(args.file))[0] + ".screen.json"
     json.dump({"file": os.path.basename(args.file), "bones": len(rig.data.bones),
-               "height": round(tall, 3), "measured": results, **out,
+               "height": round(tall, 3), "measured": results,
+               "body": {k: round(v, 4) for k, v in (shape or {}).items()},
+               "walk": {k: (round(v, 4) if isinstance(v, (int, float)) else v) for k, v in how.items()},
+               **out,
                "shots": os.path.basename(args.shots) if args.shots else None},
               open(where, "w", encoding="utf-8"), indent=1)
     log("screen test", where)

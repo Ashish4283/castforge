@@ -60,7 +60,7 @@ import director  # noqa: E402
 import motion  # noqa: E402
 import motion_rig  # noqa: E402
 import world as world_kit  # noqa: E402
-from core import config, media, schema, sets  # noqa: E402
+from core import config, gait, media, schema, sets  # noqa: E402
 
 RHUBARB = config.RHUBARB
 SCENE_DIR = os.path.dirname(os.path.abspath(args.scene))
@@ -120,6 +120,14 @@ class Actor:
         for side in ("L", "R"):
             self.pb[f"thigh_parent.{side}"]["IK_FK"] = 0.0      # legs: IK (feet stay planted)
             self.pb[f"upper_arm_parent.{side}"]["IK_FK"] = 1.0  # arms: FK
+        # How THIS body walks. The studio's PACES are one speed and one step length for everybody, tuned
+        # on a grown person of about 1.70 m. On anybody else they are wrong, and on a small body they are
+        # impossible: a 0.62 m step is 159% of a minion's own leg, so the foot has to be dragged. The
+        # maths is core/gait.py; here it is only measured off the rig's own bones.
+        self.shape = gait.shape_of(self._markers())
+        self.gait = gait.walk_like(self.shape, acting.PACES["normal"])
+        if self.shape:
+            log(f"{cid}: {gait.describe(self.shape)}")
         self.pos = Vector((0, 0, 0))
         self.heading = 0.0
         self.feet = {}                   # side -> world position of the planted foot
@@ -147,6 +155,41 @@ class Actor:
         self.voice_fx = "clean"
         self.turn_blinks = []            # frames: a blink as the head swings into a big turn
         self.stance_width = 1.0          # foot spacing (a confident stance is wider)
+
+    def _markers(self):
+        """MakeHuman's own joint markers on this body, which is what `core/gait.py` measures.
+
+        On the EVALUATED mesh, with the modifiers off: a built character's macros are shape keys, so the
+        base mesh is the 1.60 m default MakeHuman and not this person at all. Reading the bones (which
+        are posed on the morphed body) and the base mesh (which is not) in the same breath is how every
+        character came out 1.60 m tall and a 1.28 m girl came out with a toddler's head.
+
+        The markers are measured the same way everywhere else in the studio (`preview_mesh.joint_centres`),
+        which is what lets one reference body calibrate all of it."""
+        body = self.body
+        was = [(m, m.show_viewport) for m in body.modifiers]
+        for m, _ in was:
+            m.show_viewport = False
+        ev = body.evaluated_get(bpy.context.evaluated_depsgraph_get())
+        me = ev.to_mesh()
+        mw = body.matrix_world
+        co = [mw @ v.co for v in me.vertices]
+        ev.to_mesh_clear()
+        for m, shown in was:
+            m.show_viewport = shown
+        if len(co) != len(body.data.vertices):
+            return {}
+        named = {g.index: g.name for g in body.vertex_groups if g.name.startswith("joint-")}
+        members = {}
+        for v in body.data.vertices:
+            for g in v.groups:
+                if g.group in named:
+                    members.setdefault(g.group, []).append(v.index)
+        out = {named[i]: tuple(sum(co[k][a] for k in ks) / len(ks) for a in range(3))
+               for i, ks in members.items()}
+        if co:
+            out["joint-head-2"] = (0.0, 0.0, max(p.z for p in co))      # the crown, on this body
+        return out
 
     def _ensure_muscle_correctives(self):
         """Create subtle, rig-weighted flex shapes when a character has the expected Rigify groups."""
@@ -483,7 +526,9 @@ class Actor:
     def walk(self, target, f0, waypoints=None, pace="normal"):
         """Walk to target (world Vector) along waypoints (planned around obstacles), feet planted.
         pace (acting.PACES) sets speed, stride, arm swing and lean."""
-        speed, stride, swing_k, lean = acting.PACES.get(pace, acting.PACES["normal"])
+        how = gait.walk_like(self.shape, acting.PACES.get(pace, acting.PACES["normal"]))
+        speed, stride, swing_k, lean = how["speed"], how["step"], how["swing"], how["lean"]
+        foot_gap = how["gap"]
         if self.seated:
             f0 = self.stand(f0)
         pts = [self.pos.copy()] + [Vector(p) for p in (waypoints or [])] + [target.copy()]
@@ -530,7 +575,7 @@ class Actor:
             side = "R" if k % 2 == 0 else "L"
             sx = 1 if side == "L" else -1
             land = dist if k >= n_steps - 2 else min(dist, step_dist * (k + 1) + 0.35 * stride)
-            to_ = at(land)[0] + left_of(tangent(land)) * sx * self.FOOT_GAP
+            to_ = at(land)[0] + left_of(tangent(land)) * sx * foot_gap
             steps.append((side, last[side], to_))
             last[side] = to_
         planted = {s: self.feet[s].copy() for s in ("L", "R")}

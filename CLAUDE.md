@@ -70,6 +70,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | undo, redo, what changed since the last build | `CharacterDesigner.edit`/`undo`/`redo` (whole designs as text on two stacks) and the `changed` diff |
 | the studio's steps, look pickers, thumbnails | steps `web/src/pages/characters/steps.ts`; tiles `LookPicker.tsx`; pictures `blender/preview_thumbs.py` -> `library/preview_kits/thumbs/`; routes `/api/character/looks` (what to offer) and `/api/character/thumbs` (take the missing ones) |
 | is a character fit to animate? | `core/rigging.py` (pure, tested: `keep_strongest`, `problems`, `verdict`), measured and repaired by `blender/rig_check.py`; CLI `castforge.py rig NAME [FOLDER] [--fix]`; route `/api/character/rig`; panel `CharacterDesigner.RigPanel`; every build tidies and writes `<name>.rig.json` |
+| how a body's size and build change the way it walks | `core/gait.py` (pure, tested: `shape_of`, `walk_like`, `describe`) - Froude scaling, hip width for weight, head share for a child; `scene_kit.Actor.shape`/`.gait` measure it off the body and `Actor.walk` uses it instead of the flat `acting.PACES` |
 | can a character ACT? (walk, run, jump, bend, head, wrists, fingers) | `core/screening.py` (pure, tested: `MOVES`, `look`, `bad`, `card`, `verdict`), posed and measured by `blender/screen_test.py` (`POSES`, `hold`, `stretched`); CLI `castforge.py screen NAME [FOLDER] [--shots]`; route `/api/character/screen`; panel `CharacterDesigner.ScreenPanel`; writes `<name>.screen.json` |
 | socks, shoes, a tie, a scarf, a watch, a band (nothing in the wardrobe) | `blender/tailor.py` (pure, tested: `cut`, `measure`, `asked_for`, `sweep`); the build makes them at the costume anchor, the live view mirrors it in `web/src/pages/characters/tailor.ts`; design keys `outfit.shoe_style` and `costume.socks/tie/scarf/watch/wristband` |
 | picking a part of a mesh and reshaping it (size, slide, turn) | `costume.part_at`/`shape_part`/`neighbours` (pure, tested) mirrored in `web/src/pages/characters/parts.ts`; design key `parts`; picked by `bodyview.setParts`/`choose`, applied by `build_character.resize_parts` |
@@ -343,6 +344,24 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   zero-range LIMIT_ROTATION constraint does block it, and is caught as "frozen".
 - `--card` was never a colour this stylesheet defines: `.step-bar` is sticky and had no background at
   all, so a long step read straight through it. Check a token exists before trusting it.
+
+- `acting.PACES` is ONE speed and ONE step for everybody (1.1 m/s, 0.62 m), tuned on a 1.70 m adult.
+  `core/gait.py` scales it to the body: speed with the SQUARE ROOT of leg length (Froude similarity -
+  half the leg is 0.71 of the speed, not half), step straight with it, so cadence goes as 1/sqrt(L) and
+  small bodies scurry. Weight is read from hip width RELATIVE to leg (not height, so a tall slim body and
+  a short slim one both read slim) and gives a wider stance, a shorter step, more roll and less arm
+  swing. A child is read from the share of the body above the neck, which is what tells a toddler from an
+  elf - an elf is a small ADULT and must walk like one. Unscaled, a 0.62 m step is 114% of an elf's leg
+  and 176% of a toddler's, which no leg does: the foot gets dragged.
+- Calibrate against this project's OWN bodies, not a textbook. Hip-to-leg runs 0.211 (slimmest) to 0.255
+  (heaviest) over nine built characters; `gait.HIPS_REF` set at the slim end called every character in
+  the film heavy. And anything that scales a pose in METRES (the screen test's stride, lift and drop)
+  must scale with the body, or a 1.28 m girl is tested with an adult's stride - 97% of her own leg - and
+  reports a tear that is the test's fault (her worst edge in `run` fell 3.08x -> 1.97x once it was).
+- Measuring a built character: the macros are SHAPE KEYS, so the base mesh is the 1.60 m default
+  MakeHuman and not that person. Reading bones (posed on the morphed body) and `data.vertices` (not) in
+  the same breath made every character 1.60 m tall and gave a 1.28 m girl a toddler's head. Take the
+  joint markers off the EVALUATED mesh, as `preview_mesh.joint_centres` does.
 
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).
