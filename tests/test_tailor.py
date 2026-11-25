@@ -288,3 +288,88 @@ def test_a_tie_reaches_the_belt():
     low = min(p[1] for p in every_point(tailor.tie(BODY)))
     waist = BODY["joint-pelvis"][1]
     assert abs(low - waist) < 0.09, f"the tie ends at {low:.3f}, the waist is at {waist:.3f}"
+
+
+# --- measured where it can be measured, proportioned where it cannot -------------------------------------
+
+def a_leg(radius=0.05, calf=0.07):
+    """A crude cylinder standing where this body's left shin is, to measure."""
+    ankle, knee = BODY["joint-l-ankle"], BODY["joint-l-knee"]
+    out = []
+    for i in range(40):
+        t = i / 39
+        centre = [ankle[k] + (knee[k] - ankle[k]) * t for k in range(3)]
+        r = radius + (calf - radius) * t
+        for j in range(12):
+            ang = 2 * math.pi * j / 12
+            out.append((centre[0] + r * math.cos(ang), centre[1], centre[2] + r * math.sin(ang)))
+    return out
+
+
+def test_the_body_is_measured_where_a_sock_has_to_go_round_it():
+    sizes = tailor.measure(a_leg(0.05, 0.07), BODY)
+    assert "ankle_l" in sizes and "calf_l" in sizes
+    assert 0.045 < sizes["ankle_l"] < 0.062, sizes["ankle_l"]
+    assert sizes["calf_l"] > sizes["ankle_l"]
+
+
+def test_a_measured_leg_gets_a_sock_cut_to_it_not_to_its_shin():
+    """A sock sized from the shin's LENGTH is too fat on a heavy calf, and then it shows through the
+    trouser over it - which is exactly how it looked."""
+    slim = tailor.measure(a_leg(0.035, 0.050), BODY)
+    stout = tailor.measure(a_leg(0.060, 0.090), BODY)
+    thin = reach(tailor.sock(BODY, "l", "knee", sizes=slim))
+    thick = reach(tailor.sock(BODY, "l", "knee", sizes=stout))
+    assert thick > thin, "the same sock on both legs"
+    guessed = reach(tailor.sock(BODY, "l", "knee"))
+    assert thin < guessed < thick, "the guess should sit between a slim leg and a stout one"
+
+
+def test_without_a_mesh_nothing_changes():
+    assert tailor.measure([], BODY) == {}
+    assert tailor.cut("socks", BODY, {}, None) == tailor.cut("socks", BODY, {}, {})
+
+
+def test_girth_ignores_the_other_leg():
+    both = a_leg(0.05, 0.07) + [(-p[0], p[1], p[2]) for p in a_leg(0.05, 0.07)]
+    sizes = tailor.measure(both, BODY)
+    assert 0.045 < sizes["ankle_l"] < 0.062, "the far leg got into the measurement"
+
+
+def test_a_sock_under_a_trouser_is_only_drawn_where_it_shows():
+    """A knitted tube inside a trouser that clings shows through the trouser. It did."""
+    covered = dict(tailor.asked_for({"costume": {"socks": "#fff", "sock_height": "knee"},
+                                     "outfit": {"garment": "trousers"}}))
+    assert covered["socks"]["height"] == "covered"
+    suited = dict(tailor.asked_for({"costume": {"socks": "#fff", "sock_height": "knee"},
+                                    "outfit": {"style": "formal"}}))
+    assert suited["socks"]["height"] == "covered"
+    bare = dict(tailor.asked_for({"costume": {"socks": "#fff", "sock_height": "knee"},
+                                  "outfit": {"garment": "shorts"}}))
+    assert bare["socks"]["height"] == "knee", "bare legs should show the whole sock"
+
+
+def test_a_calf_measures_thicker_than_the_ankle_below_it():
+    """It did not, once: the slice at the ankle was wide enough to reach the heel, which measured the
+    ankle at 5.0 cm and the calf at 4.6 cm. Measured on a built 1.80 m man it is now 3.9 and 4.6."""
+    sizes = tailor.measure(a_leg(0.035, 0.065), BODY)
+    assert sizes["calf_l"] > sizes["ankle_l"], sizes
+
+
+def test_a_shoes_upper_covers_the_heel_it_stands_on():
+    """It did not: the upper ran toe-to-ankle and stopped, so the heel was bare behind it."""
+    pieces = tailor.shoe(BODY, "l", "shoe")
+    sole = [p for p in pieces if p["name"] == "sole_l"][0]
+    upper = [p for p in pieces if p["name"] == "shoe_l"][0]
+    back = lambda part: min(q[2] for ring in part["rings"] for q in ring)   # noqa: E731  heel is -z here
+    assert back(upper) <= back(sole) + 0.005, "the sole reaches further back than the shoe on top of it"
+
+
+def test_a_sock_under_a_trouser_still_clears_the_top_of_the_shoe():
+    """Drawn only to the ankle it ends BELOW the shoe's collar and fills nothing, which leaves bare skin
+    between the shoe and the trouser - which is where the last of it was showing."""
+    sock = tailor.sock(BODY, "l", "covered", over_foot=False)
+    shoe = [p for p in tailor.shoe(BODY, "l", "shoe") if p["name"] == "shoe_l"][0]
+    top = max(p[1] for p in every_point(sock))
+    collar = max(q[1] for ring in shoe["rings"] for q in ring)
+    assert top > collar, f"sock to {top:.3f}, shoe to {collar:.3f}"

@@ -11,6 +11,7 @@ import {Button, Segmented} from "../../components/ui";
 import {BodyView, CostumeLook, Kit, PartSpec, PieceEdit, RING_SPIN, RING_TIP, ViewLook, Worn,
         WornSpec} from "./bodyview";
 import {CAP_DEFAULT, CapWants} from "./cap";
+import {askedFor} from "./tailor";
 
 const get = (d: Json, key: string) => key.split(".").reduce((o, k) => (o && typeof o === "object" ? o[k] : undefined), d);
 
@@ -110,7 +111,8 @@ export function LivePreview({design, schema, focus, onParts, touching, onPiece}:
   const outfitKey = JSON.stringify([get(design, "gender"), get(design, "hair.style"), get(design, "hair.length"),
                                     get(design, "beard"), get(design, "hat"), get(design, "eyebrows"),
                                     get(design, "outfit.style"), get(design, "outfit.garment"),
-                                    get(design, "outfit.sleeves"), !!get(design, "costume.boots")]);
+                                    get(design, "outfit.sleeves"), !!get(design, "costume.boots"),
+                                    get(design, "outfit.shoe_style")]);
   // a Santa cap made for this head (schema "santa_made"), or none at all
   const madeCap: CapWants | null = String(get(design, "hat") || "").endsWith("_made") ? {
     droop: Number(get(design, "cap.droop") ?? CAP_DEFAULT.droop),
@@ -127,9 +129,12 @@ export function LivePreview({design, schema, focus, onParts, touching, onPiece}:
     buckle: tintOf(design, "costume.buckle") || null, gloves: tintOf(design, "costume.gloves") || null,
     boots: !!get(design, "costume.boots"), sleeves: (get(design, "outfit.sleeves") as string) || null,
   };
+  // socks, footwear, a tie, a scarf, a watch, a band: cut for this body rather than fetched, so they
+  // cost nothing to change and never go through the wardrobe at all
+  const made = askedFor(design);
   const colourKey = JSON.stringify([get(design, "skin"), get(design, "hair.color"), get(design, "outfit.top"),
                                     get(design, "outfit.bottom"), get(design, "outfit.shoes"),
-                                    get(design, "hat_size"), costume, madeCap]);
+                                    get(design, "hat_size"), costume, madeCap, made]);
   // the body underneath the sliders: only these three change it, so only these three fetch a new one
   const shape = [get(design, "gender") || "female", get(design, "age") || 30,
                  get(design, "build") || "average", get(design, "height_cm") || 170].join("|");
@@ -214,6 +219,7 @@ export function LivePreview({design, schema, focus, onParts, touching, onPiece}:
     } as Worn)));
     view.current?.setHatSize(Number(get(design, "hat_size") || 1));
     view.current?.setCap(madeCap);
+    view.current?.setMade(made);
     view.current?.setCostume(costume);              // after the clothes: the costume is drawn over them
   };
   useEffect(() => { paint(); }, [colourKey]);   // eslint-disable-line react-hooks/exhaustive-deps

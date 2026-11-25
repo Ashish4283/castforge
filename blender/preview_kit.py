@@ -145,10 +145,26 @@ log(f"mesh {len(verts)} vertices ({len(body)} of them skin), {len(tris)} triangl
 hands = sorted(pm.hand_vertices(human, shaped, set(body.tolist())))
 # MakeHuman's joint markers, in the viewer's own space and off the floor: where a rig's bones would go,
 # which is how the live view knows a waist from a shoulder without having a rig at all.
+def _wanted(name):
+    return not (name.startswith("joint-l-finger") or name.startswith("joint-r-finger")
+                or "eye" in name or "toe" in name)
+
+
 joints = {name: [round(float(x), 4) for x in (p[0], p[2] - floor, -p[1])]
-          for name, p in pm.joint_centres(human, shaped).items()
-          if not (name.startswith("joint-l-finger") or name.startswith("joint-r-finger")
-                  or "eye" in name or "toe" in name)}
+          for name, p in pm.joint_centres(human, shaped).items() if _wanted(name)}
+# ...and WHICH vertices each marker is made of, so the live view can measure it again on the body as the
+# sliders have left it. The centres above are this kit's bucket (a 1.75 m athletic man); the sliders move
+# the body on top of that, and a sock cut to a stale ankle is a sock that does not follow the leg. The
+# viewer takes the mean of these vertices in its own morphed mesh, which is exactly what joint_centres
+# does here. Cheap: a joint marker is an eight-vertex cube.
+joint_at = {}
+for _g in human.vertex_groups:
+    if not _g.name.startswith("joint-") or not _wanted(_g.name):
+        continue
+    _members = [v.index for v in human.data.vertices if any(x.group == _g.index for x in v.groups)]
+    if _members:
+        joint_at[_g.name] = _members
+log(f"joints: {len(joints)} markers, {sum(len(v) for v in joint_at.values())} vertices between them")
 regions = {"hands": {"at": 0, "count": len(hands)}}        # "at" is filled in once the offsets are known
 hand_idx = np.array(hands, dtype=np.uint32)
 log(f"hands: {len(hands)} vertices")
@@ -188,7 +204,7 @@ json.dump({"version": preview_kit.VERSION, "gender": args.gender, "age": args.ag
            "positions": {"at": 0, "count": len(verts)},
            "indices": {"at": len(blobs[0]), "count": len(tris) * 3},
            "height": round(float(verts[:, 1].max()), 4), "floor": round(floor, 4),
-           "regions": regions, "joints": joints,
+           "regions": regions, "joints": joints, "joint_at": joint_at,
            "shapes": shapes},
           open(os.path.join(args.out, "kit.json"), "w", encoding="utf-8"))
 log(f"preview kit: {len(shapes)} shapes, {offset / 1e6:.2f} MB, {time.time() - started:.1f}s -> {args.out}")

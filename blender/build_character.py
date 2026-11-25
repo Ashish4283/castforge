@@ -1373,13 +1373,18 @@ if COSTUME or made_wear:
     if asked:
         import preview_mesh as _pm
         joints = _pm.joint_centres(human, body_w)
+        # ...and the body's real girth where these things go round it, so a heavy leg gets a sock that
+        # fits a heavy leg rather than one cut from the length of its shin
+        sizes = tailor.measure([body_w[v] for v in in_body], joints)
+        log(f"measured for the tailor: " +
+            ", ".join(f"{k} {v * 100:.1f} cm" for k, v in sorted(sizes.items())))
         STUFF = {"knit": (0.90, 0.0, 0.85, 0.0), "cloth": (0.72, 0.0, 0.45, 0.0),
                  "leather": (0.55, 0.0, 0.10, 0.06), "rubber": (0.88, 0.0, 0.00, 0.0),
                  "metal": (0.22, 0.95, 0.0, 0.35)}
 
         def wear_made(what, want):
             """One made wearable as its own object, rigged to whatever the body does at that point."""
-            pieces = tailor.cut(what, joints, want)
+            pieces = tailor.cut(what, joints, want, sizes)
             if not pieces:
                 log(f"no {what}: this body has no joint markers to measure it on")
                 return

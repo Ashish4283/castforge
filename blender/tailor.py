@@ -34,8 +34,14 @@ WEARABLES = {
     "scarf": ("costume.scarf", "knit", "a scarf round the neck with the ends hanging"),
 }
 SOCK_HEIGHTS = {"ankle": 0.12, "crew": 0.42, "knee": 0.95}
+# What a sock is drawn to when a trouser is over it. Not "ankle": an ankle sock ends BELOW the top of a
+# shoe, so it fills nothing and the gap between the shoe and the trouser is bare skin. This clears the
+# collar of every made shoe by a centimetre or so, which is what a sock does.
+COVERED = 0.26
 SHOE_STYLES = ("none", "shoe", "boot", "sneaker", "sandal", "heel")
 SIDES = {"left": ("l",), "right": ("r",), "both": ("l", "r")}
+# whole-body outfits that put cloth down the leg, so a sock under them is not seen
+LEGGED = ("suit", "formal", "work", "robe")
 
 
 # --- small vector arithmetic (no numpy: this runs inside Blender, in tests, and is ported to the browser)
@@ -205,9 +211,101 @@ def trunk(joints):
                                joints.get("joint-r-shoulder", neck))) or tall * 0.45}
 
 
+def girth(coords, centre, axis, reach, near=None):
+    """How far the body actually stands out around `centre`, measured across `axis`.
+
+    A proportion of a bone gets a sock that fits a typical leg; it does not fit a heavy one, and a sock
+    wider than the trouser over it shows through the trouser. The mesh is to hand in the build and in the
+    live view alike, so where it can be measured it is. `reach` keeps the other leg out of it."""
+    flat, total, n = [], 0.0, 0
+    half = near if near is not None else reach * 0.12
+    for i in range(0, len(coords)):
+        p = coords[i]
+        away = _sub(p, centre)
+        along = _dot(away, axis)
+        if abs(along) > half:
+            continue
+        side = _sub(away, _mul(axis, along))
+        r = _long(side)
+        if r > reach:
+            continue
+        total += r
+        n += 1
+    return total / n if n >= 8 else None
+
+
+def span(coords, centre, axis, across, reach, near):
+    """How far the body reaches either side of `centre` along `across`, in the slice through it.
+
+    `girth` gives a mean radius, which is the right answer for a leg and the wrong one for a foot: a foot
+    is half as deep as it is wide, and a shoe cut to the mean of the two is narrower than the foot and the
+    foot comes out of the sides of it."""
+    most = 0.0
+    n = 0
+    for p in coords:
+        away = _sub(p, centre)
+        along = _dot(away, axis)
+        if abs(along) > near:
+            continue
+        side = _sub(away, _mul(axis, along))
+        if _long(side) > reach:
+            continue
+        n += 1
+        most = max(most, abs(_dot(away, across)))
+    return most if n >= 8 and most > 1e-4 else None
+
+
+def measure(coords, joints):
+    """{place: radius} where the body can be measured - the places a made thing has to go round.
+
+    Everything here is optional: a caller without a mesh passes nothing and the patterns fall back to
+    proportions of the bone, which is right for an ordinary body and only wrong for an unusual one."""
+    out = {}
+    if not coords:
+        return out
+    for side in ("l", "r"):
+        low = leg(joints, side)
+        if low:
+            shin, up = low["shin"], low["up"]
+            # The ankle is finely meshed (the foot is), so a thin slice there has plenty to measure and
+            # a wide one reaches the heel - which measured the ankle WIDER than the calf. The calf is
+            # coarse, so it needs the wide one.
+            for place, at, thick in (("ankle", _add(low["ankle"], _mul(up, shin * 0.07)), 0.045),
+                                     ("calf", _add(low["ankle"], _mul(up, shin * 0.40)), 0.12)):
+                # A thin slice is not enough: the leg mesh is coarse (about 40 vertices a ring, the rings
+                # 5 cm apart), the slice is held across the SHIN which leans, and so a thin one can fall
+                # between two rings of the near leg and catch only the far one - which is how the calf
+                # came back unmeasured. A wide slice always catches a ring; a short reach (a quarter of
+                # the shin, against legs 40 cm apart) is what keeps the far leg out of it.
+                r = girth(coords, at, up, shin * 0.25, shin * thick)
+                if r:
+                    out[f"{place}_{side}"] = r
+        if low:
+            # ...and the foot, which is not round: measure how wide and how deep it actually is, across
+            # its own length, so the shoe over it is a shoe and not a tube cut from the shin's length
+            shin, stand = low["shin"], low["stand"]
+            fwd = _unit(_sub(low["toe"], low["instep"]))
+            level = _unit(_sub(fwd, _mul(stand, _dot(fwd, stand)))) or fwd
+            sideways = _unit(_cross(stand, level))
+            at = _mix(low["instep"], low["toe"], 0.25)
+            wide = span(coords, at, level, sideways, shin * 0.30, shin * 0.10)
+            tall = span(coords, at, level, stand, shin * 0.30, shin * 0.10)
+            if wide:
+                out[f"foot_wide_{side}"] = wide
+            if tall:
+                out[f"foot_tall_{side}"] = tall
+        up_arm = arm(joints, side)
+        if up_arm:
+            r = girth(coords, _add(up_arm["wrist"], _mul(up_arm["along"], up_arm["fore"] * 0.12)),
+                      up_arm["along"], up_arm["fore"] * 0.30, up_arm["fore"] * 0.12)
+            if r:
+                out[f"wrist_{side}"] = r
+    return out
+
+
 # --- the patterns ---------------------------------------------------------------------------------------
 
-def sock(joints, side, height="crew", girth=1.0, over_foot=True):
+def sock(joints, side, height="crew", girth=1.0, over_foot=True, sizes=None):
     """A sock: over the foot, round the heel and up the leg as far as asked.
 
     An ankle is about a tenth of its own shin and a calf about a sixth, which is why this fits a child and
@@ -216,8 +314,14 @@ def sock(joints, side, height="crew", girth=1.0, over_foot=True):
     if not low:
         return []
     shin, up, stand, floor = low["shin"], low["up"], low["stand"], low["floor"]
-    rise = SOCK_HEIGHTS.get(height, SOCK_HEIGHTS["crew"]) * shin
-    r_ankle, r_calf = shin * 0.115 * girth, shin * 0.155 * girth
+    rise = (COVERED if height == "covered" else
+            SOCK_HEIGHTS.get(height, SOCK_HEIGHTS["crew"])) * shin
+    # Proportions of this leg's own shin, unless the body has actually been measured - in which case use
+    # that, with 4 mm of sock outside it. A knee sock sized by the shin's LENGTH is too fat on a heavy
+    # calf, and a sock wider than the trouser over it is a sock you can see through the trouser.
+    seen = sizes or {}
+    r_ankle = (seen.get(f"ankle_{side}", shin * 0.092) + 0.0015) * girth
+    r_calf = (seen.get(f"calf_{side}", shin * 0.142) + 0.002) * girth
     # how far up the calf this sock actually reaches, and how it narrows again towards the knee
     grown = min(1.0, rise / (shin * 0.55))
     r_top = r_ankle + (r_calf - r_ankle) * grown
@@ -247,7 +351,7 @@ def sock(joints, side, height="crew", girth=1.0, over_foot=True):
                   shut=over_foot)]
 
 
-def shoe(joints, side, style="shoe", girth=1.0):
+def shoe(joints, side, style="shoe", girth=1.0, sizes=None):
     """A shoe the length of this foot: a sole under it, an upper over it, and a shaft if it is a boot.
 
     The sole is what makes it read as footwear rather than a thick sock, and it has to lie on the GROUND -
@@ -267,7 +371,12 @@ def shoe(joints, side, style="shoe", girth=1.0):
     # behind the ankle and 1.6 of the way past the instep made a 37 cm shoe. It looked like one.
     back = _add(_flat(low["ankle"], ground, up), _mul(flat, -shin * 0.135))
     front = _flat(_mix(low["instep"], low["toe"], 1.18), ground, up)
-    wide = shin * (0.125 if style == "sneaker" else 0.112) * girth
+    seen = sizes or {}
+    foot = seen.get(f"foot_wide_{side}")
+    # the foot's own half-width where it is widest, plus the thickness of a shoe round it
+    wide = ((foot + 0.006) if foot else shin * (0.112)) * girth
+    if style == "sneaker":
+        wide *= 1.08
     thin = 0.34 if style == "sneaker" else 0.28
     thick = wide * thin                           # half the sole's depth: it sits this far off the ground
     rise = shin * 0.085 if style == "heel" else 0.0
@@ -303,24 +412,35 @@ def shoe(joints, side, style="shoe", girth=1.0):
              _add(_mix(back, front, 0.86), _mul(up, over * 0.52)),
              _add(_flat(_mix(low["instep"], low["toe"], 0.5), ground, up), _mul(up, over * 0.78)),
              _add(_flat(low["instep"], ground, up), _mul(up, over)),
-             _add(low["ankle"], _mul(low["up"], shin * 0.075))]
+             # ...a ring over the arch, because without one the tube runs 19 cm straight from the instep
+             # to the collar and the foot bulges out of the side of it halfway along...
+             _add(_mix(_flat(low["instep"], ground, up), back, 0.55), _mul(up, over * 1.15)),
+             # ...and the opening set BACK over the heel. A tube that runs toe to ankle and stops
+             # leaves the heel outside it, and the heel is bare: measured on a built man, the upper
+             # reached y +0.013 and the sole it stands on reached +0.053.
+             _add(_add(low["ankle"], _mul(low["up"], shin * 0.085)), _mul(flat, -shin * 0.095))]
     # An ankle is about 0.105 of its own shin across (that is what a sock is cut to), so an opening any
     # narrower than that is inside the leg and the leg comes through it - which is exactly what it looked
     # like: bare skin between the trouser and the shoe.
     # a gentle run out to the toe: jumping the width in one segment creases the upper, and a crease on a
     # dark glossy shoe catches the key light as a hard grey band across the instep
-    radii = [wide * 0.70, wide * 0.88, wide * 0.94, wide * 0.95, shin * 0.128 * girth]
-    squash = [0.62, 0.74, 0.84, 0.96, 1.00]
-    if style == "boot":                           # carry straight on up the leg
+    mouth = (seen.get(f"ankle_{side}", shin * 0.092)
+             + (0.026 if style == "boot" else 0.012)) * girth
+    radii = [wide * 0.70, wide * 0.88, wide * 0.94, wide * 0.92, wide * 0.95, mouth]
+    squash = [0.62, 0.74, 0.84, 0.92, 0.98, 1.00]
+    if style == "boot":
+        # Up the leg, and ROOMY. A boot is worn over the trouser, not under it - and a shaft cut close to
+        # the calf ends up inside a trouser that clings, which puts triangles of boot through the trouser
+        # all the way up the shin. Three centimetres of room is what a boot has.
         upper.append(_add(low["ankle"], _mul(low["up"], shin * 0.58)))
-        radii.append(shin * 0.142 * girth)        # a shaft, not a bell: a boot barely widens
+        radii.append((seen.get(f"calf_{side}", shin * 0.142) + 0.030) * girth)
         squash.append(1.0)
-    hints = [up] * 5 + ([flat] if style == "boot" else [])       # over the foot, then up the leg
+    hints = [up] * 6 + ([flat] if style == "boot" else [])       # over the foot, then up the leg
     out.append(piece(f"shoe_{side}", "leather", sweep(upper, radii, hint=hints, squash=squash), shut=True))
     return out
 
 
-def watch(joints, side="l", girth=1.0, face=1.0):
+def watch(joints, side="l", girth=1.0, face=1.0, sizes=None):
     """A watch: a strap round the wrist and a case standing off the back of it.
 
     The strap is the wrist's own width - a sixth of the forearm - so it is never a bangle on a child."""
@@ -329,7 +449,7 @@ def watch(joints, side="l", girth=1.0, face=1.0):
         return []
     fore, towards = up["fore"], up["along"]
     at = _add(up["wrist"], _mul(towards, fore * 0.13))
-    r = fore * 0.165 * girth
+    r = ((sizes or {}).get(f"wrist_{side}", fore * 0.160) + 0.004) * girth
     strap = sweep([_add(at, _mul(towards, -fore * 0.035)), _add(at, _mul(towards, fore * 0.035))],
                   [r, r], hint=up["out"], squash=[0.78, 0.78], span=SPAN)
     outward = up["out"]
@@ -340,7 +460,7 @@ def watch(joints, side="l", girth=1.0, face=1.0):
             piece(f"watch_case_{side}", "metal", case, lid=True)]
 
 
-def wristband(joints, side="l", width=1.0, girth=1.0):
+def wristband(joints, side="l", width=1.0, girth=1.0, sizes=None):
     """A band, bracer or sweatband round the forearm. `width` 1 is a cuff, 2.5 a bracer up the arm."""
     up = arm(joints, side)
     if not up:
@@ -348,7 +468,8 @@ def wristband(joints, side="l", width=1.0, girth=1.0):
     fore, towards = up["fore"], up["along"]
     at = _add(up["wrist"], _mul(towards, fore * 0.12))
     reach = fore * 0.085 * width
-    r0, r1 = fore * 0.168 * girth, fore * 0.178 * girth
+    seen = (sizes or {}).get(f"wrist_{side}", fore * 0.160)
+    r0, r1 = (seen + 0.005) * girth, (seen + 0.010) * girth
     return [piece(f"wristband_{side}", "leather",
                   sweep([at, _add(at, _mul(towards, reach))], [r0, r1], hint=up["out"]))]
 
@@ -404,11 +525,12 @@ def scarf(joints, drop=1.0, girth=1.0):
 
 # --- the one door the build and the live view both come through ----------------------------------------
 
-def cut(what, joints, want=None):
+def cut(what, joints, want=None, sizes=None):
     """Every piece of one generated wearable, measured on this body.
 
-    `what` is a name from WEARABLES, `joints` MakeHuman's joint markers in whatever space the caller works
-    in, and `want` the design's options for it. An empty list means this body has not got the joints to
+    `what` is a name from WEARABLES, `joints` MakeHuman's joint markers in whatever space the caller
+    works in, `want` the design's options for it, and `sizes` what `measure` found on the body (optional:
+    without it every pattern falls back to a proportion of the bone it goes round). An empty list means this body has not got the joints to
     measure it on - never an error: a build must not fall over because a sock could not be cut."""
     w = want or {}
     sides = SIDES.get(w.get("side", "both"), ("l", "r"))
@@ -416,14 +538,16 @@ def cut(what, joints, want=None):
     if what == "socks":
         return [p for s in ("l", "r")
                 for p in sock(joints, s, w.get("height", "crew"), girth,
-                              over_foot=bool(w.get("over_foot", True)))]
+                              over_foot=bool(w.get("over_foot", True)), sizes=sizes)]
     if what == "shoes_made":
-        return [p for s in ("l", "r") for p in shoe(joints, s, w.get("style", "shoe"), girth)]
+        return [p for s in ("l", "r")
+                for p in shoe(joints, s, w.get("style", "shoe"), girth, sizes)]
     if what == "watch":
-        return [p for s in sides for p in watch(joints, s, girth, float(w.get("face", 1.0) or 1.0))]
+        return [p for s in sides
+                for p in watch(joints, s, girth, float(w.get("face", 1.0) or 1.0), sizes)]
     if what == "wristband":
         return [p for s in sides
-                for p in wristband(joints, s, float(w.get("width", 1.0) or 1.0), girth)]
+                for p in wristband(joints, s, float(w.get("width", 1.0) or 1.0), girth, sizes)]
     if what == "tie":
         return tie(joints, float(w.get("length", 1.0) or 1.0), float(w.get("width", 1.0) or 1.0))
     if what == "scarf":
@@ -442,7 +566,13 @@ def asked_for(design):
     outfit = d.get("outfit") or {}
     out = []
     if costume.get("socks"):
-        out.append(("socks", {"colour": costume["socks"], "height": costume.get("sock_height", "crew"),
+        # How far UP the sock is drawn is not how far up it is worn: with a trouser leg over it, the only
+        # part of a sock anybody can ever see is the bit between the trouser and the shoe. Drawing the
+        # rest puts a knitted tube inside a trouser that clings, and then it shows through the trouser -
+        # which is exactly what it looked like. Bare legs (shorts, a skirt) get the whole sock.
+        bare = outfit.get("garment") in ("shorts", "skirt") and not outfit.get("style") in LEGGED
+        out.append(("socks", {"colour": costume["socks"],
+                              "height": costume.get("sock_height", "crew") if bare else "covered",
                               "over_foot": outfit.get("shoe_style", "none") in ("none", "sandal")}))
     if outfit.get("shoe_style") in SHOE_STYLES and outfit.get("shoe_style") not in ("none", None):
         out.append(("shoes_made", {"colour": outfit.get("shoes") or "#2b2118",

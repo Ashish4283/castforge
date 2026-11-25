@@ -9,6 +9,7 @@
 import * as THREE from "three";
 import {adjacencyOf, facesInside, nearestVertex, openRings, shapePart, spreadFrom} from "./parts";
 import {CapWants, capMesh, headAt} from "./cap";
+import {Joints, Piece, STUFF, Want, cut, measure} from "./tailor";
 
 export interface Kit {
   version: number;
@@ -19,6 +20,7 @@ export interface Kit {
   shapes: Record<string, {at: number; count: number}>;
   regions?: Record<string, {at: number; count: number}>;   // body parts a costume covers (the hands)
   joints?: Record<string, [number, number, number]>;       // MakeHuman's joint markers, in this space
+  joint_at?: Record<string, number[]>;                     // ...and which vertices each one is made of
 }
 
 export const RING_SPIN = "#49c96d";          // green: turn it round, left and right
@@ -195,6 +197,9 @@ export class BodyView {
   private tris: Uint32Array | null = null;   // the body's triangles, which garments are pinned to
   private hands: Uint32Array = new Uint32Array(0);     // the skin a glove covers
   private joints: Record<string, [number, number, number]> = {};
+  private jointAt: Record<string, number[]> = {};      // which vertices each marker is, so it can follow
+  private asked: [string, Want][] = [];                // socks, shoes and the rest this design calls for
+  private made: THREE.Mesh[] = [];
   private costume: CostumeLook = {};
   private hatSize = 1;                                 // these assets come in one size, and it is small
   private capWants: CapWants | null = null;            // a Santa cap made for this head, or none
@@ -278,6 +283,7 @@ export class BodyView {
     this.hands = kit.regions?.hands?.count
       ? new Uint32Array(bin, kit.regions.hands.at, kit.regions.hands.count) : new Uint32Array(0);
     this.joints = kit.joints || {};
+    this.jointAt = kit.joint_at || {};
     this.floor = (kit as {floor?: number}).floor || 0;
     this.bodyAdj = null;
     this.base = positions;
@@ -329,6 +335,7 @@ export class BodyView {
     this.mesh.geometry.computeVertexNormals();
     this.dress();
     this.makeCap();
+    this.makeMade();
     this.showChosen();
   }
 
@@ -433,6 +440,7 @@ export class BodyView {
     this.hideCovered();
     this.buildCostume();
     this.makeCap();
+    this.makeMade();
     this.setLook({});                      // wireframe and the rest apply to whatever was just made
   }
 
@@ -853,6 +861,88 @@ export class BodyView {
     this.cap = {cloth: piece(cloth, this.capWants.cloth, 0.55, 0.6),
                 fur: piece(fur, this.capWants.fur, 0.95, 1.0)};
     this.tuckHairUnder(head.sit);
+  }
+
+  /** Socks, footwear, a tie, a scarf, a watch, a band - cut for this body as it stands.
+   *
+   *  Nothing is fetched: the wardrobe has none of these, so they are made from the body's own joint
+   *  markers (web/src/pages/characters/tailor.ts, mirroring blender/tailor.py). Which means they are
+   *  re-cut whenever the body changes, and so they follow every slider for free. */
+  setMade(asked: [string, Want][]) {
+    this.asked = asked;
+    this.makeMade();
+  }
+
+  /** The joint markers measured on the body AS IT STANDS, not as the kit was exported.
+   *
+   *  The kit's own `joints` belong to its bucket - a 1.75 m athletic man - and the sliders move the body
+   *  on top of that. A sock cut to a stale ankle is a sock that does not follow the leg, so each marker
+   *  is averaged again over its own vertices in the live mesh. */
+  private jointsNow(): Joints {
+    if (!this.work || !Object.keys(this.jointAt).length) return this.joints as Joints;
+    const out: Joints = {};
+    for (const [name, verts] of Object.entries(this.jointAt)) {
+      if (!verts.length) continue;
+      let x = 0, y = 0, z = 0;
+      for (const v of verts) { x += this.work[v * 3]; y += this.work[v * 3 + 1]; z += this.work[v * 3 + 2]; }
+      out[name] = [x / verts.length, y / verts.length, z / verts.length];
+    }
+    for (const [name, p] of Object.entries(this.joints)) if (!out[name]) out[name] = p;
+    return out;
+  }
+
+  private makeMade() {
+    for (const mesh of this.made) {
+      this.scene.remove(mesh);
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+    }
+    this.made = [];
+    if (!this.asked.length || !this.work) return;
+    const joints = this.jointsNow();
+    // ...and the body's real girth where these go round it, so a heavy leg gets a sock that fits a heavy
+    // leg instead of one cut from the length of its shin (which then shows through the trouser)
+    const sizes = measure(this.work, joints);
+    for (const [what, want] of this.asked) {
+      let pieces: Piece[] = [];
+      try { pieces = cut(what, joints, want, sizes); } catch { pieces = []; }
+      for (const part of pieces) this.made.push(this.drawPiece(part, want.colour || "#2b2118"));
+    }
+  }
+
+  /** One lump of a made wearable: its rings stitched into a tube, in the stuff it is made of. */
+  private drawPiece(part: Piece, colour: string): THREE.Mesh {
+    const points: number[] = [], index: number[] = [];
+    const rows = part.rings.map(ring => ring.map(p => {
+      points.push(p[0], p[1], p[2]);
+      return points.length / 3 - 1;
+    }));
+    const span = rows[0].length;
+    for (let r = 0; r < rows.length - 1; r++) {
+      for (let i = 0; i < span; i++) {
+        const j = (i + 1) % span;
+        index.push(rows[r][i], rows[r][j], rows[r + 1][j], rows[r][i], rows[r + 1][j], rows[r + 1][i]);
+      }
+    }
+    for (const [end, close] of [[rows[0], part.shut], [rows[rows.length - 1], part.lid]] as
+         [number[], boolean][]) {
+      if (!close) continue;
+      for (let i = 1; i + 1 < end.length; i++) index.push(end[0], end[i], end[i + 1]);
+    }
+    const [rough, metal, sheen] = STUFF[part.stuff] || STUFF.cloth;
+    // a sole is the same leather, darker: nobody wears a shoe whose sole matches its upper
+    const shade = new THREE.Color(colour);
+    if (part.stuff === "rubber") shade.multiplyScalar(0.45);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(points), 3));
+    g.setIndex(new THREE.BufferAttribute(new Uint32Array(index), 1));
+    g.computeVertexNormals();
+    const mesh = new THREE.Mesh(g, new THREE.MeshPhysicalMaterial({
+      color: shade, roughness: rough, metalness: metal, side: THREE.DoubleSide, flatShading: false}));
+    (mesh.material as THREE.MeshPhysicalMaterial).sheen = sheen;
+    mesh.renderOrder = 1;
+    this.scene.add(mesh);
+    return mesh;
   }
 
   /** Hide the hair that is under the cap, and only that.

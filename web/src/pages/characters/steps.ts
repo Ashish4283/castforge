@@ -62,6 +62,15 @@ export const STEPS: Step[] = [
              {key: "outfit.bottom", title: "Trousers or skirt", swatches: CLOTH},
              {key: "outfit.shoes", title: "Shoes", swatches: CLOTH}]},
 
+  // "whole", not "body": half of what this step makes is below the knee, and framing the torso hides it
+  {id: "worn", title: "Shoes and the small things", look: "whole",
+   text: "None of this comes from the wardrobe - it is cut for this character's own foot, wrist and chest, so it fits whatever you have done to them. Leave a colour empty to leave the thing off.",
+   keys: ["outfit.shoe_style", "costume.sock_height", "costume.socks", "costume.tie",
+          "costume.scarf", "costume.watch", "costume.watch_side", "costume.wristband",
+          "costume.wristband_side"],
+   scales: [{key: "costume.tie_length", title: "Tie length", range: [0.7, 1.3], middle: 1},
+            {key: "costume.wristband_width", title: "Band: cuff to bracer", range: [1, 3], middle: 1}]},
+
   {id: "costume", title: "Costume", look: "whole",
    text: "Pieces over the clothes: a coat, fur trim, a belt, gloves, boots, a cape, armour, a hood. Leave a colour empty to leave the piece off.",
    keys: ["costume.coat", "costume.fabric", "costume.trim", "costume.belt", "costume.buckle",
