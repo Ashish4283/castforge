@@ -713,3 +713,15 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
   font-style: normal; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums;
   background: rgba(255, 255, 255, 0.05); padding: 2px 6px; border-radius: 6px; white-space: nowrap;
 }
+
+/* --- how this body moves (CharacterDesigner.ScreenPanel) -------------------------------------------- */
+.move-panel { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+  background: rgba(69, 224, 224, 0.045); }
+.move-panel h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 4px; font-size: 12.5px; }
+.move-panel p { margin: 4px 0 8px; }
+.move-facts { display: flex; flex-wrap: wrap; gap: 6px; }
+.move-facts span { display: flex; flex-direction: column; gap: 1px; padding: 5px 9px; border-radius: 8px;
+  background: rgba(255, 255, 255, 0.045); min-width: 76px; }
+.move-facts.measured span { background: rgba(255, 255, 255, 0.02); }
+.move-facts b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.move-facts i { font-style: normal; font-size: 10px; color: var(--muted); }

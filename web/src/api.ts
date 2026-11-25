@@ -82,10 +82,19 @@ export interface ScreenRow {
   stretch?: number | null; rough_skin?: number | null; reach?: number | null;
   moved?: number | null; slide?: number | null;
 }
+/** What this body is, and how its own size and build make it move (core/gait.py). */
+export interface BodyShape {
+  tall: number; leg: number; hips: number; head_share: number; bulk: number; childish: number;
+}
+export interface WalkLike {
+  speed: number; step: number; cadence: number; gap: number; swing: number;
+  sway: number; bob: number; double: number; guard: number; why: string;
+}
 /** Is this character fit to put in a film? */
 export interface ScreenReport {
   approved: boolean; line: string; passed: number; rough: number; failed: number;
   rows: ScreenRow[]; height?: number; bones?: number; shots?: string | null;
+  body?: BodyShape | null; walk?: WalkLike | null;
 }
 
 export interface CharacterDetail {

@@ -2,7 +2,7 @@
 // front/side/back previews, and Rebuild. Photo characters keep their face and body from the photo.
 import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {ArrowLeft, ArrowRight, Bone, Check, ChevronRight, Clapperboard, Dumbbell, Hammer, ListChecks,
-        PersonStanding, Redo2, RotateCcw, Shirt, Sparkles, TriangleAlert, Undo2,
+        Footprints, PersonStanding, Redo2, RotateCcw, Shirt, Sparkles, TriangleAlert, Undo2,
         UserRound, Wand2, X} from "lucide-react";
 import {api, CharacterDetail, Json, label, ParamDef, post, q, RigReport, ScreenReport,
         ScreenRow} from "../api";
@@ -564,6 +564,31 @@ function ScreenPanel({screen, busy, isNew, name, onRun}: {
             {screen.failed > 0 && <i className="no">{screen.failed}</i>}
           </span>
         </div>
+        {screen.walk && screen.body && (
+          <div className="move-panel">
+            <h4><Footprints size={14} color="var(--paint-cyan)" />How this body moves</h4>
+            <p className="muted small">{screen.walk.why}</p>
+            <div className="move-facts">
+              <span><b>{screen.walk.speed.toFixed(2)}</b><i>m/s walking</i></span>
+              <span><b>{(screen.walk.step * 100).toFixed(0)}</b><i>cm a step</i></span>
+              <span><b>{screen.walk.cadence.toFixed(2)}</b><i>steps a second</i></span>
+              <span><b>{(screen.walk.gap * 200).toFixed(0)}</b><i>cm between the feet</i></span>
+              <span><b>{screen.walk.sway.toFixed(2)}&times;</b><i>side-to-side roll</i></span>
+              <span><b>{(screen.walk.double * 100).toFixed(0)}%</b><i>on both feet</i></span>
+            </div>
+            <div className="move-facts measured">
+              <span><b>{screen.body.tall.toFixed(2)}</b><i>m tall</i></span>
+              <span><b>{(screen.body.leg * 100).toFixed(0)}</b><i>cm of leg</i></span>
+              <span><b>{screen.body.bulk.toFixed(2)}</b><i>build (1 = average)</i></span>
+              <span><b>{(screen.body.head_share * 100).toFixed(0)}%</b><i>of it is head</i></span>
+            </div>
+            <p className="muted small">
+              Measured off this body, not a stock one: speed follows the square root of leg length and the
+              step follows it straight, so a small character takes shorter, busier steps instead of being
+              dragged through a grown adult&apos;s stride.
+            </p>
+          </div>
+        )}
         <ul className="screen-moves">
           {screen.rows.map(row => (
             <li key={row.move} className={row.state}>
