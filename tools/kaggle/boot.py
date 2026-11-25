@@ -233,7 +233,7 @@ def wanted_flags(lean=False):
 
     `lean` is for coming back after a crash: --lowvram keeps far less of the model resident, which is
     slower and is the right trade when the alternative is dying again on the same fabric."""
-    flags = ["--disable-smart-memory"]    # do not hold a model between runs; see `unload`
+    flags = ["--disable-smart-memory"]    # drops the model after each run, so `unload` need not
     if lean:
         flags.append("--lowvram")
     return flags
@@ -394,16 +394,33 @@ def last_words(lines=30):
     return pathlib.Path(log).read_text(errors="ignore").strip().splitlines()[-lines:]
 
 
+def queue_now():
+    """" (loading the model)" or " (1 ahead)" - something to show it is alive and what it is at."""
+    try:
+        q = json.loads(urllib.request.urlopen(URL + "/queue", timeout=10).read())
+        running, waiting = len(q.get("queue_running", [])), len(q.get("queue_pending", []))
+        if running and not waiting:
+            return " (running)"
+        if waiting:
+            return f" (running, {waiting} waiting)"
+        return " (nothing queued - finishing up)"
+    except Exception:
+        return ""
+
+
 class Gone(Exception):
     """ComfyUI stopped answering - it died rather than refused."""
 
 
-def ask(graph, wait=900):
+def ask(graph, wait=900, tell=20):
     """Run one graph and come back with what it saved.
 
-    Raises `Gone` when ComfyUI stops answering, with its own last words printed - a connection
-    refused in the middle of a batch means the process died, and the reason is only ever in its log."""
-    unload()
+    Says how long it has been waiting, every `tell` seconds. A swatch takes fifteen seconds on a T4 and
+    several minutes after a crash has put it into --lowvram, and in between those two numbers a silent
+    cell is indistinguishable from a dead one. That is most of what "it is doing nothing" means.
+
+    Raises `Gone` when ComfyUI stops answering: a connection refused mid-batch means the process died,
+    and the reason is only ever in its own log."""
     body = json.dumps({"prompt": graph}).encode()
     req = urllib.request.Request(URL + "/prompt", data=body,
                                  headers={"Content-Type": "application/json"})
@@ -411,9 +428,14 @@ def ask(graph, wait=900):
         pid = json.loads(urllib.request.urlopen(req, timeout=60).read())["prompt_id"]
     except urllib.error.URLError as e:
         raise Gone(str(e)) from None
-    until = time.time() + wait
+    began = time.time()
+    until = began + wait
+    spoke = began
     while time.time() < until:
         time.sleep(2)
+        if time.time() - spoke >= tell:
+            spoke = time.time()
+            say(f"    ... {time.time() - began:.0f}s{queue_now()}")
         try:
             hist = json.loads(urllib.request.urlopen(f"{URL}/history/{pid}", timeout=30).read())
         except urllib.error.URLError as e:
@@ -446,6 +468,7 @@ def batch(wanted=None, place=None, checkpoint_name=None):
             made.append({"name": name, "kind": kind})
             continue
         say("making", name, "...")
+        began = time.time()
         img = None
         for go in (1, 2):
             try:
@@ -478,7 +501,7 @@ def batch(wanted=None, place=None, checkpoint_name=None):
         if src.resolve() != target.resolve():
             shutil.copy(src, target)
         made.append({"name": name, "kind": kind})
-        say("  ok")
+        say(f"  ok ({time.time() - began:.0f}s)")
     (out / "manifest.json").write_text(json.dumps(made, indent=1))
     say("")
     say(f"{len(made)} swatches in {out}")
