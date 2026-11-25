@@ -745,10 +745,14 @@ def main():
         if what in ("connect", "status"):
             try:
                 seen = remote_gpu.ping(url)
-            except (urllib.error.URLError, TimeoutError, OSError) as e:
+            except (urllib.error.URLError, TimeoutError, OSError, RuntimeError) as e:
                 print(f"CF: {url} does not answer ({e}).")
-                print("CF: cell 5 of the notebook has to be running, and a tunnel gets a NEW "
-                      "address every time it is started.")
+                if "502" in str(e):
+                    print("CF: a 502 means the tunnel is alive but ComfyUI behind it is not - it "
+                          "almost always ran out of VRAM. Re-run the notebook to restart it.")
+                else:
+                    print("CF: cell 5 of the notebook has to be running, and a tunnel gets a NEW "
+                          "address every time it is started.")
                 sys.exit(1)
             print(f"CF: connected to {url}")
             print(f"CF: {seen['devices']}, {seen['nodes']} node types, "

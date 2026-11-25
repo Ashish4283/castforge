@@ -31,7 +31,12 @@ sys.path.insert(0, ROOT)
 from core import fabric as kit  # noqa: E402
 
 TIMEOUT = 20
-SEAMLESS = "CircularVAEDecode"     # what the tiling node calls itself, when the notebook installed one
+# The three nodes ComfyUI-seamless-tiling adds. All three matter and they do different jobs: the UNet
+# has to generate in a wrapping space (SeamlessTile), the VAE has to decode in one (MakeCircularVAE),
+# and the decode itself has to be circular. Decode alone leaves the seam in - the picture was never
+# made to wrap in the first place.
+SEAMLESS = "CircularVAEDecode"
+TILE_MODEL, TILE_VAE = "SeamlessTile", "MakeCircularVAE"
 
 
 def log(*a):
@@ -44,8 +49,21 @@ def call(url, path, data=None, raw=False, timeout=TIMEOUT):
     body = json.dumps(data).encode() if data is not None else None
     req = urllib.request.Request(full, data=body,
                                  headers={"Content-Type": "application/json"} if body else {})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        blob = r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            blob = r.read()
+    except urllib.error.HTTPError as e:
+        # ComfyUI puts WHY it refused a graph in the body of the 400. Letting the bare status through
+        # leaves you guessing at which node it disliked, which is no way to debug a remote machine.
+        detail = ""
+        try:
+            said = json.loads(e.read() or b"{}")
+            detail = said.get("error", {}).get("message") or said.get("error") or ""
+            for node, why in (said.get("node_errors") or {}).items():
+                detail += f" | node {node}: {json.dumps(why)[:300]}"
+        except Exception:
+            pass
+        raise RuntimeError(f"{e.code} from {path}: {detail or e.reason}") from None
     return blob if raw else json.loads(blob or b"{}")
 
 
@@ -119,9 +137,8 @@ def tiling_graph(prompt, checkpoint, size=1024, steps=None, cfg=None, seed=0, se
     "Flat lit, straight on" matters more than it sounds: a swatch with a light falling across it bakes
     that light into every garment it is ever put on, and no amount of relief fixes it. The prompt says
     so and the negative says so."""
-    decode = SEAMLESS if seamless else "VAEDecode"
     steps, cfg, sampler, schedule = settings_for(checkpoint, steps, cfg)
-    return {
+    graph = {
         "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": checkpoint}},
         "2": {"class_type": "CLIPTextEncode",
               "inputs": {"text": f"{prompt}, seamless tileable texture, flat even lighting, "
@@ -135,10 +152,24 @@ def tiling_graph(prompt, checkpoint, size=1024, steps=None, cfg=None, seed=0, se
                          "scheduler": schedule, "denoise": 1.0,
                          "model": ["1", 0], "positive": ["2", 0], "negative": ["3", 0],
                          "latent_image": ["4", 0]}},
-        "6": {"class_type": decode, "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
+        "6": {"class_type": "VAEDecode", "inputs": {"samples": ["5", 0], "vae": ["1", 2]}},
         "7": {"class_type": "SaveImage", "inputs": {"filename_prefix": "castforge_fabric",
                                                     "images": ["6", 0]}},
     }
+    if seamless:
+        # "Modify in place", NOT "Make a copy". A copy puts a second 6.5 GB SDXL on the card, and a
+        # free T4 has 15 GB: the first swatch fits, the second kills ComfyUI and the tunnel starts
+        # answering 502. Nothing is lost by modifying in place - every job sent here wants tiling.
+        graph["8"] = {"class_type": TILE_MODEL,
+                      "inputs": {"model": ["1", 0], "tiling": "enable",
+                                 "copy_model": "Modify in place"}}
+        graph["9"] = {"class_type": TILE_VAE,
+                      "inputs": {"vae": ["1", 2], "tiling": "enable",
+                                 "copy_vae": "Modify in place"}}
+        graph["5"]["inputs"]["model"] = ["8", 0]          # sample in a wrapping space...
+        graph["6"] = {"class_type": SEAMLESS,
+                      "inputs": {"samples": ["5", 0], "vae": ["9", 0], "tiling": "enable"}}
+    return graph
 
 
 def main():
