@@ -58,21 +58,35 @@ def say(*a):
 # --- where are we ---------------------------------------------------------------------------------------
 
 def where():
-    """{on, work, keep, comfy} - which machine this is and where things go on it.
+    """{on, batch, work, keep, comfy} - which machine this is and where things go on it.
 
-    Colab and Kaggle keep things in completely different places, and getting it wrong means downloading
-    a 6.5 GB checkpoint every single session."""
+    Colab and Kaggle keep things in completely different places, and getting it wrong means fetching a
+    6.9 GB checkpoint every session.
+
+    And on Kaggle there is a second question: is this a person at a keyboard, or a committed run?
+    EVERYTHING under /kaggle/working is saved as the run's output and has to be downloaded to be read.
+    Put ComfyUI and a 6.9 GB model there on a headless run and the output is seven gigabytes of things
+    nobody wants, for the sake of six pictures. So a committed run builds in /tmp, which is not saved,
+    and writes only the swatches where they will be kept."""
     kaggle = os.path.isdir("/kaggle")
     colab = os.path.isdir("/content") and not kaggle
+    batch = kaggle and os.environ.get("KAGGLE_KERNEL_RUN_TYPE", "").lower() == "batch"
     work = pathlib.Path("/kaggle/working" if kaggle else "/content" if colab else ".")
+    scratch = pathlib.Path("/tmp/castforge") if batch else work
     return {"on": "kaggle" if kaggle else "colab" if colab else "somewhere else",
-            "work": work, "keep": work / "castforge", "comfy": work / "ComfyUI"}
+            "batch": batch, "work": work,
+            # what is KEPT: on a committed run, only this is saved
+            "keep": work / "castforge",
+            # what is only needed while it runs
+            "comfy": scratch / "ComfyUI", "scratch": scratch}
 
 
 def check(place=None):
     """Stop now, with one line somebody can act on, if the GPU or the internet is missing."""
     place = place or where()
-    say("running on:", place["on"])
+    say("running on:", place["on"], "(committed run)" if place.get("batch") else "")
+    if place.get("batch"):
+        say("building in /tmp; only the swatches will be saved as output")
     try:
         card = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
                               capture_output=True, text=True).stdout.strip()
@@ -128,6 +142,7 @@ def comfyui(place=None):
     """ComfyUI and its node packs, installed without disturbing the torch this machine already has."""
     place = place or where()
     comfy = place["comfy"]
+    comfy.parent.mkdir(parents=True, exist_ok=True)
     needs = comfy / "requirements.txt"
     if not needs.exists() and (not clone(COMFY_REPO, comfy) or not needs.exists()):
         raise SystemExit("ComfyUI is not there - git's own reason is above")
@@ -173,7 +188,8 @@ def checkpoint(which="realvis_lightning", place=None):
             say("attached as a Kaggle dataset:", found, "- nothing to download")
             break
     if kept is None:
-        store = place["keep"] / "models" / "checkpoints"
+        home = place["scratch"] if place.get("batch") else place["keep"]
+        store = home / "models" / "checkpoints"
         store.mkdir(parents=True, exist_ok=True)
         kept = store / filename
     if not kept.exists():
