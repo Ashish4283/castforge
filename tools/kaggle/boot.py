@@ -429,6 +429,29 @@ def last_words(lines=30):
     return pathlib.Path(log).read_text(errors="ignore").strip().splitlines()[-lines:]
 
 
+def memory_now():
+    """RAM and VRAM as plain numbers. Evidence, rather than another theory about what filled up."""
+    bits = []
+    try:
+        info = {}
+        with open("/proc/meminfo") as fh:
+            for row in fh:
+                key, _, rest = row.partition(":")
+                info[key] = float(rest.split()[0]) / 1024 / 1024          # GiB
+        bits.append(f"RAM {info['MemTotal'] - info['MemAvailable']:.1f}/{info['MemTotal']:.0f}G")
+    except Exception:
+        pass
+    try:
+        done = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,memory.total",
+                               "--format=csv,noheader,nounits"],
+                              capture_output=True, text=True, timeout=15)
+        used, total = done.stdout.strip().splitlines()[0].split(",")
+        bits.append(f"VRAM {int(used) / 1024:.1f}/{int(total) / 1024:.0f}G")
+    except Exception:
+        pass
+    return (" " + " ".join(bits)) if bits else ""
+
+
 def queue_now():
     """" (loading the model)" or " (1 ahead)" - something to show it is alive and what it is at."""
     try:

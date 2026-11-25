@@ -44,6 +44,39 @@ def md(src):
 
 boot = io.open(os.path.join(HERE, "boot.py"), encoding="utf-8").read()
 
+
+def nothing_undefined(src):
+    """Refuse to build if boot.py calls a name it never defines.
+
+    This shipped once: an edit added `memory_now()` at two call sites and the script that was meant to
+    add the function itself died on an assertion before writing. The notebook was valid Python, pushed
+    cleanly, ran for twelve minutes on a rented GPU and then fell over on a NameError. Nothing but
+    running it would have found that - so it is checked here instead, in a tenth of a second."""
+    import ast
+    import builtins
+
+    tree = ast.parse(src)
+    defined = {"__name__", "__file__"}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            defined.add(node.name)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            defined.add(node.id)
+        elif isinstance(node, ast.arg):
+            defined.add(node.arg)
+        elif isinstance(node, ast.alias):
+            defined.add((node.asname or node.name).split(".")[0])
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            defined.add(node.name)
+    used = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    missing = sorted(u for u in used - defined if not hasattr(builtins, u))
+    if missing:
+        raise SystemExit(f"boot.py uses names it never defines: {', '.join(missing)}")
+    return len(used)
+
+
+print("boot.py:", nothing_undefined(boot), "names, all of them defined")
+
 cells = [
     md("""
 # CastForge on a rented GPU
