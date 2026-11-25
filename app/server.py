@@ -1319,16 +1319,18 @@ def character(movie: str, name: str):
     log = os.path.join(cdir, f"{name}.build.log")
     lines = [l[4:] for l in open(log, encoding="utf-8", errors="ignore").read().splitlines()
              if l.startswith("CF:") and "face shape" not in l] if os.path.exists(log) else []
-    rig = None                                     # what the last build said about the rig, if anything
-    rig_path = os.path.join(cdir, f"{name}.rig.json")
-    if os.path.exists(rig_path):
+    def kept(what):
+        """A report the last build or check left beside the character, or None."""
+        path = os.path.join(cdir, f"{name}.{what}.json")
+        if not os.path.exists(path):
+            return None
         try:
-            rig = json.load(open(rig_path, encoding="utf-8"))
+            return json.load(open(path, encoding="utf-8"))
         except ValueError:
-            rig = None
+            return None
     return {"name": name, "design": design, "photo": media_url(photo) if photo else None,
             "face": media_url(face) if face else None, "previews": previews, "log": lines[-14:],
-            "rig": rig}
+            "rig": kept("rig"), "screen": kept("screen")}
 
 
 @app.post("/api/character/rig")
@@ -1348,6 +1350,29 @@ def character_rig(body: dict):
     if not os.path.exists(report):
         tail = " / ".join((run.stdout or run.stderr or "").strip().splitlines()[-3:])
         raise HTTPException(500, f"the rig could not be checked: {tail}")
+    return json.load(open(report, encoding="utf-8"))
+
+
+@app.post("/api/character/screen")
+def character_screen(body: dict):
+    """A screen test: every move a scene can ask for, posed on this character and measured.
+
+    About twenty seconds without pictures and a minute with them, and nothing is saved into the file. It
+    is not a GPU job: the poses are measured headlessly, and the shots are EEVEE at 420x680."""
+    movie, name = safe(body.get("movie"), "movie"), safe(body.get("name"))
+    cdir, _photo, _face = character_files(movie, name)
+    blend = os.path.join(cdir, f"{name}.blend")
+    if not os.path.exists(blend):
+        raise HTTPException(404, "that character has not been built yet")
+    cmd = [config.BLENDER, "-b", "--python-exit-code", "1",
+           "-P", os.path.join(ROOT, "blender", "screen_test.py"), "--", blend]
+    if body.get("shots"):
+        cmd += ["--shots", os.path.join(cdir, f"{name}_screen")]
+    run = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+    report = os.path.join(cdir, f"{name}.screen.json")
+    if not os.path.exists(report):
+        tail = " / ".join((run.stdout or run.stderr or "").strip().splitlines()[-3:])
+        raise HTTPException(500, f"the screen test could not be run: {tail}")
     return json.load(open(report, encoding="utf-8"))
 
 

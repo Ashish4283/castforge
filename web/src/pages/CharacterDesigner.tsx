@@ -1,11 +1,11 @@
 // The character designer: every design key (core/schema.py CHARACTER) as a control, ready-made looks, the
 // front/side/back previews, and Rebuild. Photo characters keep their face and body from the photo.
 import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
-import {ArrowLeft, ArrowRight, Bone, ChevronRight, Dumbbell, Hammer, ListChecks, Redo2, RotateCcw,
-        Shirt,
-        Sparkles, Undo2,
-        UserRound, Wand2} from "lucide-react";
-import {api, CharacterDetail, Json, label, ParamDef, post, q, RigReport} from "../api";
+import {ArrowLeft, ArrowRight, Bone, Check, ChevronRight, Clapperboard, Dumbbell, Hammer, ListChecks,
+        PersonStanding, Redo2, RotateCcw, Shirt, Sparkles, TriangleAlert, Undo2,
+        UserRound, Wand2, X} from "lucide-react";
+import {api, CharacterDetail, Json, label, ParamDef, post, q, RigReport, ScreenReport,
+        ScreenRow} from "../api";
 import {useStore} from "../app/store";
 import {Badge, Button, ColorField, Field, Notice, PageHead, Segmented, Select, Switch} from "../components/ui";
 // three.js is 500 kB: it loads the first time someone opens the live body, not with the app
@@ -56,6 +56,8 @@ export function CharacterDesigner({name}: {name: string}) {
   const future = useRef<string[]>([]);
   const [steps, setSteps] = useState(0);            // only so the buttons know when to light up
   const [rig, setRig] = useState<RigReport | null>(null);
+  const [screen, setScreen] = useState<ScreenReport | null>(null);
+  const [screening, setScreening] = useState(false);
   const [checking, setChecking] = useState(false);
   const [touching, setTouching] = useState<string | null>(null);   // the slider the hand is on
   const [pieces, setPieces] = useState<Piece[]>([]);               // what people have cut themselves
@@ -66,6 +68,7 @@ export function CharacterDesigner({name}: {name: string}) {
       const d = await api<CharacterDetail>(`/api/character?${q({movie, name})}`);
       setDetail(d);
       setRig(d.rig || null);
+      setScreen(d.screen || null);        // what the last screen test found, if there was one
       setIsNew(false);
       const start = Object.keys(d.design).length ? d.design : structuredClone(BLANK);
       setUsePhoto(start.use_photo ?? (!!d.photo && !start.costume));     // as it was last built
@@ -336,6 +339,16 @@ export function CharacterDesigner({name}: {name: string}) {
                                                     } catch (e) { toast((e as Error).message, "err"); }
                                                     finally { setChecking(false); }
                                                   }} />}
+                {here.id === "build" && <ScreenPanel screen={screen} busy={screening} isNew={isNew}
+                                                     name={name}
+                                                     onRun={async (shots: boolean) => {
+                                                       setScreening(true);
+                                                       try {
+                                                         setScreen(await post<ScreenReport>(
+                                                           "/api/character/screen", {movie, name, shots}));
+                                                       } catch (e) { toast((e as Error).message, "err"); }
+                                                       finally { setScreening(false); }
+                                                     }} />}
                 {here.id === "build" && (
                   <div className="ready">
                     {problems.length > 0
@@ -508,6 +521,73 @@ function RigPanel({rig, checking, isNew, onCheck}: {
         {rig && rig.problems.length > 0 && (
           <Button variant="primary" busy={checking} onClick={() => onCheck(true)}>Tidy it</Button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** The screen test: can this character do the things a scene will ask of it?
+ *
+ *  `core/rigging.py` asks whether the rig is sound. This asks whether the person can act - walk, run,
+ *  jump, turn their head, bend, work their wrists and fingers - because finding that out in the middle
+ *  of a film means rebuilding the character and re-rendering every shot it is in. */
+function ScreenPanel({screen, busy, isNew, name, onRun}: {
+  screen: ScreenReport | null; busy: boolean; isNew: boolean; name: string;
+  onRun: (shots: boolean) => void;
+}) {
+  if (isNew) return null;
+  const mark = (state: ScreenRow["state"]) =>
+    state === "works" ? <Check size={14} color="var(--ok)" />
+    : state === "rough" ? <TriangleAlert size={14} color="var(--paint-orange)" />
+    : <X size={14} color="var(--err)" />;
+  return (
+    <div className="rig-panel screen-panel">
+      <h3><Clapperboard size={15} color={screen ? (screen.approved ? "var(--ok)" : "var(--err)")
+                                                : "var(--paint-yellow)"} />The screen test</h3>
+      {!screen && (
+        <p className="muted small">
+          Every move a scene can ask for - walking, running, jumping, bending, the head, the wrists, the
+          fingers - posed on this character and measured. About twenty seconds, and nothing is changed.
+          An actor passes this before anybody spends a film on them.
+        </p>
+      )}
+      {screen && <>
+        <div className={`screen-verdict ${screen.approved ? "ok" : "no"}`}>
+          <PersonStanding size={18} />
+          <div>
+            <b>{screen.approved ? `${name} is an approved actor` : `${name} is not ready`}</b>
+            <span className="muted small">{screen.line}</span>
+          </div>
+          <span className="screen-tally">
+            <i className="ok">{screen.passed}</i>
+            {screen.rough > 0 && <i className="rough">{screen.rough}</i>}
+            {screen.failed > 0 && <i className="no">{screen.failed}</i>}
+          </span>
+        </div>
+        <ul className="screen-moves">
+          {screen.rows.map(row => (
+            <li key={row.move} className={row.state}>
+              <span className="screen-mark">{mark(row.state)}</span>
+              <span className="screen-what">
+                <b>{row.title}</b>
+                <em>{row.problems.length ? row.problems.join("; ") : row.why}</em>
+              </span>
+              <span className="screen-nums">
+                {row.rough_skin != null && row.rough_skin > 0 &&
+                  <i title="how much of the skin is pulled out of shape">
+                    {(row.rough_skin * 100).toFixed(2)}%</i>}
+                {row.slide != null && <i title="how far a planted foot drifts">
+                  {(row.slide * 100).toFixed(1)} cm</i>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </>}
+      <div className="row">
+        <Button variant="ghost" busy={busy} onClick={() => onRun(false)}>
+          {screen ? "Test again" : "Run the screen test"}
+        </Button>
+        <Button variant="ghost" busy={busy} onClick={() => onRun(true)}>With pictures</Button>
       </div>
     </div>
   );

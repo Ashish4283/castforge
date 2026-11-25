@@ -74,10 +74,25 @@ export interface RigReport {
   problems: string[]; verdict: string;
 }
 
+/** One move of a screen test (blender/screen_test.py; what the numbers mean: core/screening.py). */
+export interface ScreenRow {
+  move: string; title: string; why: string;
+  state: "works" | "rough" | "failed" | "untested";
+  problems: string[];
+  stretch?: number | null; rough_skin?: number | null; reach?: number | null;
+  moved?: number | null; slide?: number | null;
+}
+/** Is this character fit to put in a film? */
+export interface ScreenReport {
+  approved: boolean; line: string; passed: number; rough: number; failed: number;
+  rows: ScreenRow[]; height?: number; bones?: number; shots?: string | null;
+}
+
 export interface CharacterDetail {
   name: string; design: Json; photo: string | null; face: string | null;
   previews: Partial<Record<"front" | "side" | "back", string>>; log: string[];
   rig?: RigReport | null;
+  screen?: ScreenReport | null;
 }
 
 export async function api<T = Json>(url: string, opts: RequestInit = {}): Promise<T> {

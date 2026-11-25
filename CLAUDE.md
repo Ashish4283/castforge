@@ -70,6 +70,8 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | undo, redo, what changed since the last build | `CharacterDesigner.edit`/`undo`/`redo` (whole designs as text on two stacks) and the `changed` diff |
 | the studio's steps, look pickers, thumbnails | steps `web/src/pages/characters/steps.ts`; tiles `LookPicker.tsx`; pictures `blender/preview_thumbs.py` -> `library/preview_kits/thumbs/`; routes `/api/character/looks` (what to offer) and `/api/character/thumbs` (take the missing ones) |
 | is a character fit to animate? | `core/rigging.py` (pure, tested: `keep_strongest`, `problems`, `verdict`), measured and repaired by `blender/rig_check.py`; CLI `castforge.py rig NAME [FOLDER] [--fix]`; route `/api/character/rig`; panel `CharacterDesigner.RigPanel`; every build tidies and writes `<name>.rig.json` |
+| can a character ACT? (walk, run, jump, bend, head, wrists, fingers) | `core/screening.py` (pure, tested: `MOVES`, `look`, `bad`, `card`, `verdict`), posed and measured by `blender/screen_test.py` (`POSES`, `hold`, `stretched`); CLI `castforge.py screen NAME [FOLDER] [--shots]`; route `/api/character/screen`; panel `CharacterDesigner.ScreenPanel`; writes `<name>.screen.json` |
+| socks, shoes, a tie, a scarf, a watch, a band (nothing in the wardrobe) | `blender/tailor.py` (pure, tested: `cut`, `measure`, `asked_for`, `sweep`); the build makes them at the costume anchor, the live view mirrors it in `web/src/pages/characters/tailor.ts`; design keys `outfit.shoe_style` and `costume.socks/tie/scarf/watch/wristband` |
 | picking a part of a mesh and reshaping it (size, slide, turn) | `costume.part_at`/`shape_part`/`neighbours` (pure, tested) mirrored in `web/src/pages/characters/parts.ts`; design key `parts`; picked by `bodyview.setParts`/`choose`, applied by `build_character.resize_parts` |
 | a Santa cap made for the head (not an asset) | `costume.santa_cap`/`ball` (pure, tested); the build makes it at the costume anchor and weights it to `DEF-spine.006`; the live view mirrors it in `web/src/pages/characters/cap.ts`; `appearance.MADE_HATS`, design keys `cap.*` |
 | pieces people cut themselves (an asset + their own edits) | `core/wardrobe.py` (pure, tested: `check`, `named`, `slot`, `load_all`); stored in `library/wardrobe/*.json`; routes `/api/wardrobe` (GET/POST/DELETE); resolved by `appearance.wearables(design, pieces)`; applied by `build_character.cut_edits` and in the live view inside `bodyview.dress` |
@@ -301,6 +303,46 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   hidden where it is DRAWN (the live view drops those triangles, the build masks them), so sideburns and
   the hair at the back still show. An ASSET hat is a solid shell and still takes the hair off, because
   hair underneath pokes straight through it.
+
+- A made wearable is cut from the body's own joint markers and NO pattern in `tailor.py` names a global
+  axis: up is this ankle to this knee, forward is the way the foot points. That is why one implementation
+  serves the build (z up) and the live view (y up) - where the Santa cap needed two and got it wrong
+  twice. Note a y<->z SWAP is a reflection, not a rotation: it flips every ring's winding.
+- Cut a garment from a proportion of a BONE and it fits an ordinary body and no other. The mesh is to
+  hand in both places, so `tailor.measure` measures the ankle, calf, wrist and foot instead. Three things
+  that bit: the slice must be WIDE at the calf (the leg mesh is coarse, about 5 cm between rings, and a
+  thin slice held across a leaning shin falls between two of them and catches only the far leg) and THIN
+  at the ankle (a wide one reaches the heel and measures the ankle wider than the calf); and a foot is
+  half as deep as it is wide, so a mean radius is the wrong number for it - `tailor.span` takes the
+  half-width across its own length.
+- A sole lies on the FLOOR, not across the shin. The shin leans, so laying a shoe out perpendicular to it
+  tips the shoe onto its edge and stands it 2 cm up the leg. `leg()` hands back both: `up` (the shin's,
+  what a sock wraps) and `stand` (the body's, what a shoe sits on).
+- What a made thing is DRAWN as is not what it is worn as. A sock under a trouser is only visible between
+  the trouser and the shoe - draw the rest and it shows through a trouser that clings - and it has to
+  clear the top of the shoe or it fills nothing. A boot is worn OVER the trouser, so its shaft needs 3 cm
+  of room; cut close to the calf it sits inside the trouser and puts triangles of boot through it.
+
+- The screen test poses the rig as a SCENE does, not as the file sits: `scene_kit.Actor` sets
+  `upper_arm_parent["IK_FK"] = 1` (arms FK) and `thigh_parent["IK_FK"] = 0` (legs IK) before it poses
+  anybody. Testing the file as Rigify left it turns controls nothing is listening to, and every arm and
+  wrist pose comes back "the controls turn but the body does not".
+- Measuring whether a pose worked: `reach` must come from the bone's whole ROTATION, not from the angle
+  its direction swung through - a bone points along its own length, so turning a head (a twist about that
+  length) leaves its direction untouched and measured as 18% of the way. And a control can turn perfectly
+  while moving no skin at all, which only a measurement of the SURFACE catches.
+- Judge skin by how MUCH of it is pulled about, never by the worst edge. Measured over seven built
+  characters, the worst edge in the arms pose runs 2.4x to 8.7x on characters that all look right - every
+  armpit has one hot edge. The fraction past 1.8x is 0.00% for most moves, about 0.20% at the shoulders,
+  and 0.40% on the one character that is visibly worse (`screening.ROUGH_SKIN`).
+- Anything that measures the body mesh must turn the garment MASKS off first, or the evaluated mesh comes
+  back with 10,070 vertices where the real one has 19,158 and every index past the first hidden vertex
+  means a different place. `screen_test.only_the_rig` leaves the armature modifier on and nothing else.
+- `lock_rotation` on a pose bone blocks Blender's own transform and NOT a script writing
+  `rotation_euler`, so it does not break scripted animation and the screen test is right to pass it. A
+  zero-range LIMIT_ROTATION constraint does block it, and is caught as "frozen".
+- `--card` was never a colour this stylesheet defines: `.step-bar` is sticky and had no background at
+  all, so a long step read straight through it. Check a token exists before trusting it.
 
 ## Docs
 Roadmap and open work: `docs/ROADMAP.md`. Design and measurements: `docs/DESIGN_V2.md` (long; read one section).
