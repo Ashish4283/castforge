@@ -27,6 +27,8 @@
                                                  camera shot, each prompt read off the scene itself
                       FOLDER --gpu [IDS...]      ...and run it on the rented GPU
                       FOLDER --fetch             bring the clips home, into <episode>/real/ (the app shows them)
+    python castforge.py clean FOLDER             what an episode is holding, and sweep what it does not need
+                      [--previews|--everything] [--yes]
     python castforge.py doctor                   check that every tool CastForge needs is installed
 """
 import argparse
@@ -1012,6 +1014,44 @@ def main():
             sys.exit("the workflows could not be built; the lines above say why")
         print("\nThese run on a GPU with ComfyUI and the Wan 2.2 models, not on this laptop:")
         print(f"  {os.path.join(ff, out_dir, 'workflows')}  (one per clip, with its still in inputs/)")
+        sys.exit(0)
+    elif a.command == "clean":
+        # What an episode is holding that it does not need. Nothing that cannot be made again goes
+        # unless it is asked for by name: the scene files cost a full re-render to get back.
+        if not a.args:
+            sys.exit("usage: python castforge.py clean EPISODE_FOLDER [--previews | --everything] [--yes]")
+        sys.path.insert(0, ROOT)
+        from core import housekeeping
+        folder = a.args[0]
+        if not os.path.isdir(folder):
+            sys.exit(f"{folder} is not a folder")
+        how_far = (housekeeping.DEAR if "--everything" in a.args else
+                   housekeeping.CHEAP if "--previews" in a.args else housekeeping.SPARE)
+        files = housekeeping.listing(folder)
+        look = housekeeping.survey(files)
+        print(f"{folder} is holding {housekeeping.in_words(look['total'])}:")
+        for row in look["kinds"]:
+            print(f"  {row['words'] if 'words' in row else housekeeping.in_words(row['bytes']):>9}  "
+                  f"{row['name']:<18} {row['files']:>3} files   <- {row['back']}")
+        taken, freed = housekeeping.sweep(files, how_far)
+        if not taken:
+            print()
+            print("nothing to sweep at this depth")
+            sys.exit(0)
+        print()
+        print(f"this would take {len(taken)} files and free {housekeeping.in_words(freed)}")
+        if "--yes" not in a.args:
+            print("add --yes to do it. --previews also takes the 3D previews and check renders;")
+            print("--everything also takes the scene files and built sets (a full re-render to get back).")
+            sys.exit(0)
+        gone = 0
+        for rel in taken:
+            try:
+                os.remove(os.path.join(folder, rel))
+                gone += 1
+            except OSError as e:
+                print(f"! {rel}: {e.strerror or e}")
+        print(f"swept {gone} files, {housekeeping.in_words(freed)} free")
         sys.exit(0)
     elif a.command == "rig":
         # Look a built character's rig over, and optionally put right what can be put right without a

@@ -4,6 +4,7 @@ import {post} from "../../api";
 import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
 import {Button, Card, Empty, Notice} from "../../components/ui";
+import {EpisodeFile, Space} from "./Space";
 
 export function Output() {
   const {movie, toast} = useStore();
@@ -75,6 +76,8 @@ export function Output() {
           </div>
         </Card>
       )}
+      <Space />
+      <EpisodeFile />
       {info.storyboard && (
         <Card title="Storyboard" text="One still per shot.">
           <a className="storyboard" href={info.storyboard} target="_blank" rel="noreferrer"><img src={info.storyboard} alt="Storyboard" /></a>

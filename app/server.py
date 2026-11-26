@@ -629,6 +629,84 @@ def new_episode(body: dict):
     return {"ok": True}
 
 
+@app.get("/api/episode/space")
+def episode_space(movie: str, episode: str):
+    """What this episode is holding on disk, by kind, and what each sweep would free."""
+    from core import housekeeping
+    d = episode_dir(movie, episode)
+    got = housekeeping.survey(housekeeping.listing(d))
+    return {**got, "words": {k: housekeeping.in_words(got[k])
+                             for k in ("total", "spare", "cheap", "dear")},
+            "kinds": [{**k, "words": housekeeping.in_words(k["bytes"])} for k in got["kinds"]]}
+
+
+@app.post("/api/episode/clean")
+def episode_clean(body: dict):
+    """Throw away what this episode does not need. Nothing that cannot be made again is touched."""
+    from core import housekeeping
+    d = episode_dir(body.get("movie"), body.get("episode"))
+    how_far = str(body.get("how_far") or housekeeping.SPARE)
+    if how_far not in housekeeping.HOW_FAR:
+        raise HTTPException(400, f"how far is one of {', '.join(housekeeping.HOW_FAR)}")
+    if cf.render_status(d) and cf.render_status(d)["alive"]:
+        raise HTTPException(400, "this episode is rendering: let it finish first")
+    taken, freed = housekeeping.sweep(housekeeping.listing(d), how_far)
+    gone, kept = 0, []
+    for rel in taken:
+        try:
+            os.remove(os.path.join(d, rel))
+            gone += 1
+        except OSError as e:
+            kept.append(f"{rel}: {e.strerror or e}")
+    for root, dirs, files in os.walk(d, topdown=False):      # folders a sweep emptied
+        for name in dirs:
+            inside = os.path.join(root, name)
+            if not os.listdir(inside):
+                try:
+                    os.rmdir(inside)
+                except OSError:
+                    pass
+    return {"files": gone, "freed": freed, "words": housekeeping.in_words(freed), "problems": kept}
+
+
+@app.post("/api/episode/rename")
+def episode_rename(body: dict):
+    """Give an episode a different name. Its folder moves; nothing inside it changes."""
+    d = episode_dir(body.get("movie"), body.get("episode"))
+    want = safe(body.get("name"), "episode")
+    into = os.path.join(os.path.dirname(d), want)
+    if os.path.abspath(into) == os.path.abspath(d):
+        return {"episode": want}
+    if os.path.exists(into):
+        raise HTTPException(400, f"there is already an episode called {want}")
+    if cf.render_status(d) and cf.render_status(d)["alive"]:
+        raise HTTPException(400, "this episode is rendering: let it finish first")
+    try:
+        os.rename(d, into)
+    except OSError as e:
+        raise HTTPException(400, f"could not rename it: {e.strerror or e}")
+    parts = str(body.get("episode")).split("/")
+    return {"episode": "/".join(parts[:-1] + [want])}
+
+
+@app.post("/api/episode/delete")
+def episode_delete(body: dict):
+    """Delete an episode and everything in it. The name has to be typed back, because this is final."""
+    d = episode_dir(body.get("movie"), body.get("episode"))
+    said = str(body.get("confirm") or "")
+    name = str(body.get("episode") or "").split("/")[-1]
+    if said != name:
+        raise HTTPException(400, f'to delete this, send "confirm": "{name}"')
+    if cf.render_status(d) and cf.render_status(d)["alive"]:
+        raise HTTPException(400, "this episode is rendering: stop it first")
+    from core import housekeeping
+    was = housekeeping.survey(housekeeping.listing(d))["total"]
+    shutil.rmtree(d, ignore_errors=True)
+    if os.path.isdir(d):
+        raise HTTPException(400, "some of it would not delete: a file is probably open in another program")
+    return {"freed": was, "words": housekeeping.in_words(was)}
+
+
 @app.get("/api/episode")
 def episode(movie: str, episode: str):
     d = episode_dir(movie, episode)
@@ -1570,7 +1648,16 @@ def prompts():
 
 @app.get("/api/gpu")
 def gpu():
-    return {"busy": gpu_busy(), "queue": queue_items()}
+    """What is running right now - a render included, which is the longest job of the lot and was the
+    one thing the app never said out loud."""
+    rendering = None
+    folder = cf.render_lock_owner()
+    if folder:
+        st = cf.render_status(folder) or {}
+        rendering = {"folder": folder, "name": os.path.basename(str(folder)),
+                     "text": st.get("text") or "rendering", "alive": bool(st.get("alive"))}
+    return {"busy": gpu_busy(), "queue": queue_items(), "render": rendering,
+            "building": cf.build_owner()}
 
 
 # --- the suite: the other tools that make art for the same films ---------------------------------------

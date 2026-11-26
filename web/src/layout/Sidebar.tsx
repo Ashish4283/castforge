@@ -17,7 +17,7 @@ export const PAGES = [
 ] as const;
 
 export function Sidebar({collapsed, onCollapse}: {collapsed: boolean; onCollapse: (v: boolean) => void}) {
-  const {movies, movie, current, setMovie, reload, route, go, gpu, queue, jobs, toast} = useStore();
+  const {movies, movie, current, setMovie, reload, route, go, gpu, queue, running, building, jobs, toast} = useStore();
   const [menu, setMenu] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -30,7 +30,8 @@ export function Sidebar({collapsed, onCollapse}: {collapsed: boolean; onCollapse
     episodes: current?.episodes.length, characters: current?.characters.length, sets: current?.sets.length,
     props: current?.props.length,
   };
-  const building = jobs.filter(j => j.state === "building");
+  const buildingJobs = jobs.filter(j => j.state === "building");
+  const buildingNow = building;
   const newMovie = async () => {
     setMenu(false);
     const n = prompt("Movie name (letters, numbers, _):");
@@ -86,10 +87,23 @@ export function Sidebar({collapsed, onCollapse}: {collapsed: boolean; onCollapse
         })}
       </nav>
       <div className="side-foot">
-        {building.length > 0 && (
-          <div className="gpu busy" title={building.map(j => `${j.name}: ${j.last || "building"}`).join("\n")}>
+        {running?.alive && (
+          <div className="gpu busy" title={`${running.folder}
+${running.text}`}>
             <span className="spinner" style={{width: 10, height: 10}} />
-            <span className="gpu-text">Building {building.map(j => j.name).join(", ")}</span>
+            <span className="gpu-text">Rendering {running.name}: {running.text.replace(/^rendering,?\s*/i, "")}</span>
+          </div>
+        )}
+        {!!buildingNow && (
+          <div className="gpu busy" title={buildingNow}>
+            <span className="spinner" style={{width: 10, height: 10}} />
+            <span className="gpu-text">{buildingNow}</span>
+          </div>
+        )}
+        {buildingJobs.length > 0 && (
+          <div className="gpu busy" title={buildingJobs.map(j => `${j.name}: ${j.last || "building"}`).join("\n")}>
+            <span className="spinner" style={{width: 10, height: 10}} />
+            <span className="gpu-text">Building {buildingJobs.map(j => j.name).join(", ")}</span>
           </div>
         )}
         {queue.map(q => (

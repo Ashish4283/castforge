@@ -48,6 +48,14 @@ export interface Schema {
   library: {footsteps: string[]; sfx: string[]; beds: string[]; clips: string[]};
 }
 export interface Character { name: string; preview: string | null; design: boolean }
+/** The render holding the lock right now: the longest job there is, and the one the app never said. */
+export interface Running { folder: string; name: string; text: string; alive: boolean }
+/** What an episode is holding on disk, and what each sweep would free. */
+export interface Space {
+  total: number; spare: number; cheap: number; dear: number;
+  words: {total: string; spare: string; cheap: string; dear: string};
+  kinds: {group: string; name: string; back: string; bytes: number; files: number; words: string}[];
+}
 export interface Queued { id: string; kind: string; name: string; movie: string | null; position: number }
 export interface SetInfo {
   name: string; picture: string; path: string; blueprint: Json; asset: string | null; preview: string | null;

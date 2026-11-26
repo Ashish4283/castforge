@@ -1,6 +1,6 @@
 // App-wide state: movies, the open movie, schema, GPU and background jobs, toasts, and the hash route.
 import {createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState} from "react";
-import {api, BuildingCatalog, Job, Movie, Prompts, Schema, Queued} from "../api";
+import {api, BuildingCatalog, Job, Movie, Prompts, Running, Schema, Queued} from "../api";
 
 export type Toast = {id: number; text: string; kind: "ok" | "err" | "info"};
 
@@ -14,6 +14,9 @@ interface Store {
   catalog: BuildingCatalog;
   gpu: string | null;
   queue: Queued[];
+  /** the render holding the lock right now, if any */
+  running: Running | null;
+  building: string | null;
   jobs: Job[];
   reload: (keep?: string) => Promise<void>;
   toasts: Toast[];
@@ -40,6 +43,8 @@ export function StoreProvider({children}: {children: ReactNode}) {
   const [catalog, setCatalog] = useState<BuildingCatalog>({templates: [], assets: []});
   const [gpu, setGpu] = useState<string | null>(null);
   const [queue, setQueue] = useState<Queued[]>([]);
+  const [running, setRunning] = useState<Running | null>(null);
+  const [building, setBuilding] = useState<string | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [route, setRoute] = useState(readRoute);
@@ -80,9 +85,13 @@ export function StoreProvider({children}: {children: ReactNode}) {
   useEffect(() => {      // GPU and background builds; a finished build refreshes the movie lists
     const tick = async () => {
       try {
-        const [g, j] = await Promise.all([api<{busy: string | null; queue: Queued[]}>("/api/gpu"), api<Job[]>("/api/jobs")]);
+        const [g, j] = await Promise.all([
+          api<{busy: string | null; queue: Queued[]; render: Running | null; building: string | null}>("/api/gpu"),
+          api<Job[]>("/api/jobs")]);
         setGpu(g.busy);
         setQueue(g.queue || []);
+        setRunning(g.render || null);
+        setBuilding(g.building || null);
         setJobs(j);
         const done = j.filter(x => x.state !== "building").map(x => `${x.id}:${x.state}`).sort().join("|");
         if (done !== finished.current) {
@@ -111,7 +120,7 @@ export function StoreProvider({children}: {children: ReactNode}) {
 
   const current = movies.find(m => m.name === movie);
   const value = useMemo(() => ({
-    movies, movie, current, setMovie, schema, prompts, catalog, gpu, queue, jobs, reload, toasts, toast, dismiss, route, go,
-  }), [movies, movie, current, setMovie, schema, prompts, catalog, gpu, queue, jobs, reload, toasts, toast, dismiss, route, go]);
+    movies, movie, current, setMovie, schema, prompts, catalog, gpu, queue, running, building, jobs, reload, toasts, toast, dismiss, route, go,
+  }), [movies, movie, current, setMovie, schema, prompts, catalog, gpu, queue, running, building, jobs, reload, toasts, toast, dismiss, route, go]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
