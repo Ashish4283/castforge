@@ -293,7 +293,7 @@ function NewProp({onMade}: {onMade: (id: string) => void}) {
 
 // --- scene settings, straight from the schema -------------------------------------------------------------
 function Settings({title, text, keys}: {title: string; text: string; keys: string[] | null}) {
-  const {schema} = useStore();
+  const {schema, current, toast} = useStore();
   const ep = useEpisode();
   const taken = useMemo(() => new Set([...LOOK, ...SOUND]), []);
   const entries = Object.entries(schema!.scene).filter(([k]) => (keys ? keys.includes(k) : !taken.has(k)));
@@ -302,17 +302,45 @@ function Settings({title, text, keys}: {title: string; text: string; keys: strin
   entries.sort(([a], [b]) => order(a) - order(b));
   const target = () => ep.scene() || ep.model;
   const value = (key: string) => ep.scene()?.[key] ?? ep.model[key];
+  const onSet = typeof value("set_folder") === "string" ? String(value("set_folder")) : null;
+  const named = (current?.sets || []).find(x => onSet?.endsWith(`/${x.name}`) || onSet === x.name);
+
+  // Picking a built set and picking a background picture are two ways to say the same thing, and the
+  // app used to let them disagree: choose the set, and `background` quietly went on pointing at the
+  // old picture. The render replaces it anyway, but the check refused to start and the file looked
+  // wrong. So choosing a set now sets the picture with it, and choosing a picture drops the set.
+  const change = (key: string, v: Json) => ep.update(() => {
+    const t = target();
+    if (v === null || v === "") delete t[key]; else t[key] = v;
+    if (key === "set_folder") {
+      const picked = (current?.sets || []).find(x => typeof v === "string" && v.endsWith(`/${x.name}`));
+      if (picked) {
+        t.background = `${"../".repeat(ep.depth())}${picked.path.replace(/^\.\.\/sets\//, "sets/")}`;
+        toast(`This scene is on the set ${picked.name}; its picture comes with it.`);
+      } else if (v === null) {
+        toast("Back to this scene's own picture. Choose one under Background.");
+      }
+    }
+    if (key === "background" && v && t.set_folder) {
+      delete t.set_folder;
+      toast("Using that picture instead of the built set.");
+    }
+  });
+
   return (
     <Card title={title} text={text}>
+      {named && keys?.includes("background") && (
+        <p className="hint" style={{marginTop: 0}}>
+          This scene is on the built set <b>{named.name}</b>: its picture, its depth and everything
+          standing in it come with it. The background below is that set&rsquo;s own picture.
+        </p>
+      )}
       <div className="set-grid">
         {entries.map(([key, def]) => (
           <Field key={key} wide={def.type === "image" || def.type === "set"}
                  label={<span style={{textTransform: "capitalize"}}>{label(key)}</span>}
-                 hint={def.help} required={def.required}>
-            <ParamInput name={key} def={def} value={value(key)} onChange={v => ep.update(() => {
-              const t = target();
-              if (v === null || v === "") delete t[key]; else t[key] = v;
-            })} />
+                 hint={def.help} required={def.required && !(key === "background" && !!onSet)}>
+            <ParamInput name={key} def={def} value={value(key)} onChange={v => change(key, v)} />
           </Field>
         ))}
       </div>

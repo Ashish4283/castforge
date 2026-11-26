@@ -425,3 +425,49 @@ def test_socks_and_library_boots_do_not_go_together_either():
     said = schema.costume_clashes({"costume": {"boots": "#141414", "socks": "#ffffff"}})
     assert any("socks" in m and "boot" in m for m in said)
     assert schema.costume_clashes({"costume": {"socks": "#ffffff"}}) == []
+
+
+# --- a scene on a built set ---------------------------------------------------------------------------
+# Picking a built set and then being told the scene cannot render because of a background nobody uses is
+# the kind of thing that makes an app feel broken. scene_kit replaces `background` from the set before
+# anything is rendered, so a leftover one is not an error; it is not used.
+def _set_folder(tmp_path, name="cabin"):
+    sd = tmp_path / "sets" / name
+    sd.mkdir(parents=True)
+    (sd / "background.png").write_bytes(b"picture")
+    (sd / "set_blueprint.json").write_text("{}", encoding="utf-8")
+    (sd / "set.blend").write_bytes(b"blend")
+    return sd
+
+
+def test_a_leftover_background_does_not_stop_a_scene_that_is_on_a_built_set(tmp_path, capsys):
+    _set_folder(tmp_path)
+    scene = tmp_path / "ep"
+    scene.mkdir()
+    (scene / "scene.json").write_text(json.dumps({
+        "set_folder": "../sets/cabin", "background": "cabin.png", "cast": {}, "script": []}),
+        encoding="utf-8")
+    assert schema.check_scene(str(scene)) == 0
+    said = capsys.readouterr().out
+    assert "NOTE:" in said and "cabin.png" in said, "it must still say the background is being ignored"
+
+
+def test_a_missing_background_with_no_set_is_still_an_error(tmp_path, capsys):
+    scene = tmp_path / "ep"
+    scene.mkdir()
+    (scene / "scene.json").write_text(json.dumps({"background": "cabin.png", "cast": {}, "script": []}),
+                                      encoding="utf-8")
+    assert schema.check_scene(str(scene)) == 1
+    assert "background image not found" in capsys.readouterr().out
+
+
+def test_a_set_folder_that_was_never_built_is_still_an_error(tmp_path, capsys):
+    (tmp_path / "sets" / "half").mkdir(parents=True)
+    scene = tmp_path / "ep"
+    scene.mkdir()
+    (scene / "scene.json").write_text(json.dumps({
+        "set_folder": "../sets/half", "background": "gone.png", "cast": {}, "script": []}),
+        encoding="utf-8")
+    assert schema.check_scene(str(scene)) > 0
+    said = capsys.readouterr().out
+    assert "not a built set yet" in said or "background image not found" in said

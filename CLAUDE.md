@@ -135,6 +135,9 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Blender 5.x has no `Action.fcurves`: use `bpy_extras.anim_utils.action_get_channelbag_for_slot`.
 - Scenes render with view transform `Standard` (AgX greys the set picture; see DESIGN_V2 D12).
 - Bash tool: heredocs with apostrophes or backslash escapes break; write edit scripts to a file.
+- `background` and `set_folder` are two ways to say where a scene is. scene_kit REPLACES background
+  from the set before rendering, so a leftover one is unused, not wrong - `check_scene` says NOTE,
+  not ERROR. In the app, choosing a set sets the picture too and choosing a picture drops the set.
 - Image-to-video ANIMATES the still it is given; it does not restyle it. A clip made straight from a
   3D render is a moving 3D render - the look has to be changed on the STILL, before Wan sees it.
 - glTF cannot carry the build's tint chain (texture -> luminance -> multiply by colour), so the

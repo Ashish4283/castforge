@@ -769,8 +769,17 @@ def check_parsed(folder, sc):
         for e in errors:
             print("ERROR:", e)
         return len(errors)
+    # A built set brings its own picture and replaces whatever `background` says (scene_kit does this
+    # before anything is rendered), so a leftover background is not a problem - it is simply not used.
+    # Treating it as an error is what stopped a scene that would have rendered perfectly well.
+    on_a_set = isinstance(sc.get("set_folder"), str) and sets.is_set_folder(
+        os.path.join(folder, sc["set_folder"]))
     if sc.get("background") and not os.path.exists(os.path.join(folder, sc["background"])):
-        errors.append(f"background image not found: {sc['background']}")
+        if on_a_set:
+            print(f'NOTE: "background" says {sc["background"]}, which is not there - but this scene is '
+                  f'on the built set {sc["set_folder"]}, whose own picture is used instead.')
+        else:
+            errors.append(f"background image not found: {sc['background']}")
     if sc.get("set_folder"):
         if not isinstance(sc["set_folder"], str):
             errors.append('"set_folder" must be a folder path')
