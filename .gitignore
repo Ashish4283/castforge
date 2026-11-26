@@ -41,3 +41,6 @@ library/fabrics/
 # castforge neither tracks nor ignores their contents - it simply does not look inside. `shared/suite.py`
 # says where they are; `python castforge.py suite` prints it.
 suite/
+
+# scratch: downloaded GPU output, clips being looked at
+tmp/

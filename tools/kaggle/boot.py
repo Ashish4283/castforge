@@ -701,12 +701,24 @@ def clips(place=None, fps=24, only=None):
             say("  nothing came back; its log says why")
             say(last_words(25))
             continue
-        folder = place["comfy"] / "output" / (images[0].get("subfolder") or "")
-        frames = sorted(folder.glob("*.png"))
+        # ComfyUI is started with --output-directory, so its pictures do NOT land under comfy/output.
+        # Look where it was told to write as well, or the frames are there and the encode finds nothing.
+        sub = images[0].get("subfolder") or ""
+        folder = next((r / sub for r in (place["keep"] / "swatches", place["comfy"] / "output",
+                                         place["scratch"]) if (r / sub).is_dir()), None)
+        frames = sorted(folder.glob("*.png")) if folder else []
+        if not frames:
+            say(f"  {len(images)} frames were made but not found on disk; looked under {folder}")
+            continue
         clip = out / f"{stem}.mp4"
         try:
+            # A numbered pattern, not a glob: plenty of ffmpeg builds have no globbing compiled in at
+            # all, and the error it gives ("Function not implemented") says nothing about why.
+            digits = re.search(r"\d+", frames[0].name)
+            first = int(digits.group(0))
+            pattern = frames[0].name.replace(digits.group(0), f"%0{len(digits.group(0))}d", 1)
             subprocess.run(["ffmpeg", "-y", "-v", "error", "-framerate", str(fps),
-                            "-pattern_type", "glob", "-i", str(folder / "*.png"),
+                            "-start_number", str(first), "-i", str(folder / pattern),
                             "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", str(clip)],
                            check=True)
         except (OSError, subprocess.CalledProcessError) as e:
@@ -720,7 +732,7 @@ def clips(place=None, fps=24, only=None):
             shutil.copy(frames[len(frames) // 2], out / f"{stem}.png")
         made.append({"name": stem, "frames": len(frames), "seconds": round(time.time() - began, 1)})
         say(f"  {len(frames)} frames in {time.time() - began:.0f}s -> {clip.name}")
-        for f in folder.glob("*.png"):
+        for f in frames:
             f.unlink()                              # the next clip writes into the same place
     (out / "manifest.json").write_text(json.dumps(made, indent=1))
     say("")
