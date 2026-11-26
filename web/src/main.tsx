@@ -10,6 +10,7 @@ import {Toasts} from "./components/ui";
 import {Studio} from "./pages/Studio";
 import {Characters} from "./pages/Characters";
 import {CharacterDesigner} from "./pages/CharacterDesigner";
+import {Results} from "./pages/Results";
 import {Episodes} from "./pages/episodes/Episodes";
 import {Sets} from "./pages/Sets";
 import {Props} from "./pages/Props";
@@ -21,6 +22,7 @@ function Page() {
   const {route} = useStore();
   switch (route[0]) {
     case "episodes": return <Episodes />;
+    case "results": return <Results />;
     case "characters": return route[1] ? <CharacterDesigner name={route[1]} /> : <Characters />;
     case "sets": return <Sets />;
     case "props": return <Props />;

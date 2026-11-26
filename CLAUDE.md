@@ -43,6 +43,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | what an episode holds on disk, and sweeping it | `core/housekeeping.py` (pure, tested): three depths - **spare** (Blender's `.blend1`, nothing reads them), **cheap** (previews, check renders: a button brings them back), **dear** (scene files, built sets: a full re-render). CLI `castforge.py clean FOLDER [--previews|--everything] [--yes]`; `/api/episode/space` and `/api/episode/clean`; the Space card in the Output tab |
 | renaming or deleting an episode | `/api/episode/rename`, `/api/episode/delete` (the name must be typed back); `web/src/pages/episodes/Space.tsx` `EpisodeFile` |
 | saying what is running | `/api/gpu` carries `render` (from the render lock) and `building`; the sidebar foot shows both |
+| everything a movie has produced, in one list | `/api/movie/results`; the **Results** page in the left menu (`web/src/pages/Results.tsx`) - films, graded cuts, photoreal clips and storyboards, each saying which episode it came from |
 | where a photoreal clip LIVES | `<episode>/real/<id>.mp4` (+ `<id>.still.png`), beside the episode it came from; `/api/episode` `real[]`; shown in the Output tab. `castforge.py real FOLDER --fetch` brings a finished GPU run home, `--from DIR` files one already downloaded |
 | making a rendered still photographic before it is animated | `shared/real.py` `still_graph` (RealVisXL image-to-image), `DENOISE` by shot size (a face moves less than a room), `with_face` (ip-adapter-plus-face holds it to the character's own front render); run by `tools/kaggle/boot.py` `make_real()` before `clips()` |
 | turning a rendered 3D shot into a photographed one | `shared/real.py` (pure, tested); CLI `castforge.py real FOLDER [--run]`; the prompt is read off the scene, the takes are the director's own cuts, and the 81-frame limit is Wan 2.2's |
@@ -104,6 +105,9 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 Tests mirror modules: `tests/test_<module>.py`. Add a test with every pure-logic change.
 
 ## Skills (`.claude/skills/`)
+`castforge-ux` - where a thing belongs, which control to reach for, how a step hands over to the
+next, and the discoverability rules (if they cannot find it, it does not exist).
+`castforge-debug` - reproduce before changing anything; stale build vs real bug; the traps.
 `run-castforge` - start the app on 8787, rebuild the bundle, drive it with headless Chrome over CDP,
 and what to check when a change seems not to have appeared. `castforge-gpu` - what a T4 can and
 cannot run, pushing a dataset and a kernel, and the two Kaggle CLI behaviours that cost a run.

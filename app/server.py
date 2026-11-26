@@ -634,6 +634,44 @@ def new_episode(body: dict):
     return {"ok": True}
 
 
+@app.get("/api/movie/results")
+def movie_results(movie: str):
+    """Everything this movie has actually produced, in one list.
+
+    Results used to be reachable only from inside the episode that made them, which is the same as not
+    being reachable. This is what the Results page in the left menu shows."""
+    d = movie_dir(movie)
+    listed = next((m for m in movies() if m["name"] == movie), None) or {"episodes": []}
+    out = []
+    for ep in sorted(listed["episodes"]):
+        folder = os.path.join(d, *ep.split("/"))
+        def add(path, kind, what, note=""):
+            if os.path.isfile(path):
+                out.append({"episode": ep, "kind": kind, "what": what, "note": note,
+                            "url": media_url(path), "bytes": os.path.getsize(path),
+                            "when": int(os.path.getmtime(path))})
+        add(os.path.join(folder, "episode.mp4"), "film", "The episode",
+            "rendered and finished by CastForge")
+        add(os.path.join(folder, "post", "film.mp4"), "graded", "Graded cut",
+            "colour, crossfades, captions, mastered to -16 LUFS")
+        real = os.path.join(folder, "real")
+        if os.path.isdir(real):
+            for f in sorted(os.listdir(real)):
+                if f.endswith(".mp4"):
+                    still = os.path.join(real, f[:-4] + ".still.png")
+                    out.append({"episode": ep, "kind": "photoreal", "what": f[:-4],
+                                "note": "photographed, then animated",
+                                "still": media_url(still) if os.path.isfile(still) else None,
+                                "url": media_url(os.path.join(real, f)),
+                                "bytes": os.path.getsize(os.path.join(real, f)),
+                                "when": int(os.path.getmtime(os.path.join(real, f)))})
+        board = os.path.join(folder, "storyboard.jpg")
+        add(board, "storyboard", "Storyboard", "one still per shot")
+    from core import housekeeping
+    return {"movie": movie, "results": sorted(out, key=lambda r: -r["when"]),
+            "words": {r["url"]: housekeeping.in_words(r["bytes"]) for r in out}}
+
+
 @app.get("/api/episode/space")
 def episode_space(movie: str, episode: str):
     """What this episode is holding on disk, by kind, and what each sweep would free."""

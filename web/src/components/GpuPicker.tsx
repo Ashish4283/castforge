@@ -68,14 +68,24 @@ export function GpuWhereLine() {
   if (!where) return null;
   const here = PLACES.find(p => p.id === where.using) ?? PLACES[0];
   const it = where.places[where.using];
-  const other = PLACES.find(p => p.id !== where.using)!;
   const Icon = here.icon;
+  const rented = where.using === "kaggle";
+  // A switch, not a button that swaps two words: the question people actually have is "is the rented
+  // GPU on?", and leaving it on when nothing is being made is what quietly spends a session. Turning
+  // it off only stops work being SENT there - the address is remembered for next time.
   return (
-    <button className={`gpu gpu-where ${it && !it.ready ? "warn" : ""}`}
-            title={`${it?.why ?? ""}\n${it?.how ?? ""}\n\nClick to use ${other.label} instead.`}
-            onClick={() => use(other.id).catch(() => { /* the title says what is wrong */ })}>
+    <div className={`gpu gpu-where ${it && !it.ready ? "warn" : ""}`}
+         title={`${it?.why ?? ""}\n${it?.how ?? ""}`}>
       <Icon size={12} />
       <span className="gpu-text">Making on: {here.label}</span>
-    </button>
+      <label className="gpu-switch" title={rented
+        ? "Turn the rented GPU off: work goes to this laptop instead. Its address is kept for next time."
+        : "Turn the rented GPU on: heavy work is sent there instead of to this laptop."}>
+        <input type="checkbox" checked={rented}
+               onChange={e => use(e.target.checked ? "kaggle" : "local")
+                 .catch(() => { /* the title says what is wrong */ })} />
+        <span className="track" />
+      </label>
+    </div>
   );
 }

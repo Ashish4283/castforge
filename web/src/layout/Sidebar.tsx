@@ -8,6 +8,9 @@ import {GpuWhereLine} from "../components/GpuPicker";
 export const PAGES = [
   {id: "studio", label: "Overview", icon: LayoutDashboard, group: "Produce"},
   {id: "episodes", label: "Episodes", icon: Clapperboard, group: "Produce"},
+  // everything the movie has made, in one place: it was only reachable from inside the episode
+  // that made it, which is the same as not being reachable
+  {id: "results", label: "Results", icon: Film, group: "Produce"},
   {id: "characters", label: "Characters", icon: Users, group: "Assets"},
   {id: "sets", label: "Sets", icon: Image, group: "Assets"},
   {id: "props", label: "Props", icon: Boxes, group: "Assets"},
