@@ -1684,6 +1684,35 @@ def suite_post(body: dict):
                    f'"{paths["picks"]}" out/{got["title"]}'}
 
 
+@app.post("/api/suite/real")
+def suite_real(body: dict):
+    """What this episode becomes as photoreal clips: one per camera shot, with the sentence for each.
+
+    Nothing is generated here. Working out the clips is instant and reading them before spending a GPU
+    on them is the whole point, so the page shows the plan and the command that runs it."""
+    from shared import real, suite
+    movie, episode = safe(body.get("movie"), "movie"), str(body.get("episode") or "")
+    folder = os.path.normpath(os.path.join(MOVIES, movie, episode))
+    if not folder.startswith(os.path.join(MOVIES, movie)) or not os.path.isdir(folder):
+        raise HTTPException(400, f"{episode!r} is not an episode of {movie}")
+    if not os.path.isdir(suite.TOOLS["forgefilms"]["folder"]):
+        raise HTTPException(400, "forgefilms is not installed - it owns the image-to-video workflows")
+    try:
+        plan = real.plan(folder)
+    except (OSError, ValueError) as e:
+        raise HTTPException(400, f"could not read the episode: {e}")
+    problems = real.check(plan)
+    if not plan["shots"]:
+        raise HTTPException(400, problems[0] if problems else "this episode has no rendered shots")
+    rel = os.path.relpath(folder, ROOT).replace(os.sep, "/")
+    return {"clips": plan["shots"], "problems": problems, "title": plan["title"], "fps": plan["fps"],
+            "seconds": round(sum(r["seconds"] for r in plan["shots"]), 1),
+            "stills": len(real.stills(plan)), "joins": real.carried(plan),
+            "run": f'python castforge.py real {rel} --gpu',
+            "limit": f"{real.TRAINED} frames is what Wan 2.2 was trained on: "
+                     f"{real.TRAINED / real.FPS:.2f} s at {real.FPS} fps"}
+
+
 @app.post("/api/gpu/cancel")
 def cancel_queued(body: dict):
     """Take one waiting job out of the queue (nothing that has already started is touched)."""

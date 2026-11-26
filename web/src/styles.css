@@ -1110,3 +1110,16 @@ button.v-card { padding: 6px 8px; color: var(--text-2); font: inherit; cursor: p
   white-space: nowrap; }
 .joint-panel { display: grid; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line);
   background: var(--panel); }
+
+/* --- the plan for the photoreal clips (Suite page) ----------------------------------------- */
+.real-plan { display: grid; gap: 10px; padding: 12px 14px; margin-top: 10px;
+  border: 1px solid var(--line-2); border-radius: var(--r); background: var(--panel-2); }
+.real-list { display: grid; gap: 3px; max-height: 320px; overflow: auto; padding-right: 4px; }
+.real-row { display: grid; grid-template-columns: 170px 72px 1fr; gap: 10px; align-items: baseline;
+  padding: 5px 8px; border-radius: var(--r-sm); background: var(--panel); font-size: 11.5px; }
+.real-row.carried { border-left: 2px solid var(--paint-cyan); }
+.real-id { font-family: var(--mono); font-size: 10.5px; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; }
+.real-len { font-variant-numeric: tabular-nums; color: var(--accent-2); }
+.real-len small { color: var(--text-3); margin-left: 4px; font-size: 9.5px; }
+.real-say { color: var(--text-2); }
