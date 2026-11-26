@@ -640,7 +640,18 @@ def episode(movie: str, episode: str):
         for s in sorted(os.listdir(sdir)):
             shot = os.path.join(sdir, s, "shot.mp4")
             if os.path.exists(shot):
-                shots.append({"name": s, "video": media_url(shot)})
+                # the cut strip needs what each piece of film IS, not only where it is: its own length
+                # (from its own render, never from the episode timeline) and how much is said in it
+                facts = {}
+                try:
+                    with open(os.path.join(sdir, s, "shot.timeline.json"), encoding="utf-8") as f:
+                        got = json.load(f)
+                    facts = {"seconds": round(float(got.get("duration") or 0), 2),
+                             "lines": len([ln for ln in got.get("lines", []) if ln.get("text")]),
+                             "cuts": len(got.get("shots") or [])}
+                except (OSError, ValueError, TypeError):
+                    pass
+                shots.append({"name": s, "id": s.split("_", 1)[-1], "video": media_url(shot), **facts})
     downloads = [{"name": label, "url": media_url(os.path.join(d, f))}
                  for f, label in (("episode.mp4", "Video (MP4)"), ("episode.srt", "Subtitles (SRT)"),
                                   ("episode.vtt", "Subtitles (WebVTT)"), ("episode_chapters.txt", "YouTube chapters"),

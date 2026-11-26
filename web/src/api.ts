@@ -35,6 +35,8 @@ export interface Schema {
   seats: string[];
   weather: string[];
   look_directions: string[];
+  transitions: string[];
+  grades: string[];
   character: Record<string, ParamDef>;
   fix_parts: string[];
   costumes: Record<string, Record<string, string>>;
@@ -58,9 +60,13 @@ export interface Movie { name: string; characters: Character[]; episodes: string
 export interface Job { id: string; name: string; movie: string; kind: string; state: string; last?: string }
 export interface Prompts { scene: string; character: string; help: string }
 export interface Preview { name: string; glb: string; meta: string }
+/** One rendered scene, as a piece of film: where it is, how long it runs, how much is said in it. */
+export interface Shot {
+  name: string; video: string; id?: string; seconds?: number; lines?: number; cuts?: number;
+}
 export interface EpisodeInfo {
   scene: string; status: string; rendering: boolean; video: string | null;
-  shots: {name: string; video: string}[]; storyboard: string | null;
+  shots: Shot[]; storyboard: string | null;
   downloads: {name: string; url: string}[]; previews: Preview[];
 }
 export interface Step { key: string; title: string; tab: string; state: "done" | "started" | "todo"; detail: string }

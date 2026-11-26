@@ -4,6 +4,7 @@ import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
 import {Card, Field} from "../../components/ui";
 import {ParamInput} from "../../components/ParamInput";
+import {Cut} from "./Cut";
 
 export function Finishing() {
   const {schema} = useStore();
@@ -18,8 +19,9 @@ export function Finishing() {
   const target = () => ep.scene() || m;
   return (
     <div className="stack lg">
+      <Cut />
       <Card title="Finishing" text="Applied after rendering: changing these never re-renders (use Finish only).">
-        <div className="form-grid">
+        <div className="set-grid">
           {Object.entries(schema.finish).map(([key, def]) => (
             <Field key={key} label={<span style={{textTransform: "capitalize"}}>{label(key)}</span>} hint={def.help}>
               <ParamInput name={key} def={def} value={ep.scene()?.[key] ?? m[key]} onChange={v => ep.update(() => {
