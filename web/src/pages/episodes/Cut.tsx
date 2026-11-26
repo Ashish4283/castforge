@@ -9,7 +9,7 @@ import {AlertTriangle, Clock, GripVertical, MessageSquareText, Scissors} from "l
 import {Json} from "../../api";
 import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
-import {Badge, Button, Card, Empty} from "../../components/ui";
+import {Badge, Button, Card, Empty, Guide} from "../../components/ui";
 import {ChipPick, Regulator, tidy} from "../../components/controls";
 import {GLYPHS, GRADE_COLORS, words} from "../../components/glyphs";
 
@@ -42,7 +42,7 @@ export function Cut() {
   const fade = (i: number) => Number(setting(i, "transition_seconds") ?? schema.finish.transition_seconds?.default ?? 0.5);
 
   return (
-    <Card title="The cut" bodyClass="tight"
+    <Card title={<span className="row nowrap" style={{gap: 7}}>The cut <Guide topic="cut" /></span>} bodyClass="tight"
           text="Every scene in the order it plays, with the transition that joins each pair. Drag a scene to move it."
           actions={<Badge>{scenes.length} scenes &middot; {known.length === scenes.length
             ? clock(total) : `${clock(total)} of ${scenes.length - known.length} still to render`}</Badge>}>

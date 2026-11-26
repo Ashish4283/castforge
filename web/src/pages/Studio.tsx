@@ -3,7 +3,7 @@ import {ArrowRight, Boxes, Building2, CheckCircle2, Clapperboard, Image, Sparkle
 import {api, Progress, q} from "../api";
 import {useStore} from "../app/store";
 import {useEpisode} from "../app/episode";
-import {Badge, Button, Card, Empty, PageHead} from "../components/ui";
+import {Badge, Button, Card, Empty, Guide, PageHead} from "../components/ui";
 
 const QUICK = [
   {tab: "characters", icon: Users, title: "Character", text: "Design one, or build from a photo"},
@@ -32,7 +32,7 @@ export function Studio() {
   const done = p?.steps.filter(s => s.state === "done").length ?? 0;
   return (
     <div className="page">
-      <PageHead eyebrow="Overview" title={movie || "CastForge Studio"}
+      <PageHead eyebrow={<span className="row nowrap" style={{gap: 6}}>Overview <Guide topic="overview" /></span>} title={movie || "CastForge Studio"}
                 text="Where this movie stands and what to do next. Every step saves into the movie folder, so you can stop and come back any time."
                 actions={p && <Badge kind="accent">{done} of {p.steps.length} steps done</Badge>} />
       {err && !p && <Card><Empty icon={<Sparkles />} title="Could not load this movie" text={err} /></Card>}

@@ -5,7 +5,7 @@ import {Aperture, Box, Camera, Hammer, Pause, Play, Plus, RotateCcw, Save, Trash
 import {Json, post} from "../../api";
 import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
-import {Badge, Button, Card, Notice, Select} from "../../components/ui";
+import {Badge, Button, Card, Guide, Notice, Select} from "../../components/ui";
 import {NavPad} from "../../components/controls";
 import {GLYPHS, words} from "../../components/glyphs";
 import {Cam, Meta, SceneViewer} from "./viewer";
@@ -179,7 +179,7 @@ export function Editor3D() {
   const lanes = meta ? [...Object.keys(meta.cast), null] : [];
   const span = meta ? Math.max(1, meta.frames - 1) : 1;
   return (
-    <Card title="3D scene editor" text="Orbit with the mouse, scrub or play, click a step. Drag the discs (where people start), rings (where they walk to) and squares (props, including the ones that came with the set)."
+    <Card title={<span className="row nowrap" style={{gap: 7}}>3D scene editor <Guide topic="editor3d" /></span>} text="Orbit with the mouse, scrub or play, click a step. Drag the discs (where people start), rings (where they walk to) and squares (props, including the ones that came with the set)."
           actions={<div className="row nowrap">
             <Button icon={<Undo2 size={15} />} disabled={!undoCount} onClick={doUndo} title="Undo (Ctrl+Z)">Undo</Button>
             <Button icon={<Save size={15} />} disabled={!ep.dirty} onClick={save}>Save</Button>
@@ -187,11 +187,25 @@ export function Editor3D() {
           </div>}>
       <div className="viewport" ref={host}>
         {!preview && (
+          // A render makes the FILM. The editor needs a different, much cheaper thing - the scene as a
+          // 3D file - and nothing said so, which left people pressing Render and finding an empty
+          // viewport. So the button that fixes it is here, where they are looking.
           <div className="vp-empty">
-            <div className="stack" style={{justifyItems: "center"}}>
+            <div className="stack" style={{justifyItems: "center", gap: 10, maxWidth: 440, textAlign: "center"}}>
               <Box size={34} />
-              <b style={{color: "var(--text)"}}>No 3D preview yet</b>
-              <span>Press Build 3D preview: about 20 seconds per scene, and it renders nothing.</span>
+              <b style={{color: "var(--text)"}}>This scene has not been built in 3D yet</b>
+              <span>
+                Rendering makes the film; this makes the scene you can walk around. It takes about
+                twenty seconds a scene and renders nothing, so it is cheap to redo whenever you move
+                someone.
+              </span>
+              <Button variant="primary" icon={<Hammer size={15} />} busy={building} onClick={build}>
+                Build 3D preview
+              </Button>
+              <span className="muted small">
+                Then you can drag where people start and where they walk to, scrub the timeline, and
+                look through the lens the render will use.
+              </span>
             </div>
           </div>
         )}

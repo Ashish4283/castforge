@@ -6,6 +6,7 @@ import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
 import {Badge, Button, Card, copyText, Empty, Modal, Notice, Select, Tabs} from "../../components/ui";
 import {SceneSetup} from "./SceneSetup";
+import {Scenes} from "./Scenes";
 import {Script} from "./Script";
 import {Output} from "./Output";
 import {Finishing} from "./Finishing";
@@ -137,8 +138,7 @@ export function Episodes() {
                 <h1>{ep.ep}</h1>
               </div>
               {scenes && (
-                <Select className="sm" value={String(ep.part)} onChange={v => ep.setPart(Number(v))} aria-label="Scene"
-                        options={scenes.map((s: {id?: string}, i: number) => [String(i), `Scene ${i + 1}: ${s?.id || "untitled"}`] as [string, string])} />
+                <span className="muted small">scene {ep.part + 1} of {scenes.length}: <b>{scenes[ep.part]?.id || "untitled"}</b></span>
               )}
               {ep.dirty && <Badge kind="warn" pip>Unsaved</Badge>}
               <div className="spacer" />
@@ -183,7 +183,7 @@ export function Episodes() {
                   ["scene", "Stage", <Settings2 size={15} />], ["script", "Script", <MessageSquareText size={15} />],
                   ["3d", "3D editor", <Box size={15} />], ["output", "Output", <Film size={15} />],
                   ["finishing", "The cut", <Wand2 size={15} />], ["json", "JSON", <Braces size={15} />]]} />
-                {tab === "scene" && <SceneSetup />}
+                {tab === "scene" && <><Scenes /><SceneSetup /></>}
                 {tab === "script" && <Script />}
                 {tab === "3d" && <Suspense fallback={<Card><span className="spinner" /></Card>}><Editor3D /></Suspense>}
                 {tab === "output" && <Output />}

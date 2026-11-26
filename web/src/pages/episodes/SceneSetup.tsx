@@ -6,7 +6,7 @@ import {Armchair, Plus, Trash2, UserPlus} from "lucide-react";
 import {Json, label} from "../../api";
 import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
-import {Badge, Button, Card, ColorField, Field, Select} from "../../components/ui";
+import {Badge, Button, Card, ColorField, Field, Guide, Select} from "../../components/ui";
 import {ParamInput} from "../../components/ParamInput";
 import {CastThumbs, ChipPick, Dial, Person, Regulator, StagePad, STAGE_COLORS, Thing, stageColor, VoicePicker} from "../../components/controls";
 import {initials} from "../../components/glyphs";
@@ -103,7 +103,7 @@ function Stage({sel, setSel}: {sel: Sel; setSel: (s: Sel) => void}) {
   };
 
   return (
-    <Card title="The stage" bodyClass="tight"
+    <Card title={<span className="row nowrap" style={{gap: 7}}>The stage <Guide topic="stage" /></span>} bodyClass="tight"
           text="Click a face to put them in the scene, then drag them where they start. The camera is at the bottom of the floor, looking up the page."
           actions={<Badge>{names.length} in the scene &middot; {props.length} props</Badge>}>
       <div className="stage-shelf">

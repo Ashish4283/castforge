@@ -4,7 +4,7 @@ import {ArrowDown, ArrowUp, Copy, MessageCircle, Sliders, Trash2, Upload, Volume
 import {api, Json, label} from "../../api";
 import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
-import {Badge, Button, Card, Empty, Field, Select} from "../../components/ui";
+import {Badge, Button, Card, Empty, Field, Guide, Select} from "../../components/ui";
 import {ParamInput} from "../../components/ParamInput";
 import {ACTION_GLYPHS, words} from "../../components/glyphs";
 import {COLORS} from "./SceneSetup";
@@ -33,7 +33,7 @@ export function Script() {
   });
   return (
     <div className="stack">
-      <Card bodyClass="tight" title="Script" text="Everything that happens in this scene, in order. Lines are spoken with the character's voice; actions move people, the camera and the sound."
+      <Card bodyClass="tight" title={<span className="row nowrap" style={{gap: 7}}>Script <Guide topic="script" /></span>} text="Everything that happens in this scene, in order. Lines are spoken with the character's voice; actions move people, the camera and the sound."
             actions={<Badge>{script.length} steps</Badge>}>
         <div className="item-list">
           {script.length === 0 && <Empty icon={<MessageCircle />} title="Nothing happens yet" text="Add a line or an action below." />}

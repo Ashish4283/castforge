@@ -9,7 +9,7 @@ import {AlertTriangle, HardDrive, Trash2} from "lucide-react";
 import {api, post, q, Space as Held} from "../../api";
 import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
-import {Badge, Button, Card, Notice} from "../../components/ui";
+import {Badge, Button, Card, Guide, Notice} from "../../components/ui";
 
 const SWEEPS: {how: string; label: string; what: string; warn?: boolean}[] = [
   {how: "spare", label: "Tidy up", what: "Blender's own backup files. Nothing ever reads them."},
@@ -45,7 +45,7 @@ export function Space() {
 
   if (!ep.ep) return null;
   return (
-    <Card title="Space on disk" bodyClass={open ? "" : "tight"}
+    <Card title={<span className="row nowrap" style={{gap: 7}}>Space on disk <Guide topic="space" /></span>} bodyClass={open ? "" : "tight"}
           text={held ? `This episode is holding ${held.words.total}.` : "What this episode is holding, and what it does not need."}
           actions={<div className="row nowrap">
             {held && <Badge kind={held.spare > 50e6 ? "warn" : undefined}>{held.words.spare} spare</Badge>}

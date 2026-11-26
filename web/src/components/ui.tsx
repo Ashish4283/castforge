@@ -2,6 +2,7 @@
 import {ButtonHTMLAttributes, ReactNode, useEffect, useRef, useState} from "react";
 import {AlertTriangle, CheckCircle2, ImagePlus, Info, X, XCircle} from "lucide-react";
 import {useStore} from "../app/store";
+import {GUIDES} from "../guide";
 
 type Btn = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "ghost" | "danger"; size?: "sm" | "lg"; icon?: ReactNode; busy?: boolean; square?: boolean;
@@ -222,4 +223,51 @@ export function PictureDrop({file, onFile, label = "Picture", hint}: {file: File
 export async function copyText(text: string, toast: (t: string) => void, what = "Copied") {
   try { await navigator.clipboard.writeText(text); toast(`${what} to the clipboard`); }
   catch { alert(text); }
+}
+
+/**
+ * The "?" next to a feature: what it is for, what to do, and what it hands over to.
+ *
+ * One component and one source of words (`guide.ts`), so the explanation on the page, the one in the
+ * tooltip and the one in the help panel cannot drift apart. It is a button rather than a tooltip
+ * because a tooltip cannot be read slowly, cannot be kept open while you work, and does not exist at
+ * all on a touch screen.
+ */
+export function Guide({topic}: {topic: string}) {
+  const [open, setOpen] = useState(false);
+  const {go} = useStore();
+  const guide = GUIDES[topic];
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    addEventListener("keydown", esc);
+    return () => removeEventListener("keydown", esc);
+  }, [open]);
+  if (!guide) return null;
+  return (
+    <span className="guide">
+      <button type="button" className={`guide-ask ${open ? "on" : ""}`} aria-expanded={open}
+              title={`What is ${guide.title.toLowerCase()}?`} onClick={() => setOpen(o => !o)}>?</button>
+      {open && (
+        <>
+          <span className="guide-away" onClick={() => setOpen(false)} />
+          <span className="guide-panel" role="dialog">
+            <b>{guide.title}</b>
+            <p>{guide.what}</p>
+            <ol>{guide.how.map(step => <li key={step}>{step}</li>)}</ol>
+            {guide.mind && <p className="guide-mind">{guide.mind}</p>}
+            {guide.next && (
+              <span className="guide-next">
+                <span>Next: {guide.next.says}</span>
+                {guide.next.go && (
+                  <Button size="sm" variant="primary"
+                          onClick={() => { setOpen(false); go(guide.next!.go!); }}>Take me there</Button>
+                )}
+              </span>
+            )}
+          </span>
+        </>
+      )}
+    </span>
+  );
 }

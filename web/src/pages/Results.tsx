@@ -7,7 +7,7 @@ import {useCallback, useEffect, useState} from "react";
 import {Camera, Clapperboard, Download, Film, Images, RefreshCw, Wand2} from "lucide-react";
 import {api, q} from "../api";
 import {useStore} from "../app/store";
-import {Badge, Button, Card, Empty, PageHead} from "../components/ui";
+import {Badge, Button, Card, Empty, Guide, PageHead} from "../components/ui";
 
 interface Result {
   episode: string; kind: string; what: string; note: string; url: string;
@@ -44,7 +44,7 @@ export function Results() {
   const when = (t: number) => new Date(t * 1000).toLocaleString();
   return (
     <div className="page">
-      <PageHead eyebrow="Produce" title="Results"
+      <PageHead eyebrow={<span className="row nowrap" style={{gap: 6}}>Produce <Guide topic="results" /></span>} title="Results"
                 text="Everything this movie has made: the films, the graded cuts, the photoreal clips and the storyboards. Each one says which episode it came from."
                 actions={<Button icon={<RefreshCw size={15} />} busy={busy} onClick={look}>Look again</Button>} />
       {!all.length && !busy && (
