@@ -469,6 +469,10 @@ def queue_now():
         return ""
 
 
+class Bad(Exception):
+    """ComfyUI refused the graph. Its own words name the node, which is the only useful thing here."""
+
+
 class Gone(Exception):
     """ComfyUI stopped answering - it died rather than refused."""
 
@@ -676,6 +680,17 @@ def every(graph, wait=5400, tell=60):
     req = urllib.request.Request(URL + "/prompt", data=body, headers={"Content-Type": "application/json"})
     try:
         pid = json.loads(urllib.request.urlopen(req, timeout=60).read())["prompt_id"]
+    except urllib.error.HTTPError as e:
+        # 400 means the graph is wrong, not that the server died; the body says which node and why
+        said = ""
+        try:
+            problem = json.loads(e.read().decode("utf-8", "replace"))
+            said = problem.get("error", {}).get("message", "")
+            for node, why in (problem.get("node_errors") or {}).items():
+                said += f" | {node}: " + "; ".join(x.get("message", "") for x in why.get("errors", []))
+        except Exception:
+            pass
+        raise Bad(f"{e.code} {said}".strip()) from None
     except urllib.error.URLError as e:
         raise Gone(str(e)) from None
     began = spoke = time.time()
@@ -815,6 +830,15 @@ def make_real(place=None, only=None):
     say(f"{len(jobs)} stills to photograph")
     start(place)
     into = place["comfy"] / "input"
+    into.mkdir(parents=True, exist_ok=True)
+    # LoadImage reads from ComfyUI's own input folder, and this step runs BEFORE clips() fills it -
+    # so it fills it. Without this every graph is refused with a 400 and nothing is photographed.
+    staged = 0
+    for where_ in {j.parent.parent / "inputs" for j in jobs}:
+        for still in where_.glob("*.png") if where_.is_dir() else []:
+            shutil.copy(still, into / still.name)
+            staged += 1
+    say(f"{staged} pictures staged for ComfyUI")
     made = []
     for n, path in enumerate(jobs, start=1):
         job = json.loads(path.read_text(encoding="utf-8"))
@@ -828,6 +852,9 @@ def make_real(place=None, only=None):
                 continue
             try:
                 images = every(graph, wait=900, tell=60)
+            except Bad as e:
+                say(f"  refused {how}: {e}")
+                continue                              # the plain graph is the next thing to try
             except Gone as e:
                 say(f"  ComfyUI stopped answering: {e}")
                 say(last_words(40))
