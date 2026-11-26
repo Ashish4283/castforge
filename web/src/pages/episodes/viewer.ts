@@ -179,6 +179,32 @@ export class SceneViewer {
     return !!this.meta && (s.length !== this.meta.steps.length || this.meta.steps.some((x, i) => s[i]?.do !== x.do));
   }
 
+  /**
+   * Swing the view round what it is looking at, and come closer or go further out.
+   *
+   * The mouse can already do this, but only if you know that dragging orbits and the wheel zooms. A stick
+   * you hold is the same move without the lesson, and it is the only way to do it on a trackpad with no
+   * wheel. `x` swings left and right, `y` lifts and drops the eye, both -1..1; `by` is one zoom notch.
+   */
+  orbit(x: number, y: number) {
+    const eye = this.camera.position.clone().sub(this.controls.target);
+    const radius = eye.length();
+    const around = Math.atan2(eye.x, eye.z) - x * 0.035;
+    // stop just short of straight up and straight down: at either pole the view flips over
+    const up = Math.min(Math.PI - 0.08, Math.max(0.08, Math.acos(eye.y / radius) + y * 0.025));
+    this.camera.position.set(
+      this.controls.target.x + radius * Math.sin(up) * Math.sin(around),
+      this.controls.target.y + radius * Math.cos(up),
+      this.controls.target.z + radius * Math.sin(up) * Math.cos(around));
+    this.camera.lookAt(this.controls.target);
+  }
+
+  zoom(by: number) {
+    const eye = this.camera.position.clone().sub(this.controls.target);
+    const want = Math.min(40, Math.max(0.8, eye.length() * (by > 0 ? 1.15 : 1 / 1.15)));
+    this.camera.position.copy(this.controls.target).add(eye.setLength(want));
+  }
+
   frameCamera(top = false) {
     if (!this.meta) return;
     const spots = Object.keys(this.meta.cast).map(w => this.toThree(this.hooks.start(w)));

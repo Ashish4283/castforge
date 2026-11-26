@@ -837,6 +837,26 @@ def voice_preview(body: dict):
     return FileResponse(wav, media_type="audio/wav")
 
 
+@app.get("/api/sound/preview")
+def sound_preview(kind: str, name: str):
+    """Hear a library sound before putting it in the scene. `kind` is sfx, beds or footsteps."""
+    if kind not in ("sfx", "beds", "footsteps"):
+        raise HTTPException(400, f"unknown sound kind {kind!r}")
+    files = schema.library_files().get(kind, {}).get(name)
+    if not files:
+        raise HTTPException(404, f"no {kind} called {name!r} in the library")
+    path = os.path.join(config.SFX_DIR, files[0].replace("/", os.sep))
+    if not os.path.isfile(path):
+        raise HTTPException(404, f"{name} is in the library index but its file is missing")
+    return FileResponse(path, media_type="audio/wav")
+
+
+@app.get("/api/motion/clips")
+def motion_clips():
+    """The motion library with the facts a picker needs: how long each clip is and where it came from."""
+    return schema.clip_facts()
+
+
 @app.post("/api/transcribe")
 async def transcribe(file: UploadFile = File(...)):
     """The words in an uploaded recording (faster-whisper), so lip-sync gets its transcript."""

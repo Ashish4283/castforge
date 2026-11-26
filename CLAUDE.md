@@ -65,6 +65,9 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | CLI commands, lock, status text | `castforge.py` (`def main`, `def render_status`) |
 | scene/episode job | `episode_job.py` |
 | web API | `app/server.py` (`@app.get/post`) |
+| a control: a floor to drag on, a dial, a slider, chips, a voice gallery, a joystick | `web/src/components/controls.tsx` (StagePad, Dial, Regulator, ChipPick, MovePad, VoicePicker, SoundPick, ClipPick, CastThumbs, TargetPick, NavPad); pictures for the vocabulary in `components/glyphs.ts`; every parameter is routed to one of them by `components/ParamInput.tsx` |
+| the span a number's slider runs over | `core/schema.py` `RANGES` (one table, keyed by parameter name, `action.param` wins); `describe()` adds `lo/hi/step/unit`; tests/test_schema.py fails if a number has none |
+| the stage page (who is in the scene, where they stand) | `web/src/pages/episodes/SceneSetup.tsx` (the floor, the selected actor or prop, then scene settings grouped as looks/sounds) |
 | the app (React 18 + TS + Vite, sidebar layout) | `web/src/`: `main.tsx` routes, `app/store.tsx` (movies, GPU, jobs, toasts, hash route), `app/episode.tsx` (open scene model: `update`, `save`, `scene()`, `cast()`), `components/ui.tsx` (Button, Card, Field...), `components/ParamInput.tsx` (any schema parameter), `pages/*`; design tokens at the top of `styles.css`. Old page at `/classic` (`app/index.html`, `static/app.js`) until removed |
 | Overview page (next step, progress) | `server.py` `/api/movie/progress`; `web/src/pages/Studio.tsx` |
 | 3D scene editor (view, timeline, drag spots) | `web/src/pages/episodes/viewer.ts` (three.js) + `Editor3D.tsx`; export `scene_kit.py` `if args.preview3d`; job `--preview3d` |
@@ -98,6 +101,9 @@ Tests mirror modules: `tests/test_<module>.py`. Add a test with every pure-logic
 - Messages are plain language for non-programmers; log lines start with `CF:` (status parsing relies on it).
 - All ffmpeg calls go through `core.media` (`run`, `to_bt709`, `video_args`, `AUDIO_ARGS`).
 - Defaults must keep old scene.json files working. New features = optional keys.
+- A parameter gets a control, not a text box. A number means a slider, so it needs a span in
+  `schema.RANGES`; an enum means chips, so a new word needs a picture in `glyphs.ts` (it falls back to
+  its initials, which is a reminder, not a failure). Wire it in `ParamInput.tsx` by TYPE, never per page.
 - Commit on a branch, not `main`; the user also edits with GitHub Copilot, so run `git status` first.
 
 ## Three Pythons
@@ -110,6 +116,13 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Blender 5.x has no `Action.fcurves`: use `bpy_extras.anim_utils.action_get_channelbag_for_slot`.
 - Scenes render with view transform `Standard` (AgX greys the set picture; see DESIGN_V2 D12).
 - Bash tool: heredocs with apostrophes or backslash escapes break; write edit scripts to a file.
+- `StagePad` maps pointer pixels to metres with its own width and height, so its box must stay SQUARE
+  (`.floor-box`, `aspect-ratio: 1`). A letterboxed svg scales uniformly and the marker then lands where
+  the pointer is not - it looks right in a screenshot and is wrong under the mouse.
+- The floor draws x to the right (red) and y away from the camera (green), camera at the bottom; a
+  `facing` of 0 looks at the camera and + turns to the character's left (`acting.bearing`).
+- Headless Chrome with `--disable-gpu` screenshots the whole page BLACK once a WebGL canvas is on it;
+  use `--use-angle=swiftshader --enable-unsafe-swiftshader` instead.
 - A pose layer that reads the pose back must read every frame before writing any key, or it compounds onto itself.
 - The user's app runs on 8765; test servers use 8777.
 - A sibling tool's port is NOT ours to choose: forgefilms :8700 and graphic-novel :8500 come from their own

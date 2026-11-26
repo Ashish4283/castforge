@@ -285,3 +285,80 @@ def test_a_resized_part_must_say_where_and_how_much():
     ):
         bad = dict(SANTA, parts=[broken])
         assert any("parts" in m and says in m for m in schema.check_design(bad)), broken
+
+
+# --- controls: every number is a slider, every voice is a face ---------------------------------------------
+# The app is meant to be played, not filled in. That only holds if the schema says what each number means,
+# so these tests fail the moment a parameter arrives without a span the app can draw.
+def _numbers(table, owner=None):
+    """Every (where, name, param) that a person sets as a number."""
+    for name, param in table.items():
+        if isinstance(param, dict) and param.get("type") == "number":
+            yield (f"{owner}.{name}" if owner else name), name, param
+
+
+def all_numbers():
+    served = schema.describe()
+    for name, action in served["actions"].items():
+        yield from _numbers(action["params"], name)
+    for key in ("scene", "finish", "character"):
+        yield from _numbers(served[key], key)
+
+
+def test_every_number_a_person_sets_has_a_slider_span():
+    missing = [where for where, _n, p_ in all_numbers() if "lo" not in p_]
+    assert missing == [], f"no range for {missing}: add it to schema.RANGES or the app shows a bare text box"
+
+
+def test_each_span_runs_upwards_and_can_be_stepped():
+    for where, _name, p_ in all_numbers():
+        assert p_["lo"] < p_["hi"], where
+        assert p_["step"] > 0, where
+        assert (p_["hi"] - p_["lo"]) / p_["step"] >= 4, f"{where} has fewer than 5 stops: a useless slider"
+        assert isinstance(p_["unit"], str), where
+
+
+def test_a_default_always_sits_inside_its_own_span():
+    for where, _name, p_ in all_numbers():
+        if "default" in p_:
+            assert p_["lo"] <= p_["default"] <= p_["hi"], f"{where} starts outside its slider"
+
+
+def test_an_action_can_mean_its_own_thing_by_a_shared_name():
+    # a speaking speed and a motion clip's speed are both "speed" and are not the same control
+    served = schema.describe()
+    assert served["actions"]["say"]["params"]["speed"]["lo"] == 0.5
+    assert served["actions"]["perform"]["params"]["speed"]["lo"] == 0.25
+
+
+def test_ranges_are_only_added_and_the_vocabulary_is_untouched():
+    # with_ranges must not invent, drop or rename anything: the vocabulary is still the vocabulary
+    served = schema.describe()
+    for name, action in schema.ACTIONS.items():
+        assert set(served["actions"][name]["params"]) == set(action["params"]), name
+        for key, was in action["params"].items():
+            now = served["actions"][name]["params"][key]
+            assert all(now[k] == v for k, v in was.items()), f"{name}.{key} changed"
+    assert set(served["scene"]) == set(schema.SCENE_KEYS)
+    assert "lo" not in schema.ACTIONS["wait"]["params"]["seconds"], "the table itself must stay clean"
+
+
+def test_every_voice_is_taken_apart_so_the_app_can_group_them():
+    assert set(schema.VOICE_FACTS) == set(schema.VOICES)
+    for name, facts in schema.VOICE_FACTS.items():
+        assert schema.VOICES[name] == f"{facts['language']}, {facts['gender']}"
+        assert facts["person"] == name[3:] and facts["person"]
+        assert len(facts["short"]) == 2
+    # the gallery groups by language, so each language must have at least one of them
+    assert len({f["language"] for f in schema.VOICE_FACTS.values()}) == len(schema._LANG)
+    assert {f["gender"] for f in schema.VOICE_FACTS.values()} == {"female", "male"}
+
+
+def test_a_clip_tells_you_how_long_it_is_and_an_unreadable_one_is_still_listed(tmp_path, monkeypatch):
+    import json as _json
+    monkeypatch.setattr(schema.config, "MOTIONS_DIR", str(tmp_path))
+    (tmp_path / "punch.json").write_text(_json.dumps({"seconds": 15.447, "source": "cmu", "fps": 120.0}), encoding="utf-8")
+    (tmp_path / "broken.json").write_text("{not json", encoding="utf-8")
+    facts = {c["name"]: c for c in schema.clip_facts()}
+    assert facts["punch"] == {"name": "punch", "seconds": 15.45, "source": "cmu", "fps": 120}
+    assert facts["broken"]["seconds"] is None      # you can still name it in a scene

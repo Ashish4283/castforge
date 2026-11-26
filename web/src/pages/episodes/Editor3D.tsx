@@ -6,6 +6,7 @@ import {Json, post} from "../../api";
 import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
 import {Badge, Button, Card, Notice, Select} from "../../components/ui";
+import {NavPad} from "../../components/controls";
 import {Meta, SceneViewer} from "./viewer";
 
 type Edit = {kind: "start" | "to" | "prop"; who: string; n?: number; prev: Json};
@@ -193,6 +194,12 @@ export function Editor3D() {
             <Button size="sm" icon={<View size={14} />} onClick={() => viewer.current?.frameCamera(true)}>Top</Button>
           </div>
         )}
+        {preview && (
+          <div className="vp-nav">
+            <NavPad onOrbit={(x, y) => viewer.current?.orbit(x, y)} onZoom={d => viewer.current?.zoom(d)}
+                    onReset={top => viewer.current?.frameCamera(top)} />
+          </div>
+        )}
         {preview && <div className="vp-time" ref={time} />}
       </div>
       <div className="transport">
@@ -241,7 +248,8 @@ export function Editor3D() {
           <Select className="sm" value={part} onChange={setPart} options={schema?.fix_parts || ["head"]} aria-label="Body part" />
           <span className="muted small">at {at()} s</span>
           {(["x", "y", "z"] as const).map((axis, i) => (
-            <label key={axis} className="slider" style={{width: 190}}>
+            <label key={axis} className={`slider axis ${axis}`} style={{width: 180}}
+                   title={["nod up and down", "tip side to side", "turn left and right"][i]}>
               {axis.toUpperCase()}
               <input type="range" min={-60} max={60} step={1} value={turn[i]}
                      onChange={e => setTurn(t => t.map((v, k) => (k === i ? Number(e.target.value) : v)) as [number, number, number])} />

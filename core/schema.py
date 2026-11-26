@@ -15,12 +15,18 @@ from core import appearance, config, finish, media, sets
 # --- names ------------------------------------------------------------------------------------------------
 _LANG = {"a": "American English", "b": "British English", "h": "Hindi", "e": "Spanish", "f": "French",
          "i": "Italian", "p": "Portuguese (Brazil)"}
+_SHORT = {"a": "US", "b": "UK", "h": "HI", "e": "ES", "f": "FR", "i": "IT", "p": "BR"}
 VOICES = {v: f"{_LANG[v[0]]}, {'female' if v[1] == 'f' else 'male'}" for v in """
     af_heart af_alloy af_aoede af_bella af_jessica af_kore af_nicole af_nova af_river af_sarah af_sky
     am_adam am_echo am_eric am_fenrir am_liam am_michael am_onyx am_puck am_santa
     bf_alice bf_emma bf_isabella bf_lily bm_daniel bm_fable bm_george bm_lewis
     hf_alpha hf_beta hm_omega hm_psi ef_dora em_alex em_santa ff_siwis if_sara im_nicola pf_dora pm_alex pm_santa
     """.split()}
+# The same names taken apart, so the app can show 54 voices as a gallery you filter and listen to instead of
+# a drop-down of codes. Nobody should have to know that "bf" means a British woman.
+VOICE_FACTS = {v: {"language": _LANG[v[0]], "short": _SHORT[v[0]],
+                   "gender": "female" if v[1] == "f" else "male", "person": v[3:]}
+               for v in VOICES}
 FLOORS = ["wood", "concrete", "carpet", "tile", "snow"]
 EXPRESSIONS = list(acting.EXPRESSIONS)
 GESTURES = list(acting.GESTURES)
@@ -140,6 +146,71 @@ def p(kind, help_, required=False, default=None, values=None, open_to=None):
     if open_to is not None:
         out["open_to"] = open_to
     return out
+
+
+# --- what every number means -------------------------------------------------------------------------------
+# A number on its own is a text box, and a text box tells you nothing: is "speed" 1 or 100? what is a sensible
+# vignette? So every number a person can set declares the span it lives in - (lowest, highest, step, unit) -
+# and the app draws a slider instead of asking them to guess. These are the bounds of the CONTROL, not of the
+# format: a scene written by hand or by Gemini may still hold a number outside them and renders fine.
+# Keyed by parameter name, because the names mean the same thing wherever they appear; where they do not,
+# "action.param" wins over "param" (a clip's speed goes further than a speaking speed).
+# tests/test_schema.py checks that EVERY number has one and that its default sits inside it, so a new
+# parameter cannot appear in the app as a bare box.
+RANGES = {
+    "seconds": (0, 20, 0.1, "s"),
+    "pause": (0, 3, 0.1, "s"),
+    "speed": (0.5, 2, 0.05, "×"),
+    "perform.speed": (0.25, 3, 0.05, "×"),
+    "strike.speed": (0.25, 3, 0.05, "×"),
+    "intensity": (0, 1, 0.05, ""),
+    "volume": (0, 1, 0.05, ""),
+    "fade": (0, 10, 0.1, "s"),
+    "lens": (14, 200, 1, "mm"),
+    "distance": (0.3, 3, 0.05, "m"),
+    "hit_stop": (0, 8, 1, "frames"),
+    "contact": (0, 5, 0.05, "s"),
+    "depth": (0.1, 0.9, 0.02, "m"),
+    "side_offset": (-1, 1, 0.05, "m"),
+    "angle": (0, 3.14, 0.05, "rad"),
+    "turn": (-45, 45, 1, "°"),
+    "from": (0, 30, 0.05, "s"),
+    "to": (0, 30, 0.05, "s"),
+    "blend": (0, 1.5, 0.05, "s"),
+    "ambience_volume": (0, 1, 0.05, ""),
+    "ambience_width": (0, 0.5, 0.01, ""),
+    "ambience_duck_db": (0, 24, 1, "dB"),
+    "music_duck_db": (0, 24, 1, "dB"),
+    "transition_seconds": (0, 5, 0.1, "s"),
+    "vignette": (0, 1, 0.05, ""),
+    "grain": (0, 1, 0.05, ""),
+    "age": (16, 90, 1, "years"),
+    "height_cm": (120, 215, 1, "cm"),
+    "cap.droop": (0, 1, 0.05, ""),
+    "cap.towards": (0, 360, 5, "°"),
+    "cap.band": (0.1, 0.5, 0.01, ""),
+    "cap.bobble": (0, 1.5, 0.05, ""),
+    "hat_size": (0.7, 1.6, 0.02, ""),
+    "costume.cape_length": (0.3, 1.2, 0.02, ""),
+    "costume.tie_length": (0.7, 1.3, 0.02, ""),
+    "costume.wristband_width": (1, 3, 0.1, ""),
+}
+
+
+def with_range(name, param, owner=None):
+    """A copy of one parameter with its slider span filled in, when it is a number we have a span for."""
+    if param.get("type") != "number":
+        return param
+    span = RANGES.get(f"{owner}.{name}") or RANGES.get(name)
+    if not span:
+        return param
+    lo, hi, step, unit = span
+    return dict(param, lo=lo, hi=hi, step=step, unit=unit)
+
+
+def with_ranges(params, owner=None):
+    """A table of parameters with every number's slider span filled in."""
+    return {k: with_range(k, v, owner) for k, v in params.items()}
 
 
 _LINE = {
@@ -480,26 +551,51 @@ def check_design(design):
     return problems
 
 
+def library_files():
+    """The sound library index: {"sfx": {name: [files]}, "beds": ..., "footsteps": ...}, relative to SFX_DIR."""
+    try:
+        return json.load(open(os.path.join(config.SFX_DIR, "library.json"), encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def clip_facts():
+    """Every motion clip with what a person needs to choose one: how long it is and where it came from.
+
+    A clip picker that only lists names makes you load a clip to find out it is 16 seconds of samba.
+    """
+    out = []
+    for name in motion.names(config.MOTIONS_DIR):
+        facts = {"name": name, "seconds": None, "source": None, "fps": None}
+        try:
+            meta = json.load(open(os.path.join(config.MOTIONS_DIR, name + ".json"), encoding="utf-8"))
+            facts.update(seconds=round(float(meta.get("seconds") or 0), 2) or None,
+                         source=meta.get("source"), fps=round(float(meta.get("fps") or 0)) or None)
+        except (OSError, ValueError, TypeError):
+            pass                      # a clip we cannot read is still a clip you can name in a scene
+        out.append(facts)
+    return out
+
+
 def library():
     """The library's names: footstep floors, sound effects and beds, and motion clips."""
-    path = os.path.join(config.SFX_DIR, "library.json")
-    try:
-        lib = json.load(open(path, encoding="utf-8"))
-    except (OSError, ValueError):
-        lib = {}
+    lib = library_files()
     return dict({k: sorted(lib.get(k, {})) for k in ("footsteps", "sfx", "beds")},
                 clips=motion.names(config.MOTIONS_DIR))
 
 
 def describe():
     """Everything the web app needs to build its forms (served as /api/schema)."""
-    return {"actions": ACTIONS, "with": WITH_PREVIOUS, "scene": SCENE_KEYS, "finish": FINISH_SETTINGS,
+    return {"actions": {name: dict(a, params=with_ranges(a["params"], name)) for name, a in ACTIONS.items()},
+            "with": WITH_PREVIOUS, "scene": with_ranges(SCENE_KEYS), "finish": with_ranges(FINISH_SETTINGS),
             "props": {k: {"size": v[0], "material": v[1], "blocks": v[2], "help": v[3]} for k, v in PROP_TYPES.items()},
-            "materials": list(MATERIALS), "voices": VOICES, "floors": FLOORS, "expressions": EXPRESSIONS,
+            "materials": list(MATERIALS), "voices": VOICES, "voice_facts": VOICE_FACTS,
+            "floors": FLOORS, "expressions": EXPRESSIONS,
             "gestures": GESTURES, "postures": POSTURES, "paces": PACES, "voice_fx": VOICE_FX, "grades": GRADES,
             "transitions": TRANSITIONS, "lighting": list(LIGHTING), "lights": {k: v for k, v in LIGHTING.items() if v}, "weather": WEATHER, "shots": SHOT_KINDS,
             "moves": CAMERA_MOVES, "qualities": QUALITIES, "aspects": ASPECTS, "seats": SEAT_TYPES,
-            "character": CHARACTER, "costumes": COSTUMES, "fix_parts": sorted(acting.FIX_PARTS),
+            "look_directions": LOOK_DIRECTIONS,
+            "character": with_ranges(CHARACTER), "costumes": COSTUMES, "fix_parts": sorted(acting.FIX_PARTS),
             # the designer groups its sliders from these, so a new one appears in the app on its own
             "face_groups": FACE_GROUPS, "body_groups": BODY_GROUPS, "slider_range": list(SLIDER_RANGE),
             # which morph targets each slider leans on, so the live preview can shape the body in the

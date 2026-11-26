@@ -8,7 +8,14 @@ export interface ParamDef {
   required: boolean;
   default?: Json;
   values?: string[];
+  // the span a number lives in, from core/schema.py RANGES: every number gets a slider, not a text box
+  lo?: number;
+  hi?: number;
+  step?: number;
+  unit?: string;
 }
+/** A voice name taken apart, so 54 of them can be a gallery you filter and listen to. */
+export interface VoiceFacts { language: string; short: string; gender: "female" | "male"; person: string }
 export interface ActionDef {
   help: string;
   who?: boolean;
@@ -21,10 +28,13 @@ export interface Schema {
   props: Record<string, {size: number[] | null; material: string; blocks: boolean; help: string}>;
   materials: string[];
   voices: Record<string, string>;
+  voice_facts: Record<string, VoiceFacts>;
   expressions: string[];
   postures: string[];
   voice_fx: string[];
   seats: string[];
+  weather: string[];
+  look_directions: string[];
   character: Record<string, ParamDef>;
   fix_parts: string[];
   costumes: Record<string, Record<string, string>>;

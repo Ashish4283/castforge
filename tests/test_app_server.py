@@ -588,3 +588,31 @@ def test_the_queue_starts_what_is_waiting_once_the_gpu_is_free(monkeypatch):
         assert started == ["cabin"] and server.queue_items() == []
     finally:
         server.gpu_queue.clear()
+
+
+# --- previews for the pickers -----------------------------------------------------------------------------
+def test_a_library_sound_can_be_heard_before_it_is_chosen(tmp_path, monkeypatch):
+    from core import config, schema
+    (tmp_path / "sfx" / "door_bell").mkdir(parents=True)
+    (tmp_path / "sfx" / "door_bell" / "1.wav").write_bytes(b"RIFF....WAVE")
+    (tmp_path / "library.json").write_text(json.dumps({"sfx": {"door_bell": ["sfx/door_bell/1.wav"]}}), encoding="utf-8")
+    monkeypatch.setattr(config, "SFX_DIR", str(tmp_path))
+    monkeypatch.setattr(schema.config, "SFX_DIR", str(tmp_path))
+
+    assert Path(server.sound_preview("sfx", "door_bell").path).name == "1.wav"
+    with pytest.raises(HTTPException) as unknown:
+        server.sound_preview("sfx", "nothing_like_that")
+    assert "library" in unknown.value.detail
+    with pytest.raises(HTTPException) as kind:
+        server.sound_preview("voices", "door_bell")      # never a path we were not asked for
+    assert "unknown sound kind" in kind.value.detail
+
+
+def test_an_indexed_sound_whose_file_went_missing_says_so(tmp_path, monkeypatch):
+    from core import config, schema
+    (tmp_path / "library.json").write_text(json.dumps({"beds": {"wind": ["beds/wind/0.wav"]}}), encoding="utf-8")
+    monkeypatch.setattr(config, "SFX_DIR", str(tmp_path))
+    monkeypatch.setattr(schema.config, "SFX_DIR", str(tmp_path))
+    with pytest.raises(HTTPException) as gone:
+        server.sound_preview("beds", "wind")
+    assert "file is missing" in gone.value.detail

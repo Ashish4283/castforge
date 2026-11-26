@@ -1,11 +1,12 @@
 // The scene's script in order: spoken lines, thoughts and actions (walks, gestures, camera, sound...).
 import {useRef, useState} from "react";
-import {ArrowDown, ArrowUp, Copy, Mic, MessageCircle, Plus, Trash2, Upload, Volume2, Zap} from "lucide-react";
+import {ArrowDown, ArrowUp, Copy, MessageCircle, Sliders, Trash2, Upload, Volume2, Zap} from "lucide-react";
 import {api, Json, label} from "../../api";
 import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
 import {Badge, Button, Card, Empty, Field, Select} from "../../components/ui";
 import {ParamInput} from "../../components/ParamInput";
+import {ACTION_GLYPHS, words} from "../../components/glyphs";
 import {COLORS} from "./SceneSetup";
 
 const LINE = new Set(["say", "think"]);
@@ -14,7 +15,6 @@ const isObj = (v: Json) => v && typeof v === "object" && !Array.isArray(v);
 export function Script() {
   const {schema, toast} = useStore();
   const ep = useEpisode();
-  const [kind, setKind] = useState("walk");
   if (!schema || !ep.model) return null;
   const scene = ep.scene();
   if (!scene) return <Card><Empty icon={<MessageCircle />} title="This episode has no scenes yet" text="Add a scene in the JSON tab." /></Card>;
@@ -43,14 +43,27 @@ export function Script() {
           ))}
         </div>
       </Card>
-      <div className="card card-body row">
-        <Button variant="primary" icon={<MessageCircle size={15} />} disabled={!cast.length} onClick={() => add("say")}>Add line</Button>
-        <Button icon={<Mic size={15} />} disabled={!cast.length} onClick={() => add("think")}>Add thought</Button>
-        <div style={{width: 1, height: 24, background: "var(--line)"}} />
-        <Select value={kind} onChange={setKind} options={actions.map(([n, d]) => [n, `${n.replace(/_/g, " ")} — ${d.help}`] as [string, string])} className="sm" />
-        <Button icon={<Plus size={15} />} onClick={() => add(kind)}>Add action</Button>
-        {!cast.length && <span className="muted small">Add a character in the Scene tab before writing lines.</span>}
-      </div>
+      <Card title="Add what happens next" text="One press puts the step at the end of the scene, ready to adjust."
+            bodyClass="tight">
+        <div className="palette">
+          {([["say", "says a line"], ["think", "thinks it"]] as [string, string][]).map(([what, says]) => (
+            <button key={what} type="button" className="act big" disabled={!cast.length} onClick={() => add(what)} title={says}>
+              <span className="act-glyph">{ACTION_GLYPHS[what]}</span>
+              <b>{what === "say" ? "Line" : "Thought"}</b>
+              <small>{says}</small>
+            </button>
+          ))}
+          {actions.map(([name, def]) => (
+            <button key={name} type="button" className="act" onClick={() => add(name)} title={def.help}
+                    disabled={!!def.who && !cast.length}>
+              <span className="act-glyph">{ACTION_GLYPHS[name] || "✨"}</span>
+              <b>{words(name)}</b>
+              <small>{def.help}</small>
+            </button>
+          ))}
+        </div>
+        {!cast.length && <p className="hint">Put someone in the scene first (the Stage tab): most of these belong to a person.</p>}
+      </Card>
     </div>
   );
 }
@@ -63,6 +76,7 @@ function Step({i, step, last, cast, actions, edit, onError}: {
   const ep = useEpisode();
   const file = useRef<HTMLInputElement>(null);
   const [speaking, setSpeaking] = useState(false);
+  const [open, setOpen] = useState(false);
   if (!isObj(step)) return <div className="item item-body">Invalid step at position {i + 1}; repair it in the JSON tab.</div>;
   const def = schema!.actions[step.do];
   const line = LINE.has(step.do);
@@ -116,13 +130,24 @@ function Step({i, step, last, cast, actions, edit, onError}: {
         <div className="item-body stack" style={{gap: 12}}>
           <textarea className="line-text" rows={2} value={step.text || ""} placeholder="What does the character say?"
                     onChange={e => edit(s => { s[i].text = e.target.value; delete s[i].audio; })} />
-          <div className="form-grid" style={{gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))"}}>
-            {params.map(k => (
-              <Field key={k} label={label(k)} hint={def.params[k].help}>
-                <ParamInput name={k} def={def.params[k]} value={step[k]} onChange={v => set(k, v)} onError={onError} />
-              </Field>
+          <div className="row nowrap wrap">
+            <button type="button" className={`mini ${open ? "on" : ""}`} onClick={() => setOpen(o => !o)}>
+              <Sliders size={11} /> performance
+            </button>
+            {params.filter(k => step[k] != null).map(k => (
+              <span key={k} className="tag quiet">{label(k)} {String(step[k])}</span>
             ))}
+            {!open && !params.some(k => step[k] != null) && <span className="muted small">said plainly</span>}
           </div>
+          {open && (
+            <div className="form-grid" style={{gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))"}}>
+              {params.map(k => (
+                <Field key={k} label={label(k)} hint={def.params[k].help}>
+                  <ParamInput name={k} def={def.params[k]} value={step[k]} onChange={v => set(k, v)} onError={onError} who={step.who} />
+                </Field>
+              ))}
+            </div>
+          )}
           <div className="row">
             <Button size="sm" icon={<Volume2 size={14} />} busy={speaking} onClick={hear}>Hear it</Button>
             <Button size="sm" icon={<Upload size={14} />} onClick={() => file.current?.click()}>Upload WAV performance</Button>
@@ -151,10 +176,12 @@ function Step({i, step, last, cast, actions, edit, onError}: {
         {tools}
       </div>
       {Object.keys(def.params).length > 0 && (
-        <div className="item-body form-grid" style={{gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))"}}>
+        <div className="item-body form-grid" style={{gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))"}}>
           {Object.entries(def.params).map(([k, p]) => (
-            <Field key={k} label={label(k)} hint={p.help} required={p.required}>
-              <ParamInput name={k} def={p} value={step[k]} onChange={v => set(k, v)} onError={onError} />
+            <Field key={k} label={label(k)} hint={p.help} required={p.required}
+                   wide={["point", "target", "look", "image", "set", "clip", "cast_list"].includes(p.type)}>
+              <ParamInput name={k} def={p} value={step[k]} onChange={v => set(k, v)} onError={onError}
+                          who={step.who} clip={typeof step.clip === "string" ? step.clip : undefined} />
             </Field>
           ))}
         </div>

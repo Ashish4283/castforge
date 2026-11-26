@@ -123,7 +123,7 @@ export function Episodes() {
             {model && (
               <>
                 <Tabs value={tab} onChange={pick} tabs={[
-                  ["scene", "Scene", <Settings2 size={15} />], ["script", "Script", <MessageSquareText size={15} />],
+                  ["scene", "Stage", <Settings2 size={15} />], ["script", "Script", <MessageSquareText size={15} />],
                   ["3d", "3D editor", <Box size={15} />], ["output", "Output", <Film size={15} />],
                   ["finishing", "Finishing", <Wand2 size={15} />], ["json", "JSON", <Braces size={15} />]]} />
                 {tab === "scene" && <SceneSetup />}
