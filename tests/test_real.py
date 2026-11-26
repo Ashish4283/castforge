@@ -278,3 +278,77 @@ def test_a_continued_window_still_gets_a_still_so_the_workflow_can_be_built_toda
     assert must | maybe == {r["id"] for r in got["shots"]}
     assert must & maybe == set()
     assert maybe == {"cabin_2_2"}
+
+
+# --- making the still real first ----------------------------------------------------------------------
+# The first run on a real GPU showed the thing this step exists for: a wide shot gained real wood and
+# cloth, and a close-up's face stayed computer-generated. Image-to-video animates the picture it is
+# given; it does not restyle it. So these guard the step that restyles it.
+def test_a_face_is_moved_less_than_a_room_because_it_has_to_stay_the_same_person():
+    assert real.denoise_for("close") < real.denoise_for("medium") < real.denoise_for("wide")
+    assert 0.3 <= real.denoise_for("close") <= 0.5, "a face that moves this far is somebody else"
+    assert real.denoise_for("not a shot size") == real.DENOISE["auto"]
+
+
+def test_every_shot_size_says_how_far_it_may_be_moved():
+    from core import schema
+    for kind in schema.SHOT_KINDS:
+        assert kind in real.DENOISE, kind
+    for kind, how_far in real.DENOISE.items():
+        assert 0.2 < how_far < 0.8, f"{kind}: {how_far} is either no change at all or a different picture"
+
+
+def test_a_blocking_render_is_scaled_up_before_it_is_re_imagined_not_after():
+    # 480x270 is what blocking quality makes; SDXL works near 1024x576
+    w, h = real.real_size(480, 270)
+    assert (w, h) == (1024, 576)
+    assert w % 8 == 0 and h % 8 == 0
+    tall = real.real_size(270, 480)
+    assert tall[1] > tall[0], "the shape of the shot is kept"
+    assert real.real_size(0, 0)[0] >= 8, "a size we cannot read must not become zero"
+
+
+def test_the_still_prompt_describes_the_picture_and_never_asks_it_to_move():
+    take = {"kind": "close", "on": ["Arthur"], "move": "push_in", "lens": 95}
+    said = real.still_prompt({"lighting": "candlelight"}, {"Arthur": ARTHUR}, take)
+    assert "photograph" in said and "candlelight" in said
+    assert "heavy-set man" in said
+    assert "shallow depth of field" in said          # it came in on a 95 mm lens
+    for moving in ("pushes", "camera holds", "walks", "speaking"):
+        assert moving not in said, f"a still does not {moving}"
+
+
+def test_the_graph_is_image_to_image_and_pushes_away_from_the_render():
+    g = real.still_graph("cabin_1.png", "a photograph", 1024, 576, denoise=0.45)
+    assert g["lat"]["class_type"] == "VAEEncode", "text-to-image would throw the staging away"
+    assert g["lat"]["inputs"]["pixels"] == ["fit", 0], "the render is what it works from"
+    assert g["ks"]["inputs"]["denoise"] == 0.45
+    assert g["fit"]["inputs"]["width"] == 1024
+    assert "3d render" in g["neg"]["inputs"]["text"]
+    assert "cgi" in g["neg"]["inputs"]["text"]
+    # every link points at a node that exists, or ComfyUI rejects the whole graph with one line
+    for name, node in g.items():
+        for value in node["inputs"].values():
+            if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
+                assert value[0] in g, f"{name} points at {value[0]}, which is not in the graph"
+
+
+def test_only_the_stills_that_come_from_the_render_are_re_imagined():
+    # a window carrying on from the clip before starts from a frame that is already a photograph
+    got = fake_plan()
+    jobs = real.real_stills(got, FILES[os.path.join(EPISODE, "scene.json")], {"Arthur": ARTHUR})
+    assert [j["id"] for j in jobs] == ["cabin_1", "cabin_2_1", "street_1"]
+    by = {j["id"]: j for j in jobs}
+    assert by["cabin_2_1"]["denoise"] < by["cabin_1"]["denoise"], "a close-up moves less than a wide"
+    assert by["cabin_1"]["still"] == "cabin_1.png"
+    assert "candlelight" in by["cabin_1"]["prompt"] and "photograph" in by["cabin_1"]["prompt"]
+
+
+def test_one_pass_photographs_the_carried_windows_too_or_the_take_jumps_mid_shot():
+    # in a single pass there is no previous clip yet, so a carried window is holding a render frame as
+    # well; leaving it out would put a 3D frame in the middle of an otherwise photographed take
+    got = fake_plan()
+    scene = FILES[os.path.join(EPISODE, "scene.json")]
+    one = real.real_stills(got, scene, {"Arthur": ARTHUR}, carried=True)
+    assert sorted(j["id"] for j in one) == ["cabin_1", "cabin_2_1", "cabin_2_2", "street_1"]
+    assert {j["id"] for j in one} == {r["id"] for r in got["shots"]}

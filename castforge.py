@@ -841,6 +841,26 @@ def main():
                 shutil.move(os.path.join(build, part), os.path.join(stage, part))
             shutil.rmtree(build, ignore_errors=True)
             made = len(os.listdir(os.path.join(stage, "workflows")))
+            # The step before the clip: the render is made photographic first, or the clip is a moving
+            # 3D render. A still that carries on from the clip before it is already a photograph.
+            if "--no-realism" not in a.args:
+                jobs = os.path.join(stage, "realism")
+                os.makedirs(jobs, exist_ok=True)
+                wanted = {w.split("-")[0] for w in os.listdir(os.path.join(stage, "workflows"))}
+                for job in real.realism(folder, got):
+                    if only and job["id"] not in only:
+                        continue
+                    if job["id"] not in wanted:
+                        continue
+                    graph = real.still_graph(f"ff_{job['id']}_{job['still']}", job["prompt"],
+                                             job["width"], job["height"], seed=job["seed"],
+                                             denoise=job["denoise"], prefix=f"real/{job['id']}")
+                    with open(os.path.join(jobs, f"{job['id']}.json"), "w", encoding="utf-8") as f:
+                        json.dump({"id": job["id"], "denoise": job["denoise"], "graph": graph}, f, indent=1)
+                shots_real = len(os.listdir(jobs))
+                print(f"  {shots_real} stills will be photographed first "
+                      f"({real.REAL_CHECKPOINT.split('_')[0]}, moved "
+                      f"{min(real.DENOISE.values())}-{max(real.DENOISE.values())} by shot size)")
             if not made:
                 sys.exit(f"no workflows were built for {only or 'this episode'}")
             user = os.environ.get("KAGGLE_USERNAME") or "ashishjiwa"
@@ -848,11 +868,12 @@ def main():
             # --dir-mode, and `--dir-mode zip` makes one zip per folder, which loses the folder names
             # the kernel looks for. A single zip of the whole lot keeps the paths intact either way.
             bundle = os.path.join(stage, "castforge-shots.zip")
+            parts = [p_ for p_ in ("workflows", "inputs", "realism") if os.path.isdir(os.path.join(stage, p_))]
             with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as z:
-                for part in ("workflows", "inputs"):
+                for part in parts:
                     for fn in sorted(os.listdir(os.path.join(stage, part))):
                         z.write(os.path.join(stage, part, fn), f"{part}/{fn}")
-            for part in ("workflows", "inputs"):
+            for part in parts:
                 shutil.rmtree(os.path.join(stage, part), ignore_errors=True)
             with open(os.path.join(stage, "dataset-metadata.json"), "w", encoding="utf-8") as f:
                 json.dump({"title": "CastForge shots", "id": f"{user}/castforge-shots",

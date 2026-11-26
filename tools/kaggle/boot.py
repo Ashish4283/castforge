@@ -678,9 +678,16 @@ def clips(place=None, fps=24, only=None):
     stills = found[0].parent.parent / "inputs"
     into = place["comfy"] / "input"
     into.mkdir(parents=True, exist_ok=True)
+    # A still that make_real() has already photographed is the one to animate; the render it came from
+    # is only the fallback. The video workflow asks for a filename, not for which of the two it is.
+    real = {p_.stem: p_ for p_ in (place["keep"] / "stills").glob("*.png")}
+    swapped = 0
     for still in stills.glob("*.png"):
-        shutil.copy(still, into / still.name)
-    say(f"{len(found)} workflows, {len(list(stills.glob('*.png')))} stills")
+        better = next((f for stem, f in real.items() if stem in still.stem), None)
+        shutil.copy(better or still, into / still.name)
+        swapped += bool(better)
+    say(f"{len(found)} workflows, {len(list(stills.glob('*.png')))} stills"
+        + (f" ({swapped} of them photographed first)" if swapped else " (straight from the render)"))
     start(place)
     out = place["keep"] / "clips"
     out.mkdir(parents=True, exist_ok=True)
@@ -739,3 +746,64 @@ def clips(place=None, fps=24, only=None):
     say(f"{len(made)} clips in {out}")
     say("On the laptop:  kaggle kernels output ashishjiwa/castforge-clips -p tmp/clips")
     return out
+
+
+def make_real(place=None, only=None):
+    """Turn every rendered still into a photograph, before anything is animated.
+
+    Image-to-video animates the picture it is handed and does not restyle it, so a clip made straight
+    from a 3D render is a moving 3D render. This is the step that was missing: RealVisXL runs
+    image-to-image over each still, keeping the staging and the acting (which the render already got
+    right) and replacing the look.
+
+    The made photograph is written over the still the video workflow loads, so nothing downstream has to
+    know this happened."""
+    place = place or where()
+    inputs = pathlib.Path("/kaggle/input")
+    jobs = sorted(inputs.glob("**/realism/*.json")) if inputs.is_dir() else []
+    if not jobs:
+        unpacked = place["scratch"] / "shots"
+        jobs = sorted(unpacked.glob("**/realism/*.json")) if unpacked.is_dir() else []
+    if not jobs:
+        say("no realism jobs attached: the clips will be made from the renders themselves")
+        return []
+    kept = place["keep"] / "stills"
+    kept.mkdir(parents=True, exist_ok=True)
+    say(f"{len(jobs)} stills to photograph")
+    start(place)
+    into = place["comfy"] / "input"
+    made = []
+    for n, path in enumerate(jobs, start=1):
+        job = json.loads(path.read_text(encoding="utf-8"))
+        if only and job["id"] not in only:
+            continue
+        say(f"[{n}/{len(jobs)}] {job['id']} (moving it {job['denoise']})")
+        began = time.time()
+        try:
+            images = every(job["graph"], wait=900, tell=60)
+        except Gone as e:
+            say(f"  ComfyUI stopped answering: {e}")
+            say(last_words(40))
+            break
+        if not images:
+            say("  nothing came back; the still is left as the render made it")
+            say(last_words(20))
+            continue
+        sub = images[0].get("subfolder") or ""
+        folder = next((r / sub for r in (place["keep"] / "swatches", place["comfy"] / "output",
+                                         place["scratch"]) if (r / sub).is_dir()), None)
+        got = sorted(folder.glob("*.png")) if folder else []
+        if not got:
+            say(f"  made but not found on disk; looked under {folder}")
+            continue
+        shutil.copy(got[-1], kept / f"{job['id']}.png")
+        # every input the video workflow might load for this shot now shows the photograph
+        for target in into.glob(f"*{job['id']}*.png"):
+            shutil.copy(got[-1], target)
+        for f in got:
+            f.unlink()
+        made.append(job["id"])
+        say(f"  ok ({time.time() - began:.0f}s)")
+    say("")
+    say(f"{len(made)} stills photographed; they are in {kept} and the clips will be made from them")
+    return made

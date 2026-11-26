@@ -147,10 +147,21 @@ cut every shot to fit.
 """),
         md("## The code (generated from boot.py)"),
         code(boot),
-        md("## Set up: GPU, internet, ComfyUI, and 17 GB of Wan 2.2"),
+        md("## Set up: GPU, internet, ComfyUI, Wan 2.2 and the photoreal checkpoint"),
         code("""place = check()
 comfyui(place)
+checkpoint("realvis_lightning", place)
 wan(place)"""),
+        md("""
+## Make the stills real
+
+The step the first run proved was missing. Image-to-video ANIMATES the picture it is given; it does not
+restyle it, so a clip made straight from a 3D render is a moving 3D render - the wide shot gained real
+wood and cloth and the close-up's face stayed computer-generated. RealVisXL runs image-to-image over each
+still first, keeping the staging and the acting and replacing the look. A face is moved less than a room,
+because a face has to stay the same person.
+"""),
+        code("make_real(place)"),
         md("""
 ## Make the clips
 

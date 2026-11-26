@@ -320,7 +320,7 @@ def plan(episode, read=_read, exists=os.path.exists):
     scene = read(os.path.join(episode, "scene.json"))
     timeline = read(os.path.join(episode, "episode.timeline.json"))
     designs = _designs(episode, scene, read, exists)
-    rows, missing = [], []
+    rows, missing, res = [], [], None
     for n, sid in enumerate(handoff.order(timeline), start=1):
         folder = handoff.scene_folder(episode, n, sid)
         shot_timeline = os.path.join(folder, "shot.timeline.json")
@@ -328,6 +328,7 @@ def plan(episode, read=_read, exists=os.path.exists):
             missing.append(sid)
             continue
         got = read(shot_timeline)
+        res = res or (list(got.get("resolution") or []) or None)
         settings = _settings(scene, sid)
         for t, take in enumerate(takes(got), start=1):
             for window in windows(take):
@@ -341,7 +342,7 @@ def plan(episode, read=_read, exists=os.path.exists):
                                      present=sorted(_present(scene, sid))),
                 })
     return {"episode": episode, "title": str(scene.get("title") or os.path.basename(episode)),
-            "shots": rows, "missing": missing, "fps": FPS}
+            "shots": rows, "missing": missing, "fps": FPS, "res": res or [480, 270]}
 
 
 def _present(scene, sid):
@@ -428,3 +429,111 @@ def check(plan_):
         if not row["motion"]:
             bad.append(f"{row['id']} has no motion sentence")
     return bad
+
+
+# --- the step before the clip: making the still itself real -----------------------------------------------
+# Image-to-video ANIMATES the picture it is given; it does not restyle it. Hand it a 3D render and the clip
+# is a moving 3D render - which is exactly what the first run showed: the wide shot gained real wood and
+# cloth, and the close-up's face stayed computer-generated. So the render is made photographic FIRST, by a
+# photoreal checkpoint running image-to-image over it, and the clip is made from that.
+#
+#   3D render  ->  still_graph (RealVisXL, image-to-image)  ->  a photograph  ->  Wan i2v  ->  a real clip
+#
+# The one number that matters is how far the image is allowed to move. Too little and the plastic look
+# survives; too much and it is somebody else in a different room.
+REAL_WORDS = ("photograph, real film still, natural skin with pores and fine lines, real woven fabric, "
+              "individual hair strands, natural light falloff, shallow depth of field, 35mm film grain")
+NOT_REAL = ("3d render, cgi, computer graphics, video game, unreal engine, blender, plastic skin, waxy "
+            "skin, smooth plastic face, doll, mannequin, toy, clay, illustration, painting, cartoon, "
+            "anime, text, watermark, extra fingers, deformed hands, deformed face")
+REAL_CHECKPOINT = "RealVisXL_V5.0_Lightning_fp16.safetensors"
+REAL_STEPS, REAL_CFG = 6, 1.8        # a Lightning checkpoint: few steps, almost no guidance
+REAL_AREA = 1024 * 576               # what SDXL was trained near; a 480x270 render is far below it
+
+# How far each kind of shot may be moved. This is the finding from the first run, written down: a wide
+# shot has room to be re-imagined and badly needs it, while a face must stay the same person - and a face
+# is where a render gives itself away. One number for the whole film would get one of the two wrong.
+DENOISE = {"wide": 0.58, "medium": 0.5, "two_shot": 0.5, "over_shoulder": 0.46, "close": 0.42, "auto": 0.5}
+
+
+def denoise_for(kind):
+    """How far this shot may be moved away from the render it came from."""
+    return DENOISE.get(str(kind), DENOISE["auto"])
+
+
+def real_size(width, height, area=REAL_AREA, step=8):
+    """The still's own shape at the size the photoreal model works at, both sides a multiple of `step`.
+
+    A blocking render is 480x270. Asking a model trained near 1024x576 to make a photograph out of a
+    thumbnail gives a thumbnail back; it has to be scaled up before it is re-imagined, not after."""
+    width, height = max(1, int(width)), max(1, int(height))
+    scale = (area / (width * height)) ** 0.5
+    return max(step, int(width * scale) // step * step), max(step, int(height * scale) // step * step)
+
+
+def still_prompt(scene, designs, take, present=()):
+    """What the photograph shows. No motion words: a still does not move, and asking for movement in one
+    is how a face ends up mid-blur."""
+    bits = [SHOT_WORDS.get(take["kind"], SHOT_WORDS["auto"])]
+    for who in (take["on"] or list(present)):
+        bits.append(describe(designs.get(who), who))
+    bits.extend(place(scene))
+    lens = lens_words(take.get("lens"))
+    if lens:
+        bits.append(lens)
+    bits.append(REAL_WORDS)
+    return ", ".join(b for b in bits if b)
+
+
+def still_graph(image, prompt, width, height, seed=1, denoise=0.5, checkpoint=REAL_CHECKPOINT,
+                prefix="real/out", steps=REAL_STEPS, cfg=REAL_CFG, negative=NOT_REAL):
+    """A ComfyUI graph that turns one rendered frame into a photograph of the same shot.
+
+    Image-to-image, not text-to-image: the render IS the composition, the staging and the acting, and all
+    of that is already right. Only the look is wrong."""
+    return {
+        "model": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": checkpoint}},
+        "img": {"class_type": "LoadImage", "inputs": {"image": image}},
+        "fit": {"class_type": "ImageScale", "inputs": {"image": ["img", 0], "width": int(width),
+                                                       "height": int(height), "upscale_method": "lanczos",
+                                                       "crop": "disabled"}},
+        "lat": {"class_type": "VAEEncode", "inputs": {"pixels": ["fit", 0], "vae": ["model", 2]}},
+        "pos": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["model", 1]}},
+        "neg": {"class_type": "CLIPTextEncode", "inputs": {"text": negative, "clip": ["model", 1]}},
+        "ks": {"class_type": "KSampler",
+               "inputs": {"model": ["model", 0], "seed": int(seed), "steps": int(steps), "cfg": float(cfg),
+                          "sampler_name": "dpmpp_sde", "scheduler": "karras", "positive": ["pos", 0],
+                          "negative": ["neg", 0], "latent_image": ["lat", 0], "denoise": float(denoise)}},
+        "dec": {"class_type": "VAEDecode", "inputs": {"samples": ["ks", 0], "vae": ["model", 2]}},
+        "save": {"class_type": "SaveImage", "inputs": {"images": ["dec", 0], "filename_prefix": prefix}},
+    }
+
+
+def real_stills(plan_, scene, designs, size=(480, 270), seed=1, carried=False):
+    """One realism job per still: which file to re-imagine, with what words, and how far it may move.
+
+    By default only the stills that come from the render: a window carrying on from the clip before it
+    starts from a frame that is already a photograph, and running that through again would move it.
+    `carried=True` includes them anyway, which is what a single pass needs - there is no previous clip
+    yet, so those windows are holding a render frame too, and leaving them out would put a 3D frame in
+    the middle of a photographed take."""
+    takes = {r["id"]: r for r in plan_["shots"]}
+    width, height = real_size(*size)
+    out = []
+    for video, at, name in (stills(plan_) + provisional(plan_) if carried else stills(plan_)):
+        row = takes[name]
+        take = {"kind": row["kind"], "on": row["on"], "move": row["move"], "lens": row.get("lens")}
+        out.append({"id": name, "still": f"{name}.png", "width": width, "height": height,
+                    "denoise": denoise_for(row["kind"]),
+                    "prompt": still_prompt(_settings(scene, row["scene"]), designs, take,
+                                           sorted(_present(scene, row["scene"]))),
+                    "seed": seed, "at": at, "video": video})
+    return out
+
+
+def realism(episode, plan_=None, read=_read, exists=os.path.exists, seed=1, carried=True):
+    """The realism jobs for a whole episode, with the scene, the cast and the render's size read for you."""
+    plan_ = plan_ or plan(episode, read, exists)
+    scene = read(os.path.join(episode, "scene.json"))
+    return real_stills(plan_, scene, _designs(episode, scene, read, exists),
+                       size=tuple(plan_.get("res") or (480, 270)), seed=seed, carried=carried)
