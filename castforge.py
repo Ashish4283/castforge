@@ -23,6 +23,8 @@
     python castforge.py suite                    the other tools beside this one, and what they share
     python castforge.py post FOLDER [--run]      hand that rendered episode to forgefilms for post
                                                  (--run does the post too: one film, graded, -16 LUFS, captioned)
+    python castforge.py real FOLDER [--run]      the same shots, photographed: one image-to-video clip per
+                                                 camera shot, each prompt read off the scene itself
     python castforge.py doctor                   check that every tool CastForge needs is installed
 """
 import argparse
@@ -762,6 +764,73 @@ def main():
         print(f"\nfilm      {film}")
         print(f"captions  {made}  ({got['captions'].count(' --> ')} lines, from the scenes themselves)")
         sys.exit(1 if problems else 0)
+    elif a.command == "real":
+        # The step after `post`: the rendered 3D shots, photographed. Every decision about what a clip
+        # should contain is read off the scene by shared/real.py; this grabs the stills and hands the
+        # list to forgefilms, which owns the Wan 2.2 workflows.
+        if not a.args:
+            sys.exit("usage: python castforge.py real EPISODE_FOLDER [--run]")
+        sys.path.insert(0, ROOT)
+        from core import config, media
+        from shared import real, suite
+        folder = a.args[0]
+        if not os.path.isdir(folder):
+            sys.exit(f"{folder} is not a folder")
+        ff = suite.TOOLS["forgefilms"]["folder"]
+        if not os.path.isdir(ff):
+            sys.exit(f"forgefilms is not installed at {ff} - it owns the image-to-video workflows")
+        got = real.plan(folder)
+        for problem in real.check(got):
+            print(f"! {problem}")
+        if not got["shots"]:
+            sys.exit(1)
+        movies = os.path.abspath(os.path.join(ROOT, "movies"))
+        full = os.path.abspath(folder)
+        name = (os.path.relpath(full, movies).replace(os.sep, "_")
+                if full.startswith(movies + os.sep) else os.path.basename(full))
+        stills_dir = os.path.join(ff, "stills", name)
+        os.makedirs(stills_dir, exist_ok=True)
+        grabs, later = real.stills(got), real.provisional(got)
+        print(f"{len(got['shots'])} clips ({sum(r['seconds'] for r in got['shots']):.0f} s in all, "
+              f"at {got['fps']} fps) from {len(grabs)} stills"
+              + (f" plus {len(later)} that the first pass will replace" if later else "") + ":")
+        for video, at, still in grabs + later:
+            out = os.path.join(stills_dir, f"{still}.png")
+            if not os.path.isfile(video):
+                print(f"! {still}: {video} is not there - render the episode first")
+                continue
+            media.run([config.FFMPEG, "-y", "-v", "error", "-ss", f"{at:.3f}", "-i", video,
+                       "-frames:v", "1", out])
+        shots = os.path.join(ff, "shots", f"{name}.real.json")
+        with open(shots, "w", encoding="utf-8") as f:
+            json.dump(real.shot_list(got), f, indent=1)
+        for row in got["shots"][:4]:
+            print(f"  {row['id']:<24} {row['seconds']}s {row['frames']:>3}f  {row['motion'][:86]}...")
+        if len(got["shots"]) > 4:
+            print(f"  ... and {len(got['shots']) - 4} more")
+        print(f"\nstills    {stills_dir}")
+        print(f"shot list {shots}")
+        if later:
+            print(f"\nAfter the first pass, replace these {len(later)} stills with the last frame of the")
+            print("clip before them and run those workflows again: that is what keeps the face, the coat")
+            print("and the light from resetting at the join.")
+            for carries, from_ in real.carried(got):
+                print(f"  {carries}.png  <-  last frame of {from_}")
+        out_dir = os.path.join("out", f"{name}-real")
+        if "--run" not in a.args:
+            print("\nnow build the image-to-video workflows (or add --run to do it here):")
+            print(f'  cd "{ff}"')
+            print(f'  python scripts/wan_workflows.py "shots/{name}.real.json" "stills/{name}" {out_dir}')
+            sys.exit(0)
+        print(f"\nbuilding the workflows -> {os.path.join(ff, out_dir)}")
+        run = subprocess.run([sys.executable, os.path.join("scripts", "wan_workflows.py"),
+                              os.path.join("shots", f"{name}.real.json"),
+                              os.path.join("stills", name), out_dir], cwd=ff)
+        if run.returncode:
+            sys.exit("the workflows could not be built; the lines above say why")
+        print("\nThese run on a GPU with ComfyUI and the Wan 2.2 models, not on this laptop:")
+        print(f"  {os.path.join(ff, out_dir, 'workflows')}  (one per clip, with its still in inputs/)")
+        sys.exit(0)
     elif a.command == "rig":
         # Look a built character's rig over, and optionally put right what can be put right without a
         # rebuild. Takes a name inside a movie folder, or a path to a .blend.

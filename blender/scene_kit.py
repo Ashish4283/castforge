@@ -2522,7 +2522,7 @@ plan = director.plan(
     [{"who": a.id, "f0": f0, "f1": f1} for a, f0, f1 in moves], forced, FPS, scene.frame_end, mode,
     follow=bool(SET), strong=acting.STRONG,
     beats=[{"who": a.id, "target": d.id, "f0": f0, "f1": f1, "contact": c} for a, d, f0, f1, c in beats])
-shot_list = []                      # (frame, kind, on) for the timeline and the storyboard
+shot_list = []                      # one dict per shot, for the timeline, the storyboard and the log
 for n, sh in enumerate(plan):
     f0 = sh["frame"]
     f1 = plan[n + 1]["frame"] if n + 1 < len(plan) else scene.frame_end
@@ -2552,8 +2552,13 @@ for n, sh in enumerate(plan):
     if sh["move"] != "static":
         camera_move(c, sh["move"], f0, f1)
     scene.timeline_markers.new(f"shot_{n}", frame=max(f0, 1)).camera = c
-    shot_list.append((f0, kind, sh["on"]))
-log(f"shots ({mode}): " + ", ".join(f"{k}{'/' + '+'.join(o) if o else ''}@{f}" for f, k, o in shot_list))
+    # the move and the lens are written down as well as used: the timeline is what the app shows and
+    # what shared/real.py turns into a photoreal clip, and a clip that holds still where the render
+    # pushed in no longer matches the cut.
+    shot_list.append({"frame": f0, "kind": kind, "on": sh["on"], "move": sh["move"],
+                      "lens": float(c.data.lens)})
+log(f"shots ({mode}): " + ", ".join(f"{s_['kind']}{'/' + '+'.join(s_['on']) if s_['on'] else ''}"
+                                    f"@{s_['frame']}" for s_ in shot_list))
 
 if spec.get("vehicle"):
     for c in [o for o in scene.objects if o.type == "CAMERA"]:
@@ -2791,7 +2796,8 @@ timeline = {"version": 1, "id": spec.get("id", "scene"), "fps": FPS, "frames": s
             "duration": scene.frame_end / FPS, "resolution": list(res), "quality": QUALITY,
             "lines": [{"start": (ln["f0"] - 1) / FPS, "end": (ln["f1"] - 1) / FPS, "who": ln["who"],
                        "kind": ln["kind"], "text": ln["text"]} for ln in lines],
-            "shots": [{"time": (f - 1) / FPS, "kind": k, "on": on} for f, k, on in shot_list]}
+            "shots": [{"time": (s_["frame"] - 1) / FPS, "kind": s_["kind"], "on": s_["on"],
+                       "move": s_["move"], "lens": round(s_["lens"], 1)} for s_ in shot_list]}
 
 if args.preview3d:
     # the scene as a light 3D file for the app's scene editor: cast with their baked motion (deform bones only,
@@ -2843,8 +2849,9 @@ if args.storyboard:
     board = os.path.join(os.path.dirname(out), "storyboard")
     os.makedirs(board, exist_ok=True)
     shots_meta = []
-    for n, (f, kind, on) in enumerate(shot_list):
-        nxt = shot_list[n + 1][0] if n + 1 < len(shot_list) else scene.frame_end
+    for n, s_ in enumerate(shot_list):
+        f, kind, on = s_["frame"], s_["kind"], s_["on"]
+        nxt = shot_list[n + 1]["frame"] if n + 1 < len(shot_list) else scene.frame_end
         at = min(f + 6, (f + nxt) // 2)
         scene.frame_set(at)
         scene.render.filepath = os.path.join(board, f"shot_{n + 1:02d}.png")

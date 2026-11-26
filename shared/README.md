@@ -43,13 +43,39 @@ CASTFORGE_COMFY_URL   where a running ComfyUI answers (default http://127.0.0.1:
 ## The chain
 
 ```
-graphic-novel          castforge                         forgefilms
-reference sheets  -->  a rigged 3D character        -->  a graded, captioned film
-and the script         rendered into a voiced episode
-       \__ shared/cast.py __/          \__ shared/handoff.py __/
+graphic-novel          castforge                        forgefilms
+reference sheets  -->  a rigged 3D character       -->  a graded, captioned film   (shared/handoff.py)
+and the script         rendered into a voiced       -->  the same shots, photographed (shared/real.py)
+                       episode
+       \__ shared/cast.py __/
 ```
 
 Each arrow is one tested module, and nothing else in either tool knows about the other side.
+
+## Real: the shots, photographed
+
+`post` finishes the 3D cut. `real` takes the same shots and runs them through image-to-video, so what
+comes back is photographed rather than rendered:
+
+```
+python castforge.py real movies/santa_is_a_lie/act1 --run
+```
+
+Two things make this worth a module rather than a folder of typed prompts:
+
+* **The cut is already there.** `shot.timeline.json` holds the shots the director cut - when each starts,
+  whether it is wide or close, who it is on, which way the camera moves and on what lens. A clip cannot
+  contain a cut, so those are the only honest boundaries, and they are the ones this uses.
+* **The prompt is a fact.** CastForge knows who is on screen, roughly how old they are, what colour their
+  hair and their coat are, what the light is doing, whether it is snowing, and whether a person is
+  speaking aloud or thinking with their mouth shut. Told to make someone speak over a thought, the model
+  opens their mouth and the shot is wasted.
+
+The one hard limit is the model's: **Wan 2.2 image-to-video was trained on 81 frames, 5.06 s at 16 fps.**
+A longer take is split into windows of equal length, and each window after the first should start from
+the last frame of the clip before it, or the face and the clothes reset at the join. Those stills do not
+exist until the first pass has run, so every window is given the render's own frame to start with and the
+command prints which ones to replace afterwards.
 
 ## Cast: the step before `character`
 

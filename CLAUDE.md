@@ -40,6 +40,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | a step type, parameter, prop size, preset name, voice | `core/schema.py` (`ACTIONS`, `PROP_TYPES`, `LIGHTING`...) |
 | where the models, ComfyUI, fabrics or the other two tools live | `shared/suite.py` (pure, tested); CLI `castforge.py suite`; `shared/README.md` |
 | handing a rendered episode to forgefilms for post | `shared/handoff.py` (pure, tested); CLI `castforge.py post FOLDER [--run]`; `/api/suite/post`; Suite page |
+| turning a rendered 3D shot into a photographed one | `shared/real.py` (pure, tested); CLI `castforge.py real FOLDER [--run]`; the prompt is read off the scene, the takes are the director's own cuts, and the 81-frame limit is Wan 2.2's |
 | building a character the graphic novel designed | `shared/cast.py` (pure, tested); CLI `castforge.py cast`; `/api/suite/cast*`; Suite page |
 | what a step does in Blender | `scene_kit.py` anchor `# --- script` then `elif do == "<name>"` |
 | walking, sitting, turning, arms, fingers | `scene_kit.py` `class Actor` (`def walk`, `def key_arms`...) |
@@ -116,6 +117,10 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Blender 5.x has no `Action.fcurves`: use `bpy_extras.anim_utils.action_get_channelbag_for_slot`.
 - Scenes render with view transform `Standard` (AgX greys the set picture; see DESIGN_V2 D12).
 - Bash tool: heredocs with apostrophes or backslash escapes break; write edit scripts to a file.
+- Wan 2.2 image-to-video was trained on 81 frames: 5.06 s at 16 fps. Longer in one pass drifts (the
+  face and the clothes change) - `shared/real.py` splits a take into windows instead.
+- `cast.COLOURS` is a list of HAIR colours with no blue in it; clothes use `real.CLOTH_COLOURS`, and
+  colours are matched by hue and chroma, not by RGB distance (a slate navy came out "purple").
 - `StagePad` maps pointer pixels to metres with its own width and height, so its box must stay SQUARE
   (`.floor-box`, `aspect-ratio: 1`). A letterboxed svg scales uniformly and the marker then lands where
   the pointer is not - it looks right in a screenshot and is wrong under the mouse.
