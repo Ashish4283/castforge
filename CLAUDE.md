@@ -287,6 +287,18 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   (`build_character.LIFELIKE_SKIN`, chosen by rendering a head at a dozen settings and looking). Pore
   strength 0.60, SSS 0.45, radius 0.35, roughness 0.56. Past roughness ~0.62 the subsurface glow dies and
   the face goes chalky; clearcoat was tried and puts a hard white blob on the cheek.
+- A head is NOT round and a cap must not be either. Measured at the band on a built Santa: 17.0 cm
+  across, 21.6 cm front to back. `santa_cap` sized one circle from the AVERAGE of those, so the fur roll
+  stood 3.0 cm proud at the temples and 0.7 cm at the forehead - a shelf of fur beside the ears. It now
+  takes `squash` (across / front-back) and the build measures both half-extents; the cone's length still
+  comes from their average so no existing cap got longer.
+- `cap.towards` is an angle in the HORIZONTAL plane and the build's x is ACROSS the body, so towards=180
+  flops the cap sideways over an ear and towards=90 flops it backwards, which is what a Santa cap does.
+  180 was never a bug, it just reads as one.
+- Photograph a cap from ABOVE the bottom of its band. A cap is an open tube, so a camera even 2 cm below
+  that rim looks straight up inside it and the far wall reads as a second, floating piece of hat. Two
+  rounds of "the cap is in two bits" were the camera, not the model - the geometry measured continuous,
+  nested, non-degenerate and outward-facing every time.
 - The studio is colourful on purpose (yellow, orange, lime, pink, cyan - `--paint-*`), but NO accent
   colour is ever laid over the 3D view itself: a character has to be judged against a quiet ground.
 

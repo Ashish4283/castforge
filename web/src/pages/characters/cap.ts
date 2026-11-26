@@ -48,29 +48,34 @@ export function headAt(pos: Float32Array, skin: ArrayLike<number>, neckY: number
   // The middle comes from the band's EXTENT, not from the average of its vertices. A head is not evenly
   // meshed - the face carries far more vertices than the back of the skull - so an average sits forward
   // of the real centre, and the far side then measures as twice the radius. (It did: 0.140 m for a head
-  // of 0.07.) And the width is the average of the two half-extents, because a head is longer than it is
-  // wide and a cap's opening is a circle somewhere between the two.
+  // of 0.07.) BOTH half-extents are kept: a head is about 17 cm across and 21.6 cm front to back, so a
+  // cap sized from one circle between the two stands 3 cm clear of the temples (see costume.santa_cap).
   let lowX = Infinity, highX = -Infinity, lowZ = Infinity, highZ = -Infinity;
   for (const v of ring) {
     lowX = Math.min(lowX, pos[v * 3]); highX = Math.max(highX, pos[v * 3]);
     lowZ = Math.min(lowZ, pos[v * 3 + 2]); highZ = Math.max(highZ, pos[v * 3 + 2]);
   }
+  const longR = (highZ - lowZ) / 2 + 0.006;          // front to back
+  const acrossR = (highX - lowX) / 2 + 0.006;        // ear to ear
   return {cx: (lowX + highX) / 2, cz: (lowZ + highZ) / 2, sit,
-          wide: ((highX - lowX) + (highZ - lowZ)) / 4 + 0.006, crown};
+          // the cone's length still comes from the average, so a cap is no longer than it ever was
+          wide: (longR + acrossR) / 2, longR, squash: acrossR / longR, crown};
 }
 
 /** The cap as rings of points, how many of those rings are fur, and the tip (for the bobble).
  *
  *  Mirrors `costume.santa_cap`, where the shape is explained: a fur ROLL standing a little proud of the
  *  head, then a cone from exactly where the roll ends, tapering and flopping the way it is pointed. */
-export function capRings(head: {cx: number; cz: number; sit: number; wide: number}, want: CapWants,
+export function capRings(head: {cx: number; cz: number; sit: number; wide: number; longR?: number; squash?: number}, want: CapWants,
                          rings = 16, span = 18) {
   const height = head.wide * 3.0 * want.size;
   const band = Math.min(0.6, Math.max(0.08, want.band));
   // the fur's depth comes from the HEAD, not the cap's length: a bigger cap has a longer cone, not a
   // deeper band (see costume.santa_cap)
   const rollH = head.wide * 0.62 * (band / 0.3);
-  const rollR = head.wide * 1.12;
+  const longR = head.longR ?? head.wide;              // front to back; `wide` is the average
+  const squash = head.squash ?? 1;                    // across / front-back, 1 being a round head
+  const rollR = longR * 1.12;
   const inRoll = Math.max(2, Math.round(rings * band));
   const leanX = Math.cos((want.towards * Math.PI) / 180);
   const leanZ = Math.sin((want.towards * Math.PI) / 180);
@@ -87,7 +92,7 @@ export function capRings(head: {cx: number; cz: number; sit: number; wide: numbe
     const lean = want.droop * (height - rollH) * 1.3 * t * t;
     const rise = (height - rollH) * t * (1 - 0.35 * want.droop * t);
     spine.push([head.cx + leanX * lean, head.sit + rollH + rise, head.cz + leanZ * lean]);
-    widths.push(head.wide * ((1 - t) ** 0.85 * 1.02 + 0.06));
+    widths.push(longR * ((1 - t) ** 0.85 * 1.02 + 0.06));
   }
   const out: [number, number, number][][] = [];
   for (let i = 0; i < rings; i++) {
@@ -105,7 +110,8 @@ export function capRings(head: {cx: number; cz: number; sit: number; wide: numbe
     const ring: [number, number, number][] = [];
     for (let j = 0; j < span; j++) {
       const ang = (2 * Math.PI * j) / span;
-      ring.push([spine[i][0] + widths[i] * (Math.cos(ang) * side[0] + Math.sin(ang) * other[0]),
+      // x is across the face here as it is in the build, so that is the axis the squash applies to
+      ring.push([spine[i][0] + widths[i] * (Math.cos(ang) * side[0] + Math.sin(ang) * other[0]) * squash,
                  spine[i][1] + widths[i] * (Math.cos(ang) * side[1] + Math.sin(ang) * other[1]),
                  spine[i][2] + widths[i] * (Math.cos(ang) * side[2] + Math.sin(ang) * other[2])]);
     }
@@ -129,7 +135,7 @@ export function ballRings(centre: [number, number, number], radius: number, rows
 }
 
 /** Turn stacks of rings into positions and triangles, and say which triangles are fur. */
-export function capMesh(head: {cx: number; cz: number; sit: number; wide: number}, want: CapWants) {
+export function capMesh(head: {cx: number; cz: number; sit: number; wide: number; longR?: number; squash?: number}, want: CapWants) {
   const {rings, fur, tip} = capRings(head, want);
   const balls = want.bobble > 0.05 ? ballRings(tip, head.wide * 0.42 * want.bobble) : [];
   const points: number[] = [];

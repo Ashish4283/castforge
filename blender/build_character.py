@@ -1377,12 +1377,17 @@ if COSTUME or made_wear:
             low_x, high_x = min(p[0] for p in around), max(p[0] for p in around)
             low_y, high_y = min(p[1] for p in around), max(p[1] for p in around)
             cx, cy = (low_x + high_x) / 2, (low_y + high_y) / 2
-            # the average of the two half-extents, not the larger: a head is longer than it is wide
-            wide = ((high_x - low_x) + (high_y - low_y)) / 4 + 0.006
+            # A head is longer than it is wide (about 17 cm across to 21.6 cm front-to-back on a
+            # built character), so it gets BOTH half-extents and the cap is squashed to match. Sizing
+            # one circle from their average is what left a 3 cm shelf of fur beside the ears.
+            long_r = (high_y - low_y) / 2 + 0.006                 # front to back
+            across_r = (high_x - low_x) / 2 + 0.006               # ear to ear
+            # the cone's length still comes from the average, so a cap is no longer than it ever was
+            wide = (long_r + across_r) / 2
             rings, fur, tip = kit.santa_cap(
-                (cx, cy), sit, wide, wide * 3.0 * size,
+                (cx, cy), sit, long_r, wide * 3.0 * size,
                 droop=float(cap_want.get("droop", 0.6)), towards=float(cap_want.get("towards", 20.0)),
-                band=float(cap_want.get("band", 0.3)))
+                band=float(cap_want.get("band", 0.3)), squash=across_r / long_r)
             bobble = float(cap_want.get("bobble", 1.0))
             balls = kit.ball(tip, wide * 0.42 * bobble) if bobble > 0.05 else []
 

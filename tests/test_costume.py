@@ -385,6 +385,39 @@ def test_more_fur_means_more_of_the_cap_is_fur():
     assert deep > thin
 
 
+def test_a_cap_is_squashed_to_the_head_it_is_going_on_because_a_head_is_not_round():
+    """Measured on a built Santa: 17.0 cm across the head, 21.6 cm front to back.
+
+    A single circle sized from the average of those stood 3.0 cm clear of the temples and 0.7 cm clear
+    of the forehead - a shelf of fur beside the ears, which is how this was reported. The roll has to
+    be the ellipse the head actually is."""
+    across_r, long_r = 0.085, 0.108
+    rings, fur, _tip = kit.santa_cap((0.0, 0.0), 1.60, long_r, droop=0.0,
+                                     squash=across_r / long_r)
+    roll = rings[0]
+    out_x = max(abs(p[0]) for p in roll)
+    out_y = max(abs(p[1]) for p in roll)
+    assert out_y > out_x, "the cap must be longer front-to-back, as the head is"
+    # each way it stands a little proud of the head and nowhere near 3 cm
+    assert 0.0 < out_x - across_r < 0.016, f"across: {(out_x - across_r) * 100:.1f} cm proud"
+    assert 0.0 < out_y - long_r < 0.016, f"front-back: {(out_y - long_r) * 100:.1f} cm proud"
+
+
+def test_a_round_head_still_gets_a_round_cap():
+    plain = kit.santa_cap((0.0, 0.0), 1.6, 0.1, droop=0.0)[0]
+    same = kit.santa_cap((0.0, 0.0), 1.6, 0.1, droop=0.0, squash=1.0)[0]
+    assert plain == same
+
+
+def test_squashing_leaves_no_step_where_the_cone_meets_the_roll():
+    """The squash is applied to the offset from the spine, so it has to carry on past the fur."""
+    rings, fur, _t = kit.santa_cap((0.0, 0.0), 1.6, 0.108, droop=0.0, squash=0.79)
+    last_fur_x = max(abs(p[0]) for p in rings[fur - 1])
+    first_cone_x = max(abs(p[0]) for p in rings[fur])
+    assert first_cone_x < last_fur_x                       # the cone starts just inside the roll
+    assert first_cone_x > last_fur_x * 0.8                 # and not a step inside it
+
+
 def test_a_bobble_is_a_ball_around_its_middle():
     rows = kit.ball((0.0, 0.0, 2.0), 0.05, rows=6, span=8)
     every = [p for row in rows for p in row]

@@ -553,7 +553,7 @@ def cap_radius(t, radius, band=0.3, roll=0.22, tip=0.1):
 
 
 def santa_cap(centre, base_z, radius, height=None, droop=0.6, towards=0.0, band=0.3,
-              rings=16, span=18, crown=None):
+              rings=16, span=18, crown=None, squash=1.0):
     """A Santa cap built for one head: (rings of points, how many of them are fur, the tip).
 
     Two pieces, as a real cap is. A fur ROLL - a thick cylinder standing a little proud of the head,
@@ -562,7 +562,14 @@ def santa_cap(centre, base_z, radius, height=None, droop=0.6, towards=0.0, band=
     them, and the whole thing is measured from the head it is going on, so it cannot bulge through.
 
     `centre` is the head's middle (x, y), `base_z` the bottom of the roll, `radius` the head's radius
-    there. `band` is how much of the cap's height is fur."""
+    there. `band` is how much of the cap's height is fur.
+
+    A head is NOT round: measured on a built character it is about 17 cm across and 21.6 cm front to
+    back. A circular roll sized from the average of those two stands 3 cm clear of the temples and only
+    7 mm clear at the front - a visible shelf beside the ears, which is what this was reported as. So
+    `squash` (across / front-back, 1.0 being a round head) narrows the whole cap across the face. It is
+    applied to the offset from the spine, not to the spine itself, so the roll becomes the ellipse the
+    head actually is and the cone stays joined to it with no step."""
     height = height if height else radius * 3.0
     band = min(0.6, max(0.08, band))
     # How tall the fur is comes from the HEAD, not from the cap's length: a bigger cap has a longer cone,
@@ -598,9 +605,12 @@ def santa_cap(centre, base_z, radius, height=None, droop=0.6, towards=0.0, band=
         other = [axis[1] * side[2] - axis[2] * side[1],
                  axis[2] * side[0] - axis[0] * side[2],
                  axis[0] * side[1] - axis[1] * side[0]]
-        out.append([tuple(point[k] + wide * (math.cos(a) * side[k] + math.sin(a) * other[k])
-                          for k in range(3))
-                    for a in (2 * math.pi * j / span for j in range(span))])
+        ring = []
+        for a in (2 * math.pi * j / span for j in range(span)):
+            off = [wide * (math.cos(a) * side[k] + math.sin(a) * other[k]) for k in range(3)]
+            off[0] *= squash              # x is across the face in both the build and the live view
+            ring.append(tuple(point[k] + off[k] for k in range(3)))
+        out.append(ring)
     return out, in_roll, spine[-1]
 
 
