@@ -537,3 +537,39 @@ def realism(episode, plan_=None, read=_read, exists=os.path.exists, seed=1, carr
     scene = read(os.path.join(episode, "scene.json"))
     return real_stills(plan_, scene, _designs(episode, scene, read, exists),
                        size=tuple(plan_.get("res") or (480, 270)), seed=seed, carried=carried)
+
+
+# --- keeping it the same person ---------------------------------------------------------------------
+# Each still is re-imagined on its own, so without an anchor the man in the close-up and the man in the
+# wide shot drift apart - and a film in which the lead's face changes between cuts is unwatchable. The
+# anchor is the character's OWN front render: by construction it is already that person, so nothing has
+# to be trained. ip-adapter-plus-face reads a face from it and holds the new picture to it.
+IP_FACE = "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+CLIP_VISION = "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+# How hard to hold the face, by how much of the frame it fills. A close-up is mostly face and needs the
+# strongest hold; in a wide shot the head is a few dozen pixels and a strong hold only fights the room.
+FACE_HOLD = {"close": 0.8, "over_shoulder": 0.7, "medium": 0.6, "two_shot": 0.55, "wide": 0.35, "auto": 0.6}
+
+
+def face_hold(kind):
+    """How hard this shot holds the reference face."""
+    return FACE_HOLD.get(str(kind), FACE_HOLD["auto"])
+
+
+def with_face(graph, face, weight=0.6, adapter=IP_FACE, clip_vision=CLIP_VISION):
+    """The same graph, with the sampler reading its model through a face the character already has.
+
+    Returned unchanged when there is no face to hold, so one code path covers both."""
+    if not face:
+        return graph
+    out = dict(graph)
+    out["face_img"] = {"class_type": "LoadImage", "inputs": {"image": face}}
+    out["ip"] = {"class_type": "IPAdapterModelLoader", "inputs": {"ipadapter_file": adapter}}
+    out["vis"] = {"class_type": "CLIPVisionLoader", "inputs": {"clip_name": clip_vision}}
+    out["face"] = {"class_type": "IPAdapterAdvanced",
+                   "inputs": {"model": ["model", 0], "ipadapter": ["ip", 0], "image": ["face_img", 0],
+                              "clip_vision": ["vis", 0], "weight": float(weight), "weight_type": "linear",
+                              "combine_embeds": "concat", "start_at": 0.0, "end_at": 0.9,
+                              "embeds_scaling": "V only"}}
+    out["ks"] = dict(graph["ks"], inputs=dict(graph["ks"]["inputs"], model=["face", 0]))
+    return out

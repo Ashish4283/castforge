@@ -41,6 +41,11 @@ import tempfile
 import time
 import zipfile
 
+
+def safe_name(text):
+    """A name safe to use as a file name."""
+    return re.sub(r"[^a-z0-9_]+", "_", str(text).lower()).strip("_") or "x"
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 from core import config, publish  # noqa: E402
@@ -847,20 +852,35 @@ def main():
                 jobs = os.path.join(stage, "realism")
                 os.makedirs(jobs, exist_ok=True)
                 wanted = {w.split("-")[0] for w in os.listdir(os.path.join(stage, "workflows"))}
+                # The same face in every shot: the character's OWN front render is already that
+                # person, so there is nothing to train - it just has to travel with the job.
+                faces, chars = {}, os.path.join(os.path.dirname(folder.rstrip("/\\")), "characters")
+                for row in got["shots"]:
+                    for who in row["on"]:
+                        front = os.path.join(chars, f"{who}_preview", "front.png")
+                        if who not in faces and os.path.isfile(front):
+                            faces[who] = f"face_{safe_name(who)}.png"
+                            shutil.copyfile(front, os.path.join(stage, "inputs", faces[who]))
                 for job in real.realism(folder, got):
-                    if only and job["id"] not in only:
+                    if (only and job["id"] not in only) or job["id"] not in wanted:
                         continue
-                    if job["id"] not in wanted:
-                        continue
-                    graph = real.still_graph(f"ff_{job['id']}_{job['still']}", job["prompt"],
+                    row = next(r for r in got["shots"] if r["id"] == job["id"])
+                    face = next((faces[w] for w in row["on"] if w in faces), None)
+                    plain = real.still_graph(f"ff_{job['id']}_{job['still']}", job["prompt"],
                                              job["width"], job["height"], seed=job["seed"],
                                              denoise=job["denoise"], prefix=f"real/{job['id']}")
+                    held = real.with_face(plain, face, real.face_hold(row["kind"]))
                     with open(os.path.join(jobs, f"{job['id']}.json"), "w", encoding="utf-8") as f:
-                        json.dump({"id": job["id"], "denoise": job["denoise"], "graph": graph}, f, indent=1)
+                        # both graphs: the GPU falls back to the plain one if the face nodes are missing
+                        json.dump({"id": job["id"], "denoise": job["denoise"], "face": face,
+                                   "graph": held, "plain": plain}, f, indent=1)
                 shots_real = len(os.listdir(jobs))
                 print(f"  {shots_real} stills will be photographed first "
                       f"({real.REAL_CHECKPOINT.split('_')[0]}, moved "
                       f"{min(real.DENOISE.values())}-{max(real.DENOISE.values())} by shot size)")
+                if faces:
+                    print(f"  holding {len(faces)} face{'s' if len(faces) > 1 else ''} to their own "
+                          f"front render: {', '.join(sorted(faces))}")
             if not made:
                 sys.exit(f"no workflows were built for {only or 'this episode'}")
             user = os.environ.get("KAGGLE_USERNAME") or "ashishjiwa"

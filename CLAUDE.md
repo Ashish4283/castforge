@@ -40,6 +40,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | a step type, parameter, prop size, preset name, voice | `core/schema.py` (`ACTIONS`, `PROP_TYPES`, `LIGHTING`...) |
 | where the models, ComfyUI, fabrics or the other two tools live | `shared/suite.py` (pure, tested); CLI `castforge.py suite`; `shared/README.md` |
 | handing a rendered episode to forgefilms for post | `shared/handoff.py` (pure, tested); CLI `castforge.py post FOLDER [--run]`; `/api/suite/post`; Suite page |
+| making a rendered still photographic before it is animated | `shared/real.py` `still_graph` (RealVisXL image-to-image), `DENOISE` by shot size (a face moves less than a room), `with_face` (ip-adapter-plus-face holds it to the character's own front render); run by `tools/kaggle/boot.py` `make_real()` before `clips()` |
 | turning a rendered 3D shot into a photographed one | `shared/real.py` (pure, tested); CLI `castforge.py real FOLDER [--run]`; the prompt is read off the scene, the takes are the director's own cuts, and the 81-frame limit is Wan 2.2's |
 | building a character the graphic novel designed | `shared/cast.py` (pure, tested); CLI `castforge.py cast`; `/api/suite/cast*`; Suite page |
 | what a step does in Blender | `scene_kit.py` anchor `# --- script` then `elif do == "<name>"` |
@@ -119,6 +120,12 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Blender 5.x has no `Action.fcurves`: use `bpy_extras.anim_utils.action_get_channelbag_for_slot`.
 - Scenes render with view transform `Standard` (AgX greys the set picture; see DESIGN_V2 D12).
 - Bash tool: heredocs with apostrophes or backslash escapes break; write edit scripts to a file.
+- Image-to-video ANIMATES the still it is given; it does not restyle it. A clip made straight from a
+  3D render is a moving 3D render - the look has to be changed on the STILL, before Wan sees it.
+- glTF cannot carry the build's tint chain (texture -> luminance -> multiply by colour), so the
+  preview exports the ASSET's own texture: green hair, a blue worksuit. `flatten_tints()` in the
+  preview3d export replaces a texture with its flat tint ONLY where the two disagree, so the face,
+  whose texture already agrees, keeps its eyes and lips.
 - The camera is NEVER worked out twice. scene_kit places it (rig bones, blocked lines of sight) and
   writes down where it went; the app reads that. A second opinion in the browser would be a lie the
   moment anything about the placement changed.

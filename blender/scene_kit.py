@@ -2823,6 +2823,73 @@ if args.preview3d:
             for m in getattr(o, "modifiers", []):  # masks and cloth offsets apply; subdivision only weighs it down
                 if m.type == "SUBSURF":
                     m.show_viewport = m.show_render = False
+    def flatten_tints():
+        """Give glTF the colour the render actually makes, where it cannot carry how it is made.
+
+        The build dresses a character by taking an asset's texture down to luminance and multiplying it
+        by a colour. glTF cannot express that chain, so the exporter falls back to the asset's OWN
+        texture - which is how a white-haired man reached the app in green dreadlocks, wearing the blue
+        worksuit the asset ships with, while the render had neither.
+
+        Flattening everything would be worse: the face is tinted the same way, and a flat skin colour
+        loses the eyes and the lips with it. So each material is judged on its own evidence - when the
+        tint is close to what the texture already averages, the texture is telling the truth and is
+        left alone; when it is far away, the texture is a lie and the flat tint replaces it."""
+        try:
+            import numpy as _np
+        except ImportError:
+            return []
+        changed = []
+        done = set()
+        for o in scene.objects:
+            if o.type != "MESH":
+                continue
+            for slot in o.material_slots:
+                m = slot.material
+                if not m or not m.node_tree or m.name in done:
+                    continue
+                done.add(m.name)
+                nt = m.node_tree
+                bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
+                if not bsdf or not bsdf.inputs["Base Color"].links:
+                    continue
+                # the tint: the nearest MULTIPLY colour mix feeding Base Color
+                tint, seen, queue = None, set(), [bsdf.inputs["Base Color"].links[0].from_node]
+                while queue and tint is None:
+                    node = queue.pop(0)
+                    if node in seen:
+                        continue
+                    seen.add(node)
+                    if node.type == "MIX" and getattr(node, "blend_type", "") == "MULTIPLY" \
+                            and getattr(node, "data_type", "") == "RGBA":
+                        tint = tuple(node.inputs["A"].default_value)[:3]
+                        break
+                    queue += [lk.from_node for i in node.inputs for lk in i.links]
+                tex = nt.nodes.get("diffuseTexture")
+                if tint is None or not tex or not tex.image:
+                    continue
+                img = tex.image
+                try:
+                    count = img.size[0] * img.size[1] * img.channels
+                    buf = _np.empty(count, dtype=_np.float32)
+                    img.pixels.foreach_get(buf)
+                    px = buf.reshape(-1, img.channels)
+                    solid = px[px[:, 3] > 0.5] if img.channels > 3 else px
+                    mean = solid[:, :3].mean(axis=0) if len(solid) else _np.zeros(3)
+                except (RuntimeError, ValueError, AttributeError):
+                    continue
+                gap = float(_np.sqrt(((_np.array(tint) - mean) ** 2).sum()))
+                if gap <= 0.25:
+                    continue                      # the texture already says roughly what the tint says
+                nt.links.remove(bsdf.inputs["Base Color"].links[0])
+                bsdf.inputs["Base Color"].default_value = (*tint, 1.0)
+                changed.append(f"{m.name} ({gap:.2f})")
+        return changed
+
+    flattened = flatten_tints()
+    if flattened:
+        log(f"preview colours: {len(flattened)} materials flattened to their tint ({', '.join(flattened[:4])})")
+
     glb = os.path.join(os.path.dirname(out), "preview.glb")
     bpy.ops.export_scene.gltf(filepath=glb, export_format="GLB", use_selection=True, export_animations=True,
                               export_animation_mode="SCENE", export_frame_step=2, export_def_bones=True,

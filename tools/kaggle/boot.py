@@ -30,6 +30,9 @@ NODE_PACKS = [
     # Without this one a generated square has a hard join, and every repeat of it shows a seam.
     # The laptop refuses such a swatch, so there is no point running without it.
     "https://github.com/spinagon/ComfyUI-seamless-tiling",
+    # Holds a re-imagined still to a face the character already has, so the same person survives the
+    # cut. Without it the face nodes are missing and make_real() falls back to the plain graph.
+    "https://github.com/cubiq/ComfyUI_IPAdapter_plus",
 ]
 CHECKPOINTS = {
     "realvis_lightning": ("SG161222/RealVisXL_V5.0_Lightning",
@@ -627,6 +630,46 @@ def wan(place=None):
     return got
 
 
+FACES = [
+    ("ipadapter", "sdxl_models/ip-adapter-plus-face_sdxl_vit-h.safetensors", "h94/IP-Adapter", None),
+    ("clip_vision", "models/image_encoder/model.safetensors", "h94/IP-Adapter",
+     "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"),
+]
+
+
+def faces(place=None):
+    """Fetch what is needed to hold a still to a face the character already has (about 3 GB)."""
+    place = place or where()
+    for folder, path, repo, rename in FACES:
+        want = rename or path.split("/")[-1]
+        home = (place["scratch"] if place.get("batch") else place["keep"]) / "models" / folder
+        home.mkdir(parents=True, exist_ok=True)
+        kept = home / want
+        if not kept.exists():
+            found = next((f for f in pathlib.Path("/kaggle/input").glob("**/" + want)), None)                 if os.path.isdir("/kaggle/input") else None
+            if found:
+                kept = found
+                say("attached already:", found.name)
+            else:
+                say(f"fetching {want} ...")
+                pip("huggingface_hub")
+                from huggingface_hub import hf_hub_download
+                got = hf_hub_download(repo_id=repo, filename=path, local_dir=str(home))
+                if rename:
+                    shutil.move(got, kept)
+                else:
+                    kept = pathlib.Path(got)
+        into = place["comfy"] / "models" / folder
+        into.mkdir(parents=True, exist_ok=True)
+        link = into / want
+        if not link.exists():
+            try:
+                link.symlink_to(kept)
+            except OSError:
+                shutil.copy(kept, link)
+    say("faces can be held now")
+
+
 def every(graph, wait=5400, tell=60):
     """Run one graph and come back with EVERY image it saved. A clip is eighty of them, not one."""
     body = json.dumps({"prompt": graph}).encode()
@@ -779,15 +822,24 @@ def make_real(place=None, only=None):
             continue
         say(f"[{n}/{len(jobs)}] {job['id']} (moving it {job['denoise']})")
         began = time.time()
-        try:
-            images = every(job["graph"], wait=900, tell=60)
-        except Gone as e:
-            say(f"  ComfyUI stopped answering: {e}")
-            say(last_words(40))
-            break
+        images = []
+        for graph, how in ((job.get("graph"), "with its face held"), (job.get("plain"), "without the face")):
+            if not graph:
+                continue
+            try:
+                images = every(graph, wait=900, tell=60)
+            except Gone as e:
+                say(f"  ComfyUI stopped answering: {e}")
+                say(last_words(40))
+                return made
+            if images:
+                if how.endswith("the face"):
+                    say("  (the face nodes are not installed here, so this one is not held)")
+                break
+            say(f"  nothing came back {how}; its log says why")
+            say(last_words(15))
         if not images:
-            say("  nothing came back; the still is left as the render made it")
-            say(last_words(20))
+            say("  the still is left as the render made it")
             continue
         sub = images[0].get("subfolder") or ""
         folder = next((r / sub for r in (place["keep"] / "swatches", place["comfy"] / "output",

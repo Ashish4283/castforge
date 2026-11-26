@@ -352,3 +352,31 @@ def test_one_pass_photographs_the_carried_windows_too_or_the_take_jumps_mid_shot
     one = real.real_stills(got, scene, {"Arthur": ARTHUR}, carried=True)
     assert sorted(j["id"] for j in one) == ["cabin_1", "cabin_2_1", "cabin_2_2", "street_1"]
     assert {j["id"] for j in one} == {r["id"] for r in got["shots"]}
+
+
+def test_a_close_up_holds_the_face_harder_than_a_wide_shot_does():
+    # a close-up is mostly face; in a wide shot the head is a few dozen pixels and a hard hold only
+    # fights the room
+    assert real.face_hold("close") > real.face_hold("medium") > real.face_hold("wide")
+    from core import schema
+    for kind in schema.SHOT_KINDS:
+        assert kind in real.FACE_HOLD, kind
+
+
+def test_the_face_is_read_from_a_picture_the_character_already_has():
+    plain = real.still_graph("cabin_1.png", "a photograph", 1024, 576)
+    held = real.with_face(plain, "face_arthur.png", 0.8)
+    assert held["ks"]["inputs"]["model"] == ["face", 0], "the sampler must read through the face"
+    assert plain["ks"]["inputs"]["model"] == ["model", 0], "the plain graph is left alone"
+    assert held["face"]["inputs"]["weight"] == 0.8
+    assert held["face_img"]["inputs"]["image"] == "face_arthur.png"
+    for name, node in held.items():
+        for value in node["inputs"].values():
+            if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
+                assert value[0] in held, f"{name} points at {value[0]}, which is not in the graph"
+
+
+def test_no_face_to_hold_leaves_the_graph_exactly_as_it_was():
+    plain = real.still_graph("cabin_1.png", "a photograph", 1024, 576)
+    assert real.with_face(plain, None) == plain
+    assert real.with_face(plain, "") == plain
