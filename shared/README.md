@@ -6,9 +6,12 @@ problems separately.
 ```
 castforge/                photo or design -> rigged 3D character -> rendered, voiced episode   :8765
   suite/
-    forgefilms/           clips, parallax, sound, assembly                                     :8600
-    graphic-novel/        dataset, LoRA training, panels                                       :8700
+    forgefilms/           clips, parallax, sound, assembly                                     :8700
+    graphic-novel/        dataset, LoRA training, panels                                       :8500
 ```
+
+Those two port numbers belong to those two tools - they are what their own `START.bat` files set, and
+`tests/test_suite.py` reads those files so this table cannot drift away from them.
 
 `suite/` is **gitignored by castforge on purpose**. Each tool is still its own git repository with its
 own history and its own remote; castforge does not track them and does not look inside. Moving them
@@ -37,31 +40,57 @@ CASTFORGE_COMFYUI     the ComfyUI install             (default C:/ComfyUI)
 CASTFORGE_COMFY_URL   where a running ComfyUI answers (default http://127.0.0.1:8188)
 ```
 
+## Post: the step after `episode`
+
+CastForge stops at a rendered, voiced episode. forgefilms starts at a shot list and does the post -
+colour, 0.5 s crossfades, a mix mastered to -16 LUFS, captions. One command joins them:
+
+```
+python castforge.py post movies/santa_is_a_lie/act1 --run
+```
+
+It writes three files into `suite/forgefilms/shots/` (shot list, picks, captions), runs forgefilms'
+`assemble.py`, and leaves one graded film with correct subtitles. Without `--run` it writes the files and
+prints the command, so the post can be run by hand. The Suite page in the app does the same thing with a
+button. The whole contract is `shared/handoff.py`; it is pure and tested, and it encodes two rules that
+are otherwise silent and ruinous:
+
+* **A scene's length comes from its own `shot.timeline.json`**, never from `episode.timeline.json`. The
+  episode timeline says where a scene sits in the finished cut; the shot files are the untrimmed renders.
+* **`shot.wav` is already mixed and already in time.** It goes in as the ambience bed with no offset and
+  no voice layer. forgefilms only ducks a voice it placed itself; handing it a finished mix as a "voice"
+  would pump the whole scene against itself. That is also why forgefilms' own `.vtt` comes out empty for
+  a CastForge cut, and why `handoff.captions` writes the real one from the per-line times.
+
 ## Using it from forgefilms or graphic-novel
 
-Two lines, and nothing is copied or restated:
+Each sibling has one file in its own root, `suite_link.py`. Import it and the shared layer is there:
 
 ```python
-import sys, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))   # the castforge checkout
-from shared import suite
+import suite_link
 
-checkpoints = suite.models("checkpoints")     # C:/AI-Models/checkpoints
-comfy       = suite.comfy_url()               # http://127.0.0.1:8188
-velvet      = suite.fabrics()                 # the cloth library
+checkpoints = suite_link.suite.models("checkpoints")   # C:/AI-Models/checkpoints
+comfy       = suite_link.suite.comfy_url()             # http://127.0.0.1:8188
+velvet      = suite_link.suite.fabrics()               # the cloth library
+place       = suite_link.gpu_place()                   # "local" or "kaggle"
 ```
 
-For the local-or-rented GPU choice, call CastForge's own rules rather than reimplementing them:
+`gpu_place()` asks CastForge rather than deciding for itself: `core/gpu.py` already works out whether a
+ComfyUI is answering, whether the card is big enough and whether Kaggle is signed in, and it returns
+whatever the person chose in the app. Three tools that each decided this separately would disagree.
 
-```python
-from core import gpu                 # pure: no bpy, no network, 16 tests
-import gpu_where                     # gathers the facts (is a port answering, is Kaggle signed in)
+Run `python suite_link.py` inside either tool to see what it can reach:
 
-facts = gpu_where.facts()
-place = gpu.best(facts)              # "local" or "kaggle"
-for row in gpu.describe(facts, place):
-    print(row)
 ```
+castforge   C:\Projects\3D Model Generator\castforge
+  models       C:/AI-Models
+  comfyui      C:/ComfyUI
+  ...
+  gpu          kaggle
+```
+
+If a tool is ever moved out of `castforge/suite/`, set `CASTFORGE_HOME` to the folder holding
+`castforge.py` and the same import keeps working.
 
 ## The one rule
 

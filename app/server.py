@@ -1524,6 +1524,65 @@ def gpu():
     return {"busy": gpu_busy(), "queue": queue_items()}
 
 
+# --- the suite: the other tools that make art for the same films ---------------------------------------
+def answering(port):
+    """Is something listening on this port of this machine? A tool can be installed and not running."""
+    import socket
+    with socket.socket() as s:
+        s.settimeout(0.15)
+        return s.connect_ex(("127.0.0.1", int(port))) == 0
+
+
+@app.get("/api/suite")
+def suite_here(movie: str = ""):
+    """What else is installed beside CastForge, what all of it shares, and which episodes are ready for
+    post. Everything about where things live comes from shared/suite.py; nothing is restated here."""
+    from shared import handoff, suite
+    tools = []
+    for name, tool in suite.TOOLS.items():
+        there = os.path.isdir(tool["folder"])
+        tools.append({"name": name, "port": tool["port"], "does": tool["does"], "folder": tool["folder"],
+                      "installed": there, "running": there and answering(tool["port"]),
+                      "url": f"http://localhost:{tool['port']}"})
+    episodes = []
+    if movie and NAME.match(movie):
+        root = os.path.join(MOVIES, movie)
+        for current, dirs, files in os.walk(root):
+            dirs[:] = sorted(n for n in dirs if n not in NOT_EPISODES and not n.startswith(".")
+                             and not (n == "scenes" and "scene.json" in files))
+            if "scene.json" not in files or current == root:
+                continue
+            got = handoff.plan(current)
+            ready = [s for s in (got["shots"] or {}).get("shots", [])]
+            episodes.append({"episode": os.path.relpath(current, root).replace(os.sep, "/"),
+                             "scenes": len(ready),
+                             "seconds": round(sum(s["seconds"] for s in ready), 1),
+                             "lines": sum(len(s["lines"]) for s in ready),
+                             "problems": got["problems"]})
+        episodes.sort(key=lambda e: e["episode"])
+    return {"tools": tools, "shares": suite.shares(), "problems": suite.check(), "episodes": episodes}
+
+
+@app.post("/api/suite/post")
+def suite_post(body: dict):
+    """Write the three files forgefilms needs for this episode, and say what to run next."""
+    from shared import handoff, suite
+    movie, episode = safe(body.get("movie"), "movie"), str(body.get("episode") or "")
+    folder = os.path.normpath(os.path.join(MOVIES, movie, episode))
+    if not folder.startswith(os.path.join(MOVIES, movie)) or not os.path.isdir(folder):
+        raise HTTPException(400, f"{episode!r} is not an episode of {movie}")
+    ff = suite.TOOLS["forgefilms"]["folder"]
+    if not os.path.isdir(ff):
+        raise HTTPException(400, f"forgefilms is not installed at {ff} - it is the tool that does the post")
+    paths, problems = handoff.write(folder)
+    if not paths:
+        raise HTTPException(400, problems[0] if problems else "nothing to hand over")
+    got = handoff.plan(folder)
+    return {"wrote": paths, "problems": problems, "title": got["title"],
+            "run": f'cd "{ff}" && python scripts/assemble.py "{paths["shots"]}" '
+                   f'"{paths["picks"]}" out/{got["title"]}'}
+
+
 @app.post("/api/gpu/cancel")
 def cancel_queued(body: dict):
     """Take one waiting job out of the queue (nothing that has already started is touched)."""

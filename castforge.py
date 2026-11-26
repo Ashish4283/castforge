@@ -21,6 +21,8 @@
     python castforge.py gpu where | use local|kaggle | make "worn denim" --kind denim | make --set
     python castforge.py gpu connect URL | status | fabric "..."   (a ComfyUI you already have an address for)
     python castforge.py suite                    the other tools beside this one, and what they share
+    python castforge.py post FOLDER [--run]      hand that rendered episode to forgefilms for post
+                                                 (--run does the post too: one film, graded, -16 LUFS, captioned)
     python castforge.py doctor                   check that every tool CastForge needs is installed
 """
 import argparse
@@ -29,6 +31,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -680,6 +683,48 @@ def main():
         for row in suite.describe():
             print(row)
         sys.exit(1 if suite.check() else 0)
+    elif a.command == "post":
+        # The step after `episode`: hand the rendered, voiced scenes to forgefilms for post. The contract
+        # between the two shapes is the only thing here; it lives in shared/handoff.py.
+        if not a.args:
+            sys.exit("usage: python castforge.py post EPISODE_FOLDER")
+        sys.path.insert(0, ROOT)
+        from shared import handoff, suite
+        folder = a.args[0]
+        if not os.path.isdir(folder):
+            sys.exit(f"{folder} is not a folder")
+        ff = suite.TOOLS["forgefilms"]["folder"]
+        if not os.path.isdir(ff):
+            sys.exit(f"forgefilms is not installed at {ff} - it is the tool that does the post")
+        paths, problems = handoff.write(folder)
+        for p in problems:
+            print(f"! {p}")
+        if not paths:
+            sys.exit(1)
+        got = handoff.plan(folder)
+        print(f"{len(got['shots']['shots'])} scenes ready for post:")
+        for key, path in paths.items():
+            print(f"  {key:9s} {path}")
+        out = os.path.join("out", got["title"])
+        if "--run" not in a.args:
+            print("\nnow run the post in forgefilms (or add --run to do it here):")
+            print(f'  cd "{ff}"')
+            print(f'  python scripts/assemble.py "{paths["shots"]}" "{paths["picks"]}" {out}')
+            sys.exit(1 if problems else 0)
+        print(f"\nrunning the post in forgefilms -> {os.path.join(ff, out)}")
+        run = subprocess.run([sys.executable, os.path.join("scripts", "assemble.py"),
+                              paths["shots"], paths["picks"], out], cwd=ff)
+        if run.returncode:
+            sys.exit("the post failed; the lines above say why")
+        # forgefilms captions the voice layer it placed itself, and this cut has none: the voices are
+        # already inside each scene's finished sound. So its .vtt comes out empty and ours - which has
+        # the real per-line times, shifted by the crossfades - takes its place beside the film.
+        made = os.path.join(ff, out, f"{got['title']}.vtt")
+        shutil.copyfile(paths["captions"], made)
+        film = os.path.join(ff, out, f"{got['title']}.mp4")
+        print(f"\nfilm      {film}")
+        print(f"captions  {made}  ({got['captions'].count(' --> ')} lines, from the scenes themselves)")
+        sys.exit(1 if problems else 0)
     elif a.command == "rig":
         # Look a built character's rig over, and optionally put right what can be put right without a
         # rebuild. Takes a name inside a movie folder, or a path to a .blend.

@@ -14,6 +14,7 @@ import {Episodes} from "./pages/episodes/Episodes";
 import {Sets} from "./pages/Sets";
 import {Props} from "./pages/Props";
 import {Library} from "./pages/Library";
+import {Suite} from "./pages/Suite";
 import {Help} from "./pages/Help";
 
 function Page() {
@@ -24,6 +25,7 @@ function Page() {
     case "sets": return <Sets />;
     case "props": return <Props />;
     case "library": return <Library />;
+    case "suite": return <Suite />;
     case "help": return <Help />;
     default: return <Studio />;
   }

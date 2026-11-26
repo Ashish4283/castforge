@@ -39,6 +39,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 |---|---|
 | a step type, parameter, prop size, preset name, voice | `core/schema.py` (`ACTIONS`, `PROP_TYPES`, `LIGHTING`...) |
 | where the models, ComfyUI, fabrics or the other two tools live | `shared/suite.py` (pure, tested); CLI `castforge.py suite`; `shared/README.md` |
+| handing a rendered episode to forgefilms for post | `shared/handoff.py` (pure, tested); CLI `castforge.py post FOLDER [--run]`; `/api/suite/post`; Suite page |
 | what a step does in Blender | `scene_kit.py` anchor `# --- script` then `elif do == "<name>"` |
 | walking, sitting, turning, arms, fingers | `scene_kit.py` `class Actor` (`def walk`, `def key_arms`...) |
 | expressions, gestures, postures, gaze maths | `blender/acting.py` (pure, tested) |
@@ -110,6 +111,16 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Bash tool: heredocs with apostrophes or backslash escapes break; write edit scripts to a file.
 - A pose layer that reads the pose back must read every frame before writing any key, or it compounds onto itself.
 - The user's app runs on 8765; test servers use 8777.
+- A sibling tool's port is NOT ours to choose: forgefilms :8700 and graphic-novel :8500 come from their own
+  `START.bat`, and `tests/test_suite.py` reads those files so the table cannot drift. (Both were invented
+  wrong first time, and the app sent people to doors nobody was behind.)
+- A scene's length for post comes from its own `scenes/NN_id/shot.timeline.json`, never from
+  `episode.timeline.json` - the latter says where a scene SITS in the cut, the former is the untrimmed render.
+- forgefilms captions only the voice layer it placed itself. A CastForge handoff has none (the voices are
+  already inside each scene's `shot.wav`), so its `.vtt` comes out empty and `shared/handoff.captions`
+  writes the real one. `--run` copies ours over it.
+- `.item-body` is padding only. A row that wants a name on the left and a button on the right has to lay
+  itself out (see `.suite-row`).
 - A route that starts GPU work calls `server.gpu_job(kind, name, movie, start)`: it starts `start()` when the
   GPU is free and otherwise queues it (one worker thread, `/api/gpu` lists the queue). Never refuse a job
   with a 409 again.
@@ -391,11 +402,16 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   joint markers off the EVALUATED mesh, as `preview_mesh.joint_centres` does.
 
 ## The suite
-`suite/forgefilms` (clips, sound, assembly, :8600) and `suite/graphic-novel` (dataset, LoRA, panels,
-:8700) live under this checkout and are EACH their own git repo with their own remote; castforge
+`suite/forgefilms` (clips, sound, assembly, :8700) and `suite/graphic-novel` (dataset, LoRA, panels,
+:8500) live under this checkout and are EACH their own git repo with their own remote; castforge
 gitignores `suite/` and never looks inside. Shared: models `C:/AI-Models` (22 GB, via ComfyUI's
 `extra_model_paths.yaml`), ComfyUI on :8188, `core/gpu.py` for local-or-rented, `library/fabrics/`,
 and the built cast. Paths are stated ONLY in `shared/suite.py` - see `shared/README.md`.
+Each sibling imports `suite_link` (one file in its own root) to get those paths and the GPU choice.
+
+**Post is the step after `episode`.** CastForge stops at a rendered, voiced episode; forgefilms grades,
+crossfades, masters to -16 LUFS and captions it. `python castforge.py post FOLDER [--run]`, or the Suite
+page in the app. The contract between the two shapes is `shared/handoff.py` and nothing else.
 
 ## Docs
 Which GPU does what, and the two notebook modes: `docs/GPU_PLAN.md`.

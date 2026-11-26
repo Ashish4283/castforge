@@ -32,9 +32,11 @@ ROOT = os.path.dirname(HERE)                       # the castforge checkout: the
 TOOLS = {
     "castforge": {"folder": ROOT, "port": 8765,
                   "does": "photo or design -> rigged 3D character -> rendered, voiced episode"},
-    "forgefilms": {"folder": os.path.join(ROOT, "suite", "forgefilms"), "port": 8600,
+    # These ports are not ours to choose: each number is the one that tool's own START.bat already uses,
+    # and tests/test_suite.py reads those files to make sure this table has not drifted from them.
+    "forgefilms": {"folder": os.path.join(ROOT, "suite", "forgefilms"), "port": 8700,
                    "does": "clips, parallax, sound and assembly"},
-    "graphic-novel": {"folder": os.path.join(ROOT, "suite", "graphic-novel"), "port": 8700,
+    "graphic-novel": {"folder": os.path.join(ROOT, "suite", "graphic-novel"), "port": 8500,
                       "does": "dataset, LoRA training and panels"},
 }
 

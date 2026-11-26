@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -16,6 +17,22 @@ def test_the_three_tools_are_named_with_a_port_and_a_folder_each():
     assert len(set(ports)) == 3, "two tools on one port would fight"
     for name, tool in suite.TOOLS.items():
         assert tool["does"] and os.path.isabs(tool["folder"]), name
+
+
+def test_each_port_is_the_one_that_tool_itself_listens_on():
+    """These numbers belong to the other tools, not to us. The first version of this table invented
+    both of them, and the app would have sent people to doors nobody was behind."""
+    for name, bat, var in (("forgefilms", "START.bat", "PORT"),
+                           ("graphic-novel", "START.bat", "STUDIO_PORT")):
+        path = os.path.join(suite.TOOLS[name]["folder"], bat)
+        if not os.path.exists(path):
+            continue                      # not installed on this machine; nothing to disagree with
+        with open(path, encoding="utf-8", errors="replace") as f:
+            said = f.read()
+        want = re.search(rf'set\s+"{var}=(\d+)"', said)
+        assert want, f"{name}'s {bat} no longer sets {var}"
+        assert int(want.group(1)) == suite.TOOLS[name]["port"], \
+            f"{name} listens on {want.group(1)}, but shared/suite.py says {suite.TOOLS[name]['port']}"
 
 
 def test_castforge_is_the_suites_own_home_and_the_others_sit_under_it():

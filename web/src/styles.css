@@ -173,6 +173,19 @@ code { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
 .spacer { flex: 1; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.stack.sm { gap: 8px; }
+.row.between { justify-content: space-between; width: 100%; }
+.grow { flex: 1; min-width: 0; }
+.mono { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 11.5px; }
+.wrap { overflow-wrap: anywhere; }
+.warn-text { color: var(--warn); }
+/* the suite: one card per tool, so a long install path cannot stretch the row */
+.tool-card .card-body { padding-bottom: 8px; }
+.tool-title { display: inline-flex; align-items: center; gap: 7px; }
+/* an episode or a shared path: name and detail stacked on the left, the action held on the right.
+   `.item-body` is only padding, so a row that wants two columns has to say so itself. */
+.suite-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
+.suite-what { display: grid; gap: 3px; flex: 1; min-width: 0; }
 .muted { color: var(--text-3); }
 .dim { color: var(--text-2); }
 .small { font-size: 12px; }

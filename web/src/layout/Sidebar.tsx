@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from "react";
-import {Boxes, Building2, ChevronsLeft, ChevronsRight, ChevronsUpDown, Clapperboard, Film, Image, LayoutDashboard,
-  LifeBuoy, Plus, Users, X} from "lucide-react";
+import {Boxes, Building2, ChevronsLeft, ChevronsRight, ChevronsUpDown, Clapperboard, Film, Image, Layers,
+  LayoutDashboard, LifeBuoy, Plus, Users, X} from "lucide-react";
 import {post} from "../api";
 import {useStore} from "../app/store";
 import {GpuWhereLine} from "../components/GpuPicker";
@@ -12,6 +12,7 @@ export const PAGES = [
   {id: "sets", label: "Sets", icon: Image, group: "Assets"},
   {id: "props", label: "Props", icon: Boxes, group: "Assets"},
   {id: "library", label: "City library", icon: Building2, group: "Assets"},
+  {id: "suite", label: "Suite", icon: Layers, group: "Support"},
   {id: "help", label: "Help", icon: LifeBuoy, group: "Support"},
 ] as const;
 
