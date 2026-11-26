@@ -2523,6 +2523,7 @@ plan = director.plan(
     follow=bool(SET), strong=acting.STRONG,
     beats=[{"who": a.id, "target": d.id, "f0": f0, "f1": f1, "contact": c} for a, d, f0, f1, c in beats])
 shot_list = []                      # one dict per shot, for the timeline, the storyboard and the log
+shot_cams = []                      # the camera object each shot is seen through, for the 3D preview
 for n, sh in enumerate(plan):
     f0 = sh["frame"]
     f1 = plan[n + 1]["frame"] if n + 1 < len(plan) else scene.frame_end
@@ -2557,6 +2558,7 @@ for n, sh in enumerate(plan):
     # pushed in no longer matches the cut.
     shot_list.append({"frame": f0, "kind": kind, "on": sh["on"], "move": sh["move"],
                       "lens": float(c.data.lens)})
+    shot_cams.append(c)
 log(f"shots ({mode}): " + ", ".join(f"{s_['kind']}{'/' + '+'.join(s_['on']) if s_['on'] else ''}"
                                     f"@{s_['frame']}" for s_ in shot_list))
 
@@ -2831,7 +2833,33 @@ if args.preview3d:
         x, y = (c.evaluate(1) if c else 0.0 for c in a.curves[0][:2])
         return [round(x - origin.x, 3), round(y - origin.y, 3)]
 
-    json.dump({"fps": FPS, "frames": scene.frame_end, "origin": [origin.x, origin.y],
+    def camera_track():
+        """Where the camera really is for each shot, so the app can look through the lens it will render
+        through instead of guessing at one. A still camera needs one sample; one that moves is walked
+        every 8 frames and the app slides between them."""
+        out = []
+        for i, (s_, c_) in enumerate(zip(shot_list, shot_cams)):
+            f0 = max(1, s_["frame"])
+            f1 = shot_list[i + 1]["frame"] if i + 1 < len(shot_list) else scene.frame_end
+            wide = 2 * math.atan(c_.data.sensor_width / (2 * max(c_.data.lens, 1e-3)))
+            fov = 2 * math.atan(math.tan(wide / 2) * res[1] / res[0])      # three.js wants the vertical one
+            moves = s_["move"] != "static" or bool(c_.animation_data and c_.animation_data.action)
+            track = []
+            for f in (range(f0, max(f0 + 1, f1), 8) if moves else (f0,)):
+                scene.frame_set(f)
+                m = c_.matrix_world
+                at, look = m.translation, (m.to_3x3() @ Vector((0, 0, -1))).normalized()
+                track.append([f] + [round(v, 3) for v in (at.x - origin.x, at.y - origin.y, at.z)]
+                             + [round(v, 4) for v in look])
+            out.append({"n": i, "f0": f0, "f1": f1, "kind": s_["kind"], "on": s_["on"],
+                        "move": s_["move"], "lens": round(s_["lens"], 1),
+                        "fov": round(math.degrees(fov), 2), "track": track})
+        return out
+
+    cameras = camera_track()
+    scene.frame_set(1)
+    json.dump({"fps": FPS, "frames": scene.frame_end, "origin": [origin.x, origin.y], "cameras": cameras,
+               "res": list(res),
                "cast": {cid: {"start": start_spot(a), "rig": a.rig.name} for cid, a in cast.items()},
                "steps": [{"n": i, "who": st.get("who"), "do": st["do"], "f0": f0, "f1": f1,
                           **({"to": st["to"]} if isinstance(st.get("to"), list) else {})}

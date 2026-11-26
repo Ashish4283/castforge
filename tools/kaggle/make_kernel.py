@@ -22,9 +22,14 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
-OUT = os.path.join(HERE, "kernel")
 USER = os.environ.get("KAGGLE_USERNAME", "ashishjiwa")
-SLUG = "castforge-gpu"
+# Two jobs, two kernels, because they want different inputs and different amounts of patience: cloth is
+# a handful of 15-second squares, a clip is twenty minutes of one shot. Sharing a kernel would mean a
+# cloth run waiting behind seventeen gigabytes of video models.
+JOB = "clips" if "--job" in sys.argv and "clips" in sys.argv else "cloth"
+SLUG = "castforge-clips" if JOB == "clips" else "castforge-gpu"
+OUT = os.path.join(HERE, "kernel-clips" if JOB == "clips" else "kernel")
+SHOTS = os.environ.get("CASTFORGE_SHOTS_DATASET", f"{USER}/castforge-shots")
 
 
 def rows(src):
@@ -120,6 +125,45 @@ python generate/make_fabric.py --folder tmp/swatches/castforge/swatches
     code("batch(CLOTH, place)"),
 ]
 
+if JOB == "clips":
+    cells = [
+        md("""
+# CastForge: the shots, photographed
+
+Generated from `tools/kaggle/boot.py` - do not edit here, edit that and push again:
+
+```
+python tools/kaggle/make_kernel.py --job clips
+kaggle kernels push -p tools/kaggle/kernel-clips
+```
+
+Every decision about what a clip should contain was made on the laptop, by `shared/real.py`, which can
+read the scene: who is on screen, what colour their coat is, what the light is doing, and whether a
+person is speaking aloud or thinking with their mouth shut. This machine only has the GPU.
+
+Wan 2.2 image-to-video, the **5B** model: the 14B pair is 28 GB and its fp8 buys nothing on a T4, which
+has no fp8 at all. 81 frames is what it was trained on - 3.4 s at 24 fps - and the laptop has already
+cut every shot to fit.
+"""),
+        md("## The code (generated from boot.py)"),
+        code(boot),
+        md("## Set up: GPU, internet, ComfyUI, and 17 GB of Wan 2.2"),
+        code("""place = check()
+comfyui(place)
+wan(place)"""),
+        md("""
+## Make the clips
+
+One clip per workflow in the attached dataset. They are encoded here, because eighty PNGs is a hundred
+megabytes and the same clip is three. On the laptop:
+
+```
+kaggle kernels output %s/%s -p tmp/clips
+```
+""" % (USER, SLUG)),
+        code("clips(place)"),
+    ]
+
 nb = {"nbformat": 4, "nbformat_minor": 0,
       "metadata": {"kernelspec": {"display_name": "Python 3", "name": "python3"},
                    "language_info": {"name": "python"}},
@@ -132,14 +176,14 @@ io.open(book, "w", encoding="utf-8", newline="\n").write(json.dumps(nb, indent=1
 # The two switches that have cost the most time here, set where they cannot be forgotten.
 meta = {
     "id": f"{USER}/{SLUG}",
-    "title": "CastForge GPU",
+    "title": "CastForge Clips" if JOB == "clips" else "CastForge GPU",
     "code_file": SLUG + ".ipynb",
     "language": "python",
     "kernel_type": "notebook",
     "is_private": True,
     "enable_gpu": True,
     "enable_internet": True,
-    "dataset_sources": [],
+    "dataset_sources": [SHOTS] if JOB == "clips" else [],
     "competition_sources": [],
     "kernel_sources": [],
 }

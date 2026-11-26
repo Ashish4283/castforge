@@ -7,12 +7,22 @@ import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
 import {Json, Preview} from "../../api";
 import {COLORS} from "./SceneSetup";
 
+/** One shot as the render will actually see it: the camera's own place, aim and lens, written down by
+ *  scene_kit while it builds them. Nothing here is re-derived in the browser, so what the app shows
+ *  through the lens is what comes out of the render rather than a second opinion about it. */
+export interface Cam {
+  n: number; f0: number; f1: number; kind: string; on: string[]; move: string; lens: number;
+  fov: number;                              // vertical, degrees - three.js wants that one
+  track: number[][];                        // [frame, x, y, z, dx, dy, dz], Blender axes, origin removed
+}
 export interface Meta {
   fps: number; frames: number; origin: [number, number];
   cast: Record<string, {start: [number, number]; rig: string}>;
   steps: {n: number; who?: string; do: string; f0: number; f1: number}[];
   props?: {id: string; position: [number, number]; rotation?: number; on?: string; make?: string; from_set?: boolean}[];
   lines?: {who: string; text: string; start: number; end: number}[];
+  cameras?: Cam[];
+  res?: [number, number];
 }
 export interface Hooks {
   start: (who: string) => [number, number];          // where the live scene says someone starts
@@ -43,6 +53,8 @@ export class SceneViewer {
   private ray = new THREE.Raycaster();
   private floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private isPlaying = false;
+  private throughLens = false;                               // showing the render's own camera
+  private scissored = false;                                 // ...and letterboxed to its shape
   private last = 0;
   private dragging: {marker: THREE.Object3D; from: THREE.Vector3} | null = null;
   private selected: string | null = null;
@@ -114,6 +126,25 @@ export class SceneViewer {
       }
     }
     this.controls.update();
+    // Through the lens, the picture is the render's shape, not the panel's: without the bars you are
+    // judging a framing that will be cropped or padded when it is actually rendered.
+    const w = this.renderer.domElement.clientWidth, h = this.renderer.domElement.clientHeight;
+    const want = this.throughLens && this.meta?.res ? this.meta.res[0] / this.meta.res[1] : 0;
+    if (want) {
+      const box = w / h > want ? {w: h * want, h} : {w, h: w / want};
+      this.renderer.setScissorTest(true);
+      this.renderer.setScissor((w - box.w) / 2, (h - box.h) / 2, box.w, box.h);
+      this.renderer.setViewport((w - box.w) / 2, (h - box.h) / 2, box.w, box.h);
+      if (Math.abs(this.camera.aspect - want) > 1e-4) {
+        this.camera.aspect = want;
+        this.camera.updateProjectionMatrix();
+      }
+    } else if (this.scissored) {
+      this.renderer.setScissorTest(false);
+      this.renderer.setViewport(0, 0, w, h);
+      this.resize();
+    }
+    this.scissored = !!want;
     this.renderer.render(this.scene, this.camera);
   };
 
@@ -131,7 +162,55 @@ export class SceneViewer {
     if (stop && this.isPlaying) this.setPlaying(false);
     this.frame = Math.max(1, Math.min(this.meta.frames, f));
     this.mixer?.setTime((this.frame - 1) / this.meta.fps);
+    if (this.throughLens) this.putCamera(this.frame);
     this.hooks.frame(this.frame, this.meta);
+  }
+
+  /** Which shot is on screen at a frame, and where its camera is by then. */
+  shotAt(frame: number): Cam | null {
+    const cams = this.meta?.cameras || [];
+    let found: Cam | null = null;
+    for (const c of cams) if (frame >= c.f0) found = c;
+    return found || cams[0] || null;
+  }
+
+  /**
+   * Look through the lens the render will use, instead of flying around beside it.
+   *
+   * The camera is not worked out again here: scene_kit writes down where it put each one, so this only
+   * slides between the samples. A moving shot was walked every 8 frames; a still one has a single
+   * sample and never moves.
+   */
+  lens(on: boolean) {
+    this.throughLens = on && !!(this.meta?.cameras || []).length;
+    this.controls.enabled = !this.throughLens;
+    if (this.throughLens) this.putCamera(this.frame);
+    else {
+      this.camera.fov = 40;
+      this.camera.updateProjectionMatrix();
+      this.frameCamera(false);
+    }
+    return this.throughLens;
+  }
+
+  get lensOn() { return this.throughLens; }
+
+  private putCamera(frame: number) {
+    const cam = this.shotAt(frame);
+    if (!cam || !cam.track.length || !this.meta) return;
+    const t = cam.track;
+    let i = 0;
+    while (i < t.length - 1 && t[i + 1][0] <= frame) i++;
+    const a = t[i], b = t[Math.min(i + 1, t.length - 1)];
+    const k = b[0] > a[0] ? Math.min(1, Math.max(0, (frame - a[0]) / (b[0] - a[0]))) : 0;
+    const at = (j: number) => a[j] + (b[j] - a[j]) * k;
+    const [ox, oy] = this.meta.origin;
+    this.camera.position.set(at(1) + ox, at(3), -(at(2) + oy));
+    this.camera.lookAt(this.camera.position.clone().add(new THREE.Vector3(at(4), at(6), -at(5))));
+    if (this.camera.fov !== cam.fov) {
+      this.camera.fov = cam.fov;
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   private toThree = (p: [number, number]) => new THREE.Vector3(p[0] + this.meta!.origin[0], 0.01, -(p[1] + this.meta!.origin[1]));

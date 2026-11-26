@@ -39,6 +39,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
@@ -817,6 +818,78 @@ def main():
             for carries, from_ in real.carried(got):
                 print(f"  {carries}.png  <-  last frame of {from_}")
         out_dir = os.path.join("out", f"{name}-real")
+        if "--gpu" in a.args:
+            # Run it on the rented GPU: the shots go up as a Kaggle dataset, the kernel that reads them
+            # is pushed, and Kaggle runs it headless. The 5B model and a smaller frame are not a
+            # compromise about quality so much as about the card - a 15 GB T4 has no fp8 at all, so the
+            # 14B pair's fp8 weights buy nothing and its 28 GB does not fit.
+            only = [x for x in a.args[1:] if not x.startswith("--")]
+            mode = "5b"
+            area = next((a.args[i + 1] for i, x in enumerate(a.args) if x == "--area"), "480000")
+            stage = os.path.join(ROOT, "tools", "kaggle", "shots")
+            build = os.path.join(stage, "_build")
+            shutil.rmtree(stage, ignore_errors=True)
+            os.makedirs(build, exist_ok=True)
+            cmd = [sys.executable, os.path.join("scripts", "wan_workflows.py"),
+                   os.path.join("shots", f"{name}.real.json"), os.path.join("stills", name),
+                   os.path.relpath(build, ff), "--mode", mode, "--area", area]
+            if only:
+                cmd += ["--only"] + only
+            if subprocess.run(cmd, cwd=ff).returncode:
+                sys.exit("the workflows could not be built; the lines above say why")
+            for part in ("workflows", "inputs"):
+                shutil.move(os.path.join(build, part), os.path.join(stage, part))
+            shutil.rmtree(build, ignore_errors=True)
+            made = len(os.listdir(os.path.join(stage, "workflows")))
+            if not made:
+                sys.exit(f"no workflows were built for {only or 'this episode'}")
+            user = os.environ.get("KAGGLE_USERNAME") or "ashishjiwa"
+            # One archive, not two folders: the Kaggle CLI silently SKIPS folders unless you pass
+            # --dir-mode, and `--dir-mode zip` makes one zip per folder, which loses the folder names
+            # the kernel looks for. A single zip of the whole lot keeps the paths intact either way.
+            bundle = os.path.join(stage, "castforge-shots.zip")
+            with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as z:
+                for part in ("workflows", "inputs"):
+                    for fn in sorted(os.listdir(os.path.join(stage, part))):
+                        z.write(os.path.join(stage, part, fn), f"{part}/{fn}")
+            for part in ("workflows", "inputs"):
+                shutil.rmtree(os.path.join(stage, part), ignore_errors=True)
+            with open(os.path.join(stage, "dataset-metadata.json"), "w", encoding="utf-8") as f:
+                json.dump({"title": "CastForge shots", "id": f"{user}/castforge-shots",
+                           "licenses": [{"name": "CC0-1.0"}]}, f, indent=1)
+            print(f"\n{made} clips going to the rented GPU ({mode}, {area} pixels a frame), "
+                  f"{os.path.getsize(bundle) / 1e6:.1f} MB.")
+            listed = subprocess.run(["kaggle", "datasets", "list", "--mine", "-s", "castforge-shots"],
+                                    capture_output=True, text=True)
+            first = "castforge-shots" not in (listed.stdout or "")
+            # No -u: a dataset is PRIVATE unless you ask otherwise, and these are stills from the film.
+            push = (["kaggle", "datasets", "create", "-p", stage] if first else
+                    ["kaggle", "datasets", "version", "-p", stage, "-m", f"{name}: {made} shots",
+                     "--delete-old-versions"])
+            # The CLI prints its failures and exits 0 anyway, so the words are what has to be read.
+            said = subprocess.run(push, capture_output=True, text=True)
+            print((said.stdout or "") + (said.stderr or ""), end="")
+            if said.returncode or "error" in ((said.stdout or "") + (said.stderr or "")).lower():
+                sys.exit("the shots could not be uploaded; the lines above say why")
+            if subprocess.run([sys.executable, os.path.join(ROOT, "tools", "kaggle", "make_kernel.py"),
+                               "--job", "clips"]).returncode:
+                sys.exit("the kernel could not be built")
+            print("\nwaiting for Kaggle to finish taking the dataset in...")
+            for _ in range(30):
+                time.sleep(10)
+                status = subprocess.run(["kaggle", "datasets", "status", f"{user}/castforge-shots"],
+                                        capture_output=True, text=True).stdout.strip()
+                print(f"  {status or 'no answer yet'}")
+                if "ready" in status.lower():
+                    break
+            kernel = os.path.join(ROOT, "tools", "kaggle", "kernel-clips")
+            if subprocess.run(["kaggle", "kernels", "push", "-p", kernel]).returncode:
+                sys.exit("the kernel could not be pushed; the lines above say why")
+            print(f"\nIt is running on Kaggle now ({user}/castforge-clips). It has to fetch 17 GB of")
+            print("Wan 2.2 first, so the first run is the slow one. To follow it and fetch the clips:")
+            print(f"  kaggle kernels status {user}/castforge-clips")
+            print(f"  kaggle kernels output {user}/castforge-clips -p tmp/clips")
+            sys.exit(0)
         if "--run" not in a.args:
             print("\nnow build the image-to-video workflows (or add --run to do it here):")
             print(f'  cd "{ff}"')

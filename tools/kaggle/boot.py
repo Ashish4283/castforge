@@ -576,3 +576,154 @@ def alive(minutes=600):
             time.sleep(60)
     except KeyboardInterrupt:
         say("stopped")
+
+
+# --- clips: a rendered 3D shot, photographed ---------------------------------------------------------
+# The models for Wan 2.2 image-to-video. The 5B is the one a 15 GB T4 can actually finish a clip with:
+# the 14B pair is 28 GB of weights and its fp8 does nothing on a Turing card, which has no fp8 at all.
+WAN = [
+    ("diffusion_models", "split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors"),
+    ("text_encoders", "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors"),
+    ("vae", "split_files/vae/wan2.2_vae.safetensors"),
+]
+WAN_REPO = "Comfy-Org/Wan_2.2_ComfyUI_Repackaged"
+
+
+def wan(place=None):
+    """Fetch the Wan 2.2 image-to-video models (17 GB) and put them where ComfyUI looks for them.
+
+    Same rule as the checkpoint: a file already attached as a dataset is used where it lies. 17 GB is
+    four minutes of Kaggle's bandwidth and most of a session's patience if it happens every run."""
+    place = place or where()
+    got = []
+    for folder, path in WAN:
+        filename = path.split("/")[-1]
+        kept = None
+        for found in pathlib.Path("/kaggle/input").glob("**/" + filename) if os.path.isdir("/kaggle/input") else []:
+            kept, _ = found, say("attached already:", found.name)
+            break
+        if kept is None:
+            home = (place["scratch"] if place.get("batch") else place["keep"]) / "models" / folder
+            home.mkdir(parents=True, exist_ok=True)
+            kept = home / filename
+            if not kept.exists():
+                say(f"fetching {filename} ...")
+                pip("huggingface_hub")
+                from huggingface_hub import hf_hub_download
+                hf_hub_download(repo_id=WAN_REPO, filename=path, local_dir=str(home))
+                kept = next(home.glob("**/" + filename))
+            else:
+                say(f"already there: {filename} ({kept.stat().st_size / 2 ** 30:.1f} GB)")
+        where_comfy = place["comfy"] / "models" / folder
+        where_comfy.mkdir(parents=True, exist_ok=True)
+        link = where_comfy / filename
+        if not link.exists():
+            try:
+                link.symlink_to(kept)
+            except OSError:
+                shutil.copy(kept, link)
+        got.append(filename)
+    say("ComfyUI will load:", ", ".join(got))
+    return got
+
+
+def every(graph, wait=5400, tell=60):
+    """Run one graph and come back with EVERY image it saved. A clip is eighty of them, not one."""
+    body = json.dumps({"prompt": graph}).encode()
+    req = urllib.request.Request(URL + "/prompt", data=body, headers={"Content-Type": "application/json"})
+    try:
+        pid = json.loads(urllib.request.urlopen(req, timeout=60).read())["prompt_id"]
+    except urllib.error.URLError as e:
+        raise Gone(str(e)) from None
+    began = spoke = time.time()
+    while time.time() < began + wait:
+        time.sleep(3)
+        if time.time() - spoke >= tell:
+            spoke = time.time()
+            say(f"    ... {time.time() - began:.0f}s{queue_now()}")
+        try:
+            hist = json.loads(urllib.request.urlopen(f"{URL}/history/{pid}", timeout=30).read())
+        except urllib.error.URLError as e:
+            raise Gone(str(e)) from None
+        if pid in hist:
+            out = []
+            for node in hist[pid].get("outputs", {}).values():
+                out += node.get("images", [])
+            return out
+    return []
+
+
+def clips(place=None, fps=24, only=None):
+    """Run every workflow in the attached shot dataset and save a clip per workflow.
+
+    The workflows and the stills are made on the laptop by `castforge.py real --gpu`, which knows what
+    each shot should look like; this machine only has the GPU. Frames are encoded here rather than
+    downloaded: eighty PNGs is a hundred megabytes, and the same clip is three."""
+    place = place or where()
+    inputs = pathlib.Path("/kaggle/input")
+    found = sorted(inputs.glob("**/workflows/*.json")) if inputs.is_dir() else []
+    if not found:
+        # Kaggle usually unpacks an uploaded archive for you; when it has not, do it here rather than
+        # fail after seventeen gigabytes have already been fetched.
+        for zipped in (sorted(inputs.glob("**/*.zip")) if inputs.is_dir() else []):
+            out_zip = place["scratch"] / "shots"
+            say("unpacking", zipped.name)
+            shutil.unpack_archive(str(zipped), str(out_zip))
+            found = sorted(out_zip.glob("**/workflows/*.json"))
+            if found:
+                break
+    if not found:
+        raise SystemExit("No workflows attached. Add Input > Datasets > the one castforge pushed, "
+                         "which holds workflows/ and inputs/.")
+    stills = found[0].parent.parent / "inputs"
+    into = place["comfy"] / "input"
+    into.mkdir(parents=True, exist_ok=True)
+    for still in stills.glob("*.png"):
+        shutil.copy(still, into / still.name)
+    say(f"{len(found)} workflows, {len(list(stills.glob('*.png')))} stills")
+    start(place)
+    out = place["keep"] / "clips"
+    out.mkdir(parents=True, exist_ok=True)
+    made = []
+    for n, path in enumerate(found, start=1):
+        stem = path.stem
+        if only and stem not in only:
+            continue
+        say(f"[{n}/{len(found)}] {stem}")
+        began = time.time()
+        try:
+            images = every(json.loads(path.read_text(encoding="utf-8")))
+        except Gone as e:
+            say(f"  ComfyUI stopped answering: {e}")
+            say(last_words(40))
+            break
+        if not images:
+            say("  nothing came back; its log says why")
+            say(last_words(25))
+            continue
+        folder = place["comfy"] / "output" / (images[0].get("subfolder") or "")
+        frames = sorted(folder.glob("*.png"))
+        clip = out / f"{stem}.mp4"
+        try:
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-framerate", str(fps),
+                            "-pattern_type", "glob", "-i", str(folder / "*.png"),
+                            "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", str(clip)],
+                           check=True)
+        except (OSError, subprocess.CalledProcessError) as e:
+            say(f"  could not encode here ({e}); keeping the frames instead")
+            keep = out / stem
+            keep.mkdir(exist_ok=True)
+            for f in frames:
+                shutil.copy(f, keep / f.name)
+            clip = keep
+        if frames:                                  # one frame beside the clip, to check the face
+            shutil.copy(frames[len(frames) // 2], out / f"{stem}.png")
+        made.append({"name": stem, "frames": len(frames), "seconds": round(time.time() - began, 1)})
+        say(f"  {len(frames)} frames in {time.time() - began:.0f}s -> {clip.name}")
+        for f in folder.glob("*.png"):
+            f.unlink()                              # the next clip writes into the same place
+    (out / "manifest.json").write_text(json.dumps(made, indent=1))
+    say("")
+    say(f"{len(made)} clips in {out}")
+    say("On the laptop:  kaggle kernels output ashishjiwa/castforge-clips -p tmp/clips")
+    return out

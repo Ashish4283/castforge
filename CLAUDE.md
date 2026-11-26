@@ -71,6 +71,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | the stage page (who is in the scene, where they stand) | `web/src/pages/episodes/SceneSetup.tsx` (the floor, the selected actor or prop, then scene settings grouped as looks/sounds) |
 | the app (React 18 + TS + Vite, sidebar layout) | `web/src/`: `main.tsx` routes, `app/store.tsx` (movies, GPU, jobs, toasts, hash route), `app/episode.tsx` (open scene model: `update`, `save`, `scene()`, `cast()`), `components/ui.tsx` (Button, Card, Field...), `components/ParamInput.tsx` (any schema parameter), `pages/*`; design tokens at the top of `styles.css`. Old page at `/classic` (`app/index.html`, `static/app.js`) until removed |
 | Overview page (next step, progress) | `server.py` `/api/movie/progress`; `web/src/pages/Studio.tsx` |
+| seeing the shot the render will make | scene_kit writes the camera it built into `preview.json` `cameras[]` (place, aim, lens, fov, every 8 frames while it moves) and into `shot.timeline.json` `shots[]` (`move`, `lens`); the app only slides between those samples - `viewer.lens()`, the **Through the lens** button and the shot strip in `Editor3D.tsx` |
 | 3D scene editor (view, timeline, drag spots) | `web/src/pages/episodes/viewer.ts` (three.js) + `Editor3D.tsx`; export `scene_kit.py` `if args.preview3d`; job `--preview3d` |
 | showing what a slider moves | `bodyview.showTargets` (the kit already lists each target's vertices); the sliders report a hand on them through `CharacterDesigner.touching` |
 | the live view's own controls (light, backdrop, mesh, spin, photo) | `bodyview.setLook`/`snapshot` (`LIGHTS`, `BACKDROPS`); the bar is in `LivePreview.tsx` |
@@ -117,6 +118,11 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Blender 5.x has no `Action.fcurves`: use `bpy_extras.anim_utils.action_get_channelbag_for_slot`.
 - Scenes render with view transform `Standard` (AgX greys the set picture; see DESIGN_V2 D12).
 - Bash tool: heredocs with apostrophes or backslash escapes break; write edit scripts to a file.
+- The camera is NEVER worked out twice. scene_kit places it (rig bones, blocked lines of sight) and
+  writes down where it went; the app reads that. A second opinion in the browser would be a lie the
+  moment anything about the placement changed.
+- The Kaggle CLI prints its errors and exits 0 anyway, and it SKIPS folders unless you pass
+  --dir-mode. `castforge.py real --gpu` sends one zip and reads the words, not the exit code.
 - Wan 2.2 image-to-video was trained on 81 frames: 5.06 s at 16 fps. Longer in one pass drifts (the
   face and the clothes change) - `shared/real.py` splits a take into windows instead.
 - `cast.COLOURS` is a list of HAIR colours with no blue in it; clothes use `real.CLOTH_COLOURS`, and

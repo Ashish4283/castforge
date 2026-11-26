@@ -1,13 +1,14 @@
 // The 3D scene editor: see the scene, scrub or play, click a step on the timeline, drag where people start and
 // walk to. Edits go straight into the open scene (Save, then Build 3D preview to see the new movement).
 import {useEffect, useRef, useState} from "react";
-import {Box, Camera, Hammer, Pause, Play, Plus, RotateCcw, Save, Trash2, Undo2, View} from "lucide-react";
+import {Aperture, Box, Camera, Hammer, Pause, Play, Plus, RotateCcw, Save, Trash2, Undo2, View} from "lucide-react";
 import {Json, post} from "../../api";
 import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
 import {Badge, Button, Card, Notice, Select} from "../../components/ui";
 import {NavPad} from "../../components/controls";
-import {Meta, SceneViewer} from "./viewer";
+import {GLYPHS, words} from "../../components/glyphs";
+import {Cam, Meta, SceneViewer} from "./viewer";
 
 type Edit = {kind: "start" | "to" | "prop"; who: string; n?: number; prev: Json};
 
@@ -29,6 +30,8 @@ export function Editor3D() {
   const [undoCount, setUndoCount] = useState(0);
   const [building, setBuilding] = useState(false);
   const [part, setPart] = useState("head");
+  const [lens, setLens] = useState(false);
+  const [shot, setShot] = useState<Cam | null>(null);
   const [turn, setTurn] = useState<[number, number, number]>([0, 0, 0]);
   const [hold, setHold] = useState(0.6);
 
@@ -50,6 +53,10 @@ export function Editor3D() {
         const t = (f - 1) / m.fps, line = (m.lines || []).find(l => l.start <= t && t <= l.end);
         if (time.current) time.current.textContent = `${t.toFixed(1)} s · frame ${Math.round(f)}` + (line ? ` · ${line.who}: “${line.text}”` : "");
         if (head.current) head.current.style.left = `${(f - 1) / Math.max(1, m.frames - 1) * 100}%`;
+        setShot(prev => {
+          const now = viewer.current?.shotAt(f) || null;
+          return now?.n === prev?.n ? prev : now;       // only when the cut actually changes
+        });
       },
       note: setNote,
       select: (who, n) => setSel({who, n}),
@@ -190,14 +197,29 @@ export function Editor3D() {
         )}
         {preview && (
           <div className="vp-tools">
-            <Button size="sm" icon={<Camera size={14} />} onClick={() => viewer.current?.frameCamera(false)}>Front</Button>
-            <Button size="sm" icon={<View size={14} />} onClick={() => viewer.current?.frameCamera(true)}>Top</Button>
+            <Button size="sm" variant={lens ? "primary" : undefined} icon={<Aperture size={14} />}
+                    disabled={!meta?.cameras?.length}
+                    title={meta?.cameras?.length ? "See the shot the render will see"
+                                                 : "Build the 3D preview again to get the camera track"}
+                    onClick={() => setLens(viewer.current?.lens(!lens) ?? false)}>
+              {lens ? "Through the lens" : "Fly around"}
+            </Button>
+            {!lens && <Button size="sm" icon={<Camera size={14} />} onClick={() => viewer.current?.frameCamera(false)}>Front</Button>}
+            {!lens && <Button size="sm" icon={<View size={14} />} onClick={() => viewer.current?.frameCamera(true)}>Top</Button>}
           </div>
         )}
-        {preview && (
+        {preview && !lens && (
           <div className="vp-nav">
             <NavPad onOrbit={(x, y) => viewer.current?.orbit(x, y)} onZoom={d => viewer.current?.zoom(d)}
                     onReset={top => viewer.current?.frameCamera(top)} />
+          </div>
+        )}
+        {preview && lens && shot && (
+          <div className="vp-shot">
+            <b>{words(shot.kind)}</b>
+            {!!shot.on.length && <span>on {shot.on.join(" + ")}</span>}
+            <span>{shot.lens} mm</span>
+            {shot.move !== "static" && <span>{words(shot.move)}</span>}
           </div>
         )}
         {preview && <div className="vp-time" ref={time} />}
@@ -207,6 +229,22 @@ export function Editor3D() {
         <input ref={scrub} className="scrub" type="range" min={1} max={meta?.frames || 1} defaultValue={1} disabled={!meta}
                onInput={e => viewer.current?.seek(Number((e.target as HTMLInputElement).value))} aria-label="Timeline" />
       </div>
+      {meta?.cameras?.length ? (
+        <div className="shot-strip">
+          <span className="muted small">the cut</span>
+          {meta.cameras.map(c => (
+            <button key={c.n} type="button" className={`shot-chip ${shot?.n === c.n ? "on" : ""}`}
+                    title={`${words(c.kind)}${c.on.length ? " on " + c.on.join(" + ") : ""} · ${c.lens} mm · `
+                           + `${words(c.move)} · ${((c.f0 - 1) / (meta.fps || 24)).toFixed(1)}s`}
+                    onClick={() => { viewer.current?.seek(c.f0); setLens(viewer.current?.lens(true) ?? false); }}>
+              <span>{GLYPHS[c.kind] || "\u{1F3A5}"}</span>
+              <b>{words(c.kind)}</b>
+              {!!c.on.length && <small>{c.on.join("+")}</small>}
+              {c.move !== "static" && <em>{GLYPHS[c.move] || ""}</em>}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {meta && (
         <div className="lanes">
           {lanes.map(w => {
