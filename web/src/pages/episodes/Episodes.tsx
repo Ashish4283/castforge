@@ -1,10 +1,10 @@
-import {lazy, Suspense, useState} from "react";
+import {lazy, Suspense, useEffect, useState} from "react";
 import {Box, Braces, CheckCircle2, ClipboardCopy, Clapperboard, Film, LayoutGrid, MessageSquareText, Play, Plus,
-  Save, Settings2, Sparkles, Square, Wand2} from "lucide-react";
-import {post} from "../../api";
+  Save, Settings2, Sparkles, Square, Trash2, Wand2} from "lucide-react";
+import {api, post, q} from "../../api";
 import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
-import {Badge, Button, Card, copyText, Empty, Notice, Select, Tabs} from "../../components/ui";
+import {Badge, Button, Card, copyText, Empty, Modal, Notice, Select, Tabs} from "../../components/ui";
 import {SceneSetup} from "./SceneSetup";
 import {Script} from "./Script";
 import {Output} from "./Output";
@@ -31,6 +31,28 @@ export function Episodes() {
   const [newName, setNewName] = useState("");
   const [check, setCheck] = useState<{ok: boolean; output: string} | null>(null);
   const [busy, setBusy] = useState("");
+  const [killing, setKilling] = useState<string | null>(null);
+  const [typed, setTyped] = useState("");
+  const [held, setHeld] = useState<string | null>(null);
+  useEffect(() => {
+    setHeld(null);
+    if (!killing) return;
+    api<{words: {total: string}}>(`/api/episode/space?${q({movie, episode: killing})}`)
+      .then(r => setHeld(r.words.total)).catch(() => setHeld(null));
+  }, [killing, movie]);
+  const kill = async () => {
+    const name = (killing || "").split("/").pop() || "";
+    setBusy("delete");
+    try {
+      const r = await post<{words: string}>("/api/episode/delete",
+                                            {movie, episode: killing, confirm: name});
+      toast(`${name} deleted, ${r.words} free`);
+      if (killing === ep.ep) await ep.open("");
+      setKilling(null);
+      await reload(movie);
+    } catch (e) { toast((e as Error).message, "err"); }
+    finally { setBusy(""); }
+  };
   const pick = (t: Tab) => { setTab(t); try { localStorage.setItem("cf.epTab", t); } catch { /* ignore */ } };
 
   const act = async (what: string, fn: () => Promise<string | void>) => {
@@ -54,14 +76,49 @@ export function Episodes() {
   const status = ep.info?.status || "";
   const pct = percent(status);
 
+  const killName = (killing || "").split("/").pop() || "";
   return (
     <div className="workspace">
+      {killing && (
+        <Modal title={`Delete ${killName}?`} onClose={() => setKilling(null)}
+               text="Everything in it goes: the renders, the film, the photoreal clips. There is no undo."
+               foot={<>
+                 <Button variant="ghost" onClick={() => setKilling(null)}>Keep it</Button>
+                 <Button variant="danger" icon={<Trash2 size={14} />} busy={busy === "delete"}
+                         disabled={typed !== killName} onClick={kill}>
+                   Delete {held ? `and free ${held}` : "it"}
+                 </Button>
+               </>}>
+          <div className="stack">
+            <p className="muted small" style={{margin: 0}}>
+              {held ? <>This episode is holding <b>{held}</b> on disk.</>
+                    : <><span className="spinner" /> measuring what it is holding...</>}
+            </p>
+            <p className="muted small" style={{margin: 0}}>
+              If you only want the space back, close this and use <b>Space on disk</b> in the Output
+              tab instead: it clears what can be made again and keeps the film.
+            </p>
+            <label className="field">
+              <span>Type <code>{killName}</code> to confirm</span>
+              <input className="input" autoFocus value={typed} placeholder={killName}
+                     onChange={e => setTyped(e.target.value)}
+                     onKeyDown={e => { if (e.key === "Enter" && typed === killName) kill(); }} />
+            </label>
+          </div>
+        </Modal>
+      )}
       <aside className="ep-list">
         <div className="ep-head"><Clapperboard size={15} className="muted" /><h2>Episodes</h2><Badge>{current?.episodes.length ?? 0}</Badge></div>
         {(current?.episodes || []).map(e => (
-          <button key={e} className={`ep-item ${e === ep.ep ? "on" : ""}`} onClick={() => ep.open(e)} title={e}>
-            <span className="ep-icon"><Film size={14} /></span><span>{e}</span>
-          </button>
+          <div key={e} className={`ep-row ${e === ep.ep ? "on" : ""}`}>
+            <button className="ep-item" onClick={() => ep.open(e)} title={e}>
+              <span className="ep-icon"><Film size={14} /></span><span>{e}</span>
+            </button>
+            <button className="ep-kill" title={`Delete ${e} and everything in it`}
+                    onClick={ev => { ev.stopPropagation(); setKilling(e); setTyped(""); }}>
+              <Trash2 size={13} />
+            </button>
+          </div>
         ))}
         <div className="row nowrap" style={{marginTop: 10}}>
           <input className="input sm" style={{flex: 1}} value={newName} onChange={e => setNewName(e.target.value)} placeholder="New episode name"

@@ -380,3 +380,35 @@ def test_no_face_to_hold_leaves_the_graph_exactly_as_it_was():
     plain = real.still_graph("cabin_1.png", "a photograph", 1024, 576)
     assert real.with_face(plain, None) == plain
     assert real.with_face(plain, "") == plain
+
+
+def test_a_wide_shot_holds_its_shape_harder_than_a_close_up_does():
+    # the room is what drifts in a wide shot; a close-up is mostly face, where holding the depth too
+    # hard keeps the render's own flat CG modelling
+    assert real.depth_hold("wide") > real.depth_hold("medium") > real.depth_hold("close")
+    from core import schema
+    for kind in schema.SHOT_KINDS:
+        assert kind in real.DEPTH_HOLD, kind
+
+
+def test_the_depth_holds_the_shape_without_touching_what_it_is_made_of():
+    plain = real.still_graph("cabin_1.png", "a photograph", 1024, 576)
+    held = real.with_depth(plain, "depth_cabin_1.png", 0.75)
+    assert held["ks"]["inputs"]["positive"] == ["held", 0]
+    assert held["ks"]["inputs"]["negative"] == ["held", 1]
+    assert held["ks"]["inputs"]["latent_image"] == plain["ks"]["inputs"]["latent_image"], \
+        "it holds the shape, not what the picture is painted with"
+    assert held["held"]["inputs"]["strength"] == 0.75
+    assert held["held"]["inputs"]["end_percent"] < 1.0, "let go before the detail arrives"
+    assert real.with_depth(plain, None) == plain
+
+
+def test_depth_and_face_can_hold_the_same_picture_at_once():
+    plain = real.still_graph("cabin_1.png", "a photograph", 1024, 576)
+    both = real.with_depth(real.with_face(plain, "face_arthur.png", 0.8), "depth_cabin_1.png", 0.7)
+    assert both["ks"]["inputs"]["model"] == ["face", 0]        # the face still reaches the sampler
+    assert both["ks"]["inputs"]["positive"] == ["held", 0]     # ...and so does the shape
+    for name, node in both.items():
+        for value in node["inputs"].values():
+            if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
+                assert value[0] in both, f"{name} points at {value[0]}, which is not in the graph"

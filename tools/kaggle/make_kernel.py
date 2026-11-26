@@ -152,6 +152,7 @@ cut every shot to fit.
 comfyui(place)
 checkpoint("realvis_lightning", place)
 faces(place)
+shapes(place)
 wan(place)"""),
         md("""
 ## Make the stills real

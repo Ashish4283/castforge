@@ -924,6 +924,28 @@ def main():
                 wanted = {w.split("-")[0] for w in os.listdir(os.path.join(stage, "workflows"))}
                 # The same face in every shot: the character's OWN front render is already that
                 # person, so there is nothing to train - it just has to travel with the job.
+                # The shape of what the render put there, so re-imagining the surfaces does not move
+                # the walls. Depth Anything runs here, where it is free and already installed.
+                depths = {}
+                if "--no-depth" not in a.args:
+                    want = [(os.path.join(stills_dir, f"{r['id']}.png"),
+                             os.path.join(stage, "inputs", f"depth_{r['id']}.png"), r["id"])
+                            for r in got["shots"] if not only or r["id"] in only]
+                    want = [w for w in want if os.path.isfile(w[0])]
+                    if want:
+                        print(f"  making {len(want)} depth maps (Depth Anything, on this laptop)...")
+                        pairs = [p_ for src, out, _id in want for p_ in (src, out)]
+                        # AI_PYTHON, not the .venv: Depth Anything needs torch and transformers, which
+                        # live in the system Python here. The .venv has MediaPipe and pytest.
+                        ran = subprocess.run([config.AI_PYTHON,
+                                              os.path.join(ROOT, "generate", "depth_map.py")] + pairs,
+                                             capture_output=True, text=True)
+                        if ran.returncode:
+                            why = (ran.stderr or ran.stdout).strip().splitlines()
+                            print("  ! no depth maps, carrying on without them: "
+                                  + (why[-1] if why else "no reason given"))
+                        else:
+                            depths = {i: f"depth_{i}.png" for _s, out, i in want if os.path.isfile(out)}
                 faces, chars = {}, os.path.join(os.path.dirname(folder.rstrip("/\\")), "characters")
                 for row in got["shots"]:
                     for who in row["on"]:
@@ -940,10 +962,14 @@ def main():
                                              job["width"], job["height"], seed=job["seed"],
                                              denoise=job["denoise"], prefix=f"real/{job['id']}")
                     held = real.with_face(plain, face, real.face_hold(row["kind"]))
+                    depth = depths.get(job["id"])
+                    whole = real.with_depth(held, depth, real.depth_hold(row["kind"])) if depth else held
                     with open(os.path.join(jobs, f"{job['id']}.json"), "w", encoding="utf-8") as f:
-                        # both graphs: the GPU falls back to the plain one if the face nodes are missing
+                        # three graphs, deepest hold first: the GPU falls back if a node pack or a
+                        # model is missing, rather than failing the whole step
                         json.dump({"id": job["id"], "denoise": job["denoise"], "face": face,
-                                   "graph": held, "plain": plain}, f, indent=1)
+                                   "depth": depth, "whole": whole, "graph": held, "plain": plain},
+                                  f, indent=1)
                 shots_real = len(os.listdir(jobs))
                 print(f"  {shots_real} stills will be photographed first "
                       f"({real.REAL_CHECKPOINT.split('_')[0]}, moved "
@@ -951,6 +977,9 @@ def main():
                 if faces:
                     print(f"  holding {len(faces)} face{'s' if len(faces) > 1 else ''} to their own "
                           f"front render: {', '.join(sorted(faces))}")
+                if depths:
+                    print(f"  holding {len(depths)} shots to the shape the render gave them "
+                          f"(depth, {min(real.DEPTH_HOLD.values())}-{max(real.DEPTH_HOLD.values())})")
             if not made:
                 sys.exit(f"no workflows were built for {only or 'this episode'}")
             user = os.environ.get("KAGGLE_USERNAME") or "ashishjiwa"

@@ -573,3 +573,39 @@ def with_face(graph, face, weight=0.6, adapter=IP_FACE, clip_vision=CLIP_VISION)
                               "embeds_scaling": "V only"}}
     out["ks"] = dict(graph["ks"], inputs=dict(graph["ks"]["inputs"], model=["face", 0]))
     return out
+
+
+# --- keeping the room the room ---------------------------------------------------------------------
+# The first photographed stills were convincing and in the wrong place: the wooden cabin came back as a
+# stone barn, and the wide shot and the close-up ended up in different rooms. The look needs a denoise
+# high enough to re-imagine the surfaces, and at that strength the architecture goes with them. A depth
+# ControlNet holds the shape of what is there while the surfaces change, which is the whole point of it.
+DEPTH_NET = "controlnet-depth-sdxl.safetensors"
+# How hard to hold the shape, by shot. A wide shot is mostly room and that is what drifts; a close-up is
+# mostly face, where holding the depth too hard keeps the render's own flat CG modelling.
+DEPTH_HOLD = {"wide": 0.75, "medium": 0.6, "two_shot": 0.6, "over_shoulder": 0.55, "close": 0.45,
+              "auto": 0.6}
+
+
+def depth_hold(kind):
+    """How hard this shot holds the shape of what the render put there."""
+    return DEPTH_HOLD.get(str(kind), DEPTH_HOLD["auto"])
+
+
+def with_depth(graph, depth, strength=0.6, net=DEPTH_NET, until=0.85):
+    """The same graph, with what it is allowed to re-imagine held to the shape the render already has.
+
+    The hold is let go before the end (`until`): the last steps are where the surface detail arrives,
+    and a ControlNet still pulling then flattens it back towards the render it came from."""
+    if not depth:
+        return graph
+    out = dict(graph)
+    out["depth_img"] = {"class_type": "LoadImage", "inputs": {"image": depth}}
+    out["net"] = {"class_type": "ControlNetLoader", "inputs": {"control_net_name": net}}
+    out["held"] = {"class_type": "ControlNetApplyAdvanced",
+                   "inputs": {"positive": ["pos", 0], "negative": ["neg", 0], "control_net": ["net", 0],
+                              "image": ["depth_img", 0], "strength": float(strength),
+                              "start_percent": 0.0, "end_percent": float(until)}}
+    out["ks"] = dict(graph["ks"], inputs=dict(graph["ks"]["inputs"],
+                                              positive=["held", 0], negative=["held", 1]))
+    return out

@@ -634,6 +634,16 @@ def wan(place=None):
     return got
 
 
+SHAPES = [("controlnet", "diffusion_pytorch_model.fp16.safetensors",
+           "diffusers/controlnet-depth-sdxl-1.0", "controlnet-depth-sdxl.safetensors")]
+
+
+def shapes(place=None):
+    """Fetch the depth ControlNet (2.3 GB) that holds a re-imagined still to the shape of its render."""
+    _fetch_models(SHAPES, place or where())
+    say("shapes can be held now")
+
+
 FACES = [
     ("ipadapter", "sdxl_models/ip-adapter-plus-face_sdxl_vit-h.safetensors", "h94/IP-Adapter", None),
     ("clip_vision", "models/image_encoder/model.safetensors", "h94/IP-Adapter",
@@ -643,8 +653,13 @@ FACES = [
 
 def faces(place=None):
     """Fetch what is needed to hold a still to a face the character already has (about 3 GB)."""
-    place = place or where()
-    for folder, path, repo, rename in FACES:
+    _fetch_models(FACES, place or where())
+    say("faces can be held now")
+
+
+def _fetch_models(wanted, place):
+    """Fetch (folder, path-in-repo, repo, name-to-save-as) into ComfyUI's model folders, once."""
+    for folder, path, repo, rename in wanted:
         want = rename or path.split("/")[-1]
         home = (place["scratch"] if place.get("batch") else place["keep"]) / "models" / folder
         home.mkdir(parents=True, exist_ok=True)
@@ -671,7 +686,6 @@ def faces(place=None):
                 link.symlink_to(kept)
             except OSError:
                 shutil.copy(kept, link)
-    say("faces can be held now")
 
 
 def every(graph, wait=5400, tell=60):
@@ -847,7 +861,10 @@ def make_real(place=None, only=None):
         say(f"[{n}/{len(jobs)}] {job['id']} (moving it {job['denoise']})")
         began = time.time()
         images = []
-        for graph, how in ((job.get("graph"), "with its face held"), (job.get("plain"), "without the face")):
+        tries = ((job.get("whole"), "with its face and its shape held"),
+                 (job.get("graph"), "with its face held"),
+                 (job.get("plain"), "on its own"))
+        for graph, how in tries:
             if not graph:
                 continue
             try:
@@ -860,8 +877,8 @@ def make_real(place=None, only=None):
                 say(last_words(40))
                 return made
             if images:
-                if how.endswith("the face"):
-                    say("  (the face nodes are not installed here, so this one is not held)")
+                if graph is not tries[0][0]:
+                    say(f"  (fell back: {how})")
                 break
             say(f"  nothing came back {how}; its log says why")
             say(last_words(15))
