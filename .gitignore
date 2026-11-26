@@ -36,3 +36,8 @@ library/preview_kits/
 # (generate/remote_gpu.py) or in code (generate/make_fabric.py --demo). Data, not source.
 library/fabrics/
 .gpu.json
+
+# The rest of the suite. Each is its own git repository with its own history and its own remote, so
+# castforge neither tracks nor ignores their contents - it simply does not look inside. `shared/suite.py`
+# says where they are; `python castforge.py suite` prints it.
+suite/

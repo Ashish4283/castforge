@@ -38,6 +38,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | Need to change... | Go to |
 |---|---|
 | a step type, parameter, prop size, preset name, voice | `core/schema.py` (`ACTIONS`, `PROP_TYPES`, `LIGHTING`...) |
+| where the models, ComfyUI, fabrics or the other two tools live | `shared/suite.py` (pure, tested); CLI `castforge.py suite`; `shared/README.md` |
 | what a step does in Blender | `scene_kit.py` anchor `# --- script` then `elif do == "<name>"` |
 | walking, sitting, turning, arms, fingers | `scene_kit.py` `class Actor` (`def walk`, `def key_arms`...) |
 | expressions, gestures, postures, gaze maths | `blender/acting.py` (pure, tested) |
@@ -299,6 +300,9 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   that rim looks straight up inside it and the far wall reads as a second, floating piece of hat. Two
   rounds of "the cap is in two bits" were the camera, not the model - the geometry measured continuous,
   nested, non-degenerate and outward-facing every time.
+- Moving a sibling project into `suite/` does NOT make it part of this repo. It keeps its own `.git`,
+  its history and its remote, and castforge ignores `suite/` entirely - so `git add -A` here will
+  never pick up their work and their uncommitted changes survive the move untouched.
 - The studio is colourful on purpose (yellow, orange, lime, pink, cyan - `--paint-*`), but NO accent
   colour is ever laid over the 3D view itself: a character has to be judged against a quiet ground.
 
@@ -385,6 +389,13 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   MakeHuman and not that person. Reading bones (posed on the morphed body) and `data.vertices` (not) in
   the same breath made every character 1.60 m tall and gave a 1.28 m girl a toddler's head. Take the
   joint markers off the EVALUATED mesh, as `preview_mesh.joint_centres` does.
+
+## The suite
+`suite/forgefilms` (clips, sound, assembly, :8600) and `suite/graphic-novel` (dataset, LoRA, panels,
+:8700) live under this checkout and are EACH their own git repo with their own remote; castforge
+gitignores `suite/` and never looks inside. Shared: models `C:/AI-Models` (22 GB, via ComfyUI's
+`extra_model_paths.yaml`), ComfyUI on :8188, `core/gpu.py` for local-or-rented, `library/fabrics/`,
+and the built cast. Paths are stated ONLY in `shared/suite.py` - see `shared/README.md`.
 
 ## Docs
 Which GPU does what, and the two notebook modes: `docs/GPU_PLAN.md`.

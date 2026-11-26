@@ -20,6 +20,7 @@
     python castforge.py screen NAME [MOVIE_FOLDER] [--shots]  a screen test: can it walk, run, bend, grip?
     python castforge.py gpu where | use local|kaggle | make "worn denim" --kind denim | make --set
     python castforge.py gpu connect URL | status | fabric "..."   (a ComfyUI you already have an address for)
+    python castforge.py suite                    the other tools beside this one, and what they share
     python castforge.py doctor                   check that every tool CastForge needs is installed
 """
 import argparse
@@ -672,6 +673,13 @@ def main():
         if not a.args:
             sys.exit("usage: python castforge.py transcribe FILE.wav")
         sys.exit(subprocess.run([config.AI_PYTHON, os.path.join(ROOT, "generate", "transcribe.py"), a.args[0]]).returncode)
+    elif a.command == "suite":
+        # What else is installed beside CastForge, and what all of it shares. Rules in shared/suite.py.
+        sys.path.insert(0, ROOT)
+        from shared import suite
+        for row in suite.describe():
+            print(row)
+        sys.exit(1 if suite.check() else 0)
     elif a.command == "rig":
         # Look a built character's rig over, and optionally put right what can be put right without a
         # rebuild. Takes a name inside a movie folder, or a path to a .blend.
