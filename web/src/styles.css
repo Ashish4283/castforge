@@ -901,11 +901,14 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius
 
 /* --- the camera move, as a stick ------------------------------------------------------------ */
 .movepad-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.movepad { display: grid; grid-template-columns: repeat(3, 30px); grid-template-rows: repeat(3, 30px);
+.movepad { display: grid; grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(3, 42px);
   gap: 3px; flex: none; padding: 4px; border: 1px solid var(--line); border-radius: var(--r);
   background: var(--panel-2); }
-.mp { display: grid; place-items: center; border: 1px solid transparent; border-radius: var(--r-sm);
-  background: var(--panel-3); color: var(--text-2); cursor: pointer; font-size: 13px; padding: 0; }
+.mp { display: grid; place-items: center; align-content: center; gap: 1px; border: 1px solid transparent;
+  border-radius: var(--r-sm); background: var(--panel-3); color: var(--text-2); cursor: pointer;
+  font-size: 13px; padding: 0; }
+.mp small { font-size: 9px; line-height: 1; color: var(--text-3); }
+.mp.on small { color: var(--accent-2); }
 .mp:hover { border-color: var(--accent-line); }
 .mp.on { background: var(--accent-soft); border-color: var(--accent); }
 .mp.mid { border-radius: 50%; }

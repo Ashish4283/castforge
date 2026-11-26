@@ -312,7 +312,8 @@ export function MovePad({value, onChange, options}: {value: string | null; onCha
   const now = value || "static";
   return (
     <div className="movepad-row">
-      <div className="movepad" role="radiogroup" aria-label="Camera move">
+      <div className="movepad" role="radiogroup"
+           aria-label="Where the camera goes during the shot; the middle holds it still">
         {placed.map(o => {
           const [c, r] = MOVE_SPOTS[o];
           return (
@@ -320,12 +321,16 @@ export function MovePad({value, onChange, options}: {value: string | null; onCha
                     style={{gridColumn: c + 1, gridRow: r + 1}} title={words(o)}
                     onClick={() => onChange(o === "static" ? null : o)}>
               <span>{GLYPHS[o] || initials(o)}</span>
+              <small>{o === "static" ? "hold" : words(o).replace("pan ", "").replace(" in", " in").replace(" out", " out")}</small>
             </button>
           );
         })}
       </div>
       <div className="stack sm">
         <b className="mp-read">{words(now)}</b>
+        <span className="muted small" style={{maxWidth: 190}}>
+          Where the camera goes while the shot runs. The middle holds it still.
+        </span>
         {rest.map(o => (
           <button key={o} type="button" className={`mini ${o === now ? "on" : ""}`} onClick={() => onChange(o)}>
             {GLYPHS[o] || ""} {words(o)}

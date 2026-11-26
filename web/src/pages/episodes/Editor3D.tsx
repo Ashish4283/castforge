@@ -277,8 +277,9 @@ export function Editor3D() {
           <h4 className="section-title" style={{margin: 0}}>Pose fixes</h4>
           <Badge>{fixes.length}</Badge>
           <span className="muted small" style={{flex: 1, minWidth: 0}}>
-            Click a character in the view, scrub to the moment, turn a body part. The fix is stored in the
-            scene and re-applied on every render.
+            For when the render gets a pose slightly wrong: click the person in the view, scrub to the
+            moment, pick the body part, then turn it. <b>Nod</b> is up and down, <b>tip</b> is side to
+            side, <b>turn</b> is left and right. The fix is kept in the scene and re-applied every render.
           </span>
         </div>
         <div className="row nowrap" style={{flexWrap: "wrap"}}>
@@ -287,8 +288,9 @@ export function Editor3D() {
           <span className="muted small">at {at()} s</span>
           {(["x", "y", "z"] as const).map((axis, i) => (
             <label key={axis} className={`slider axis ${axis}`} style={{width: 180}}
-                   title={["nod up and down", "tip side to side", "turn left and right"][i]}>
-              {axis.toUpperCase()}
+                   title={`${axis.toUpperCase()}: ${["nod up and down", "tip side to side",
+                                                     "turn left and right"][i]}`}>
+              {["nod", "tip", "turn"][i]}
               <input type="range" min={-60} max={60} step={1} value={turn[i]}
                      onChange={e => setTurn(t => t.map((v, k) => (k === i ? Number(e.target.value) : v)) as [number, number, number])} />
               <span>{turn[i]}°</span>
