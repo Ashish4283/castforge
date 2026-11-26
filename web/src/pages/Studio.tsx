@@ -69,7 +69,8 @@ export function Studio() {
           <Card title="Episodes" text="Open one to edit its scenes, preview it in 3D and render it." bodyClass="tight">
             {Object.keys(p.episodes).length ? (
               <table className="table">
-                <thead><tr><th>Episode</th><th>Scenes</th><th>Rendered</th><th>Storyboard</th><th>Film</th><th /></tr></thead>
+                <thead><tr><th>Episode</th><th>Scenes</th><th>Rendered</th><th>Storyboard</th><th>Film</th>
+                  <th>Made from it</th><th /></tr></thead>
                 <tbody>
                   {Object.entries(p.episodes).map(([n, e]) => (
                     <tr key={n}>
@@ -78,7 +79,21 @@ export function Studio() {
                       <td>{e.rendered ?? 0} / {e.scenes}</td>
                       <td>{e.storyboard ? <Badge kind="ok">Yes</Badge> : <span className="muted">—</span>}</td>
                       <td>{film(e)}</td>
-                      <td style={{textAlign: "right"}}><Button size="sm" onClick={() => { open(n); go("episodes"); }}>Open <ArrowRight size={14} /></Button></td>
+                      <td>
+                        {/* what this episode has actually produced. It all lived inside the episode's
+                            Output tab, which meant it may as well not have existed. */}
+                        {e.graded || e.clips
+                          ? <span className="row nowrap" style={{gap: 6}}>
+                              {e.graded && <Badge kind="ok">graded film</Badge>}
+                              {!!e.clips && <Badge kind="accent">{e.clips} photoreal</Badge>}
+                            </span>
+                          : <span className="muted">&mdash;</span>}
+                      </td>
+                      <td style={{textAlign: "right"}}>
+                        <Button size="sm" onClick={() => { open(n); go("episodes"); }}>
+                          {e.graded || e.clips ? "See it" : "Open"} <ArrowRight size={14} />
+                        </Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

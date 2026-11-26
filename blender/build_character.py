@@ -671,6 +671,8 @@ COSTUME = (DESIGN or {}).get("costume") or {}     # coat, trim, belt, buckle, gl
 # plain garments (CC0 packs) whose textures recolour cleanly; picked from what the photo shows
 clothing = spec.get("clothing", {"garment": "trousers", "sleeves": "long"})
 # whole-body outfits: one mesh instead of a top and trousers (uniforms, suits, robes)
+# Which of these are one piece is core/schema.py ONE_PIECE: the checker there refuses a long coat with
+# any of them, and it can only do that if the two lists are the same list.
 STYLES = {
     "suit": {"male": "male_casualsuit01", "female": "female_casualsuit01"},
     "formal": {"male": "male_elegantsuit01", "female": "female_elegantsuit01"},

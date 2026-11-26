@@ -389,6 +389,7 @@ CHARACTER = {
                   default=1.0),
     "outfit.style": p("enum", "whole-body outfit (a uniform, suit or robe) instead of a top and trousers",
                       default="casual", values=["casual", "suit", "formal", "work", "robe", "tunic"]),
+    # a one-piece outfit has no separate top, so there is no hem for a long coat to continue
     "outfit.garment": p("enum", "below the waist (when the style is casual)", default="trousers",
                         values=["trousers", "shorts", "skirt", "dress"]),
     "outfit.sleeves": p("enum", "sleeves", default="long", values=["short", "long"]),
@@ -511,6 +512,35 @@ def design_get(design, key):
     return design
 
 
+# Costume pieces that cannot be built together, and why. A design may ask for either; asking for both
+# is asking for something that cannot exist, and the build used to carry on and quietly make one of them.
+# `blender/build_character.py` reads ONE_PIECE from here, so the two can never disagree about which
+# outfits have no separate top.
+ONE_PIECE = ("suit", "formal", "work", "robe", "tunic")
+
+
+def costume_clashes(design):
+    """Pairs of things a design asks for that cannot both be built, with what to change."""
+    if not isinstance(design, dict):
+        return []
+    outfit = design.get("outfit") if isinstance(design.get("outfit"), dict) else {}
+    costume = design.get("costume") if isinstance(design.get("costume"), dict) else {}
+    out = []
+    style = outfit.get("style")
+    if costume.get("coat") == "long" and style in ONE_PIECE:
+        out.append(f'costume.coat "long" and outfit.style "{style}" cannot both be built: a long coat is '
+                   f"made by continuing the top's hem downwards, and a one-piece outfit has no separate "
+                   f"top. Drop one of the two.")
+    shoe_style = outfit.get("shoe_style")
+    if costume.get("boots") and shoe_style not in (None, "", "none"):
+        out.append(f'costume.boots and outfit.shoe_style "{shoe_style}" cannot both be built: footwear '
+                   f"made for this foot replaces the library's boots. Drop one of the two.")
+    if costume.get("boots") and costume.get("socks"):
+        out.append("costume.socks and costume.boots: socks are cut for the bare foot and come through a "
+                   "library boot. The boot covers them anyway, so drop costume.socks.")
+    return out
+
+
 def check_design(design):
     """Plain-language problems in a character design (empty list: it can be built)."""
     if not isinstance(design, dict):
@@ -551,7 +581,7 @@ def check_design(design):
         elif spec["type"] == "color" and not (isinstance(v, str) and len(v.lstrip("#")) == 6
                                               and all(c in "0123456789abcdefABCDEF" for c in v.lstrip("#"))):
             problems.append(f"{key}: {v!r} must be a colour like #a3161a")
-    return problems
+    return problems + costume_clashes(design)
 
 
 def library_files():

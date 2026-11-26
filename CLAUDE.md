@@ -103,12 +103,23 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 
 Tests mirror modules: `tests/test_<module>.py`. Add a test with every pure-logic change.
 
+## Skills (`.claude/skills/`)
+`run-castforge` - start the app on 8787, rebuild the bundle, drive it with headless Chrome over CDP,
+and what to check when a change seems not to have appeared. `castforge-gpu` - what a T4 can and
+cannot run, pushing a dataset and a kernel, and the two Kaggle CLI behaviours that cost a run.
+
 ## Rules of the codebase
 - `core/` and `blender/acting.py`, `director.py` import no `bpy`: keep it that way (testable, cheap).
 - Blender scripts add ROOT and `blender/` to `sys.path`, then `from core import ...`, `import acting`.
 - Messages are plain language for non-programmers; log lines start with `CF:` (status parsing relies on it).
 - All ffmpeg calls go through `core.media` (`run`, `to_bt709`, `video_args`, `AUDIO_ARGS`).
 - Defaults must keep old scene.json files working. New features = optional keys.
+- A build that cannot make something must SAY so. `schema.costume_clashes` refuses designs that ask
+  for two things that cannot both exist (a one-piece outfit and a long coat; made shoes and library
+  boots; socks under boots), and `build_character` logs `NOT MADE:` with the reason. A silent drop
+  is the worst bug this project makes: the build reports success and the character is wrong.
+- Anything produced must land in the MOVIE folder, not a scratch folder: `<episode>/real/`,
+  `<episode>/post/`. A file the app cannot show has not been delivered.
 - A parameter gets a control, not a text box. A number means a slider, so it needs a span in
   `schema.RANGES`; an enum means chips, so a new word needs a picture in `glyphs.ts` (it falls back to
   its initials, which is a reminder, not a failure). Wire it in `ParamInput.tsx` by TYPE, never per page.

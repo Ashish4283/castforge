@@ -573,6 +573,11 @@ def episode_progress(folder):
     return {"scenes": len(scenes), "rendered": min(rendered, len(scenes)),
             "missing": sorted(os.path.basename(c) for c in wanted if not os.path.isfile(c)),
             "storyboard": os.path.isfile(os.path.join(folder, "storyboard.jpg")),
+            # what this episode has actually produced, so the page people land on says so. Everything
+            # made here used to be invisible until you opened the episode and found the right tab.
+            "graded": os.path.isfile(os.path.join(folder, "post", "film.mp4")),
+            "clips": len([f for f in os.listdir(os.path.join(folder, "real"))
+                          if f.endswith(".mp4")]) if os.path.isdir(os.path.join(folder, "real")) else 0,
             "film": os.path.isfile(video), "current": os.path.isfile(video) and os.path.getmtime(video) >= spec_time}
 
 

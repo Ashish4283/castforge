@@ -85,7 +85,9 @@ export interface Step { key: string; title: string; tab: string; state: "done" |
 export interface Progress {
   movie: string; steps: Step[]; next: Step | null;
   episodes: Record<string, {scenes: number; rendered?: number; storyboard?: boolean; film?: boolean;
-    current?: boolean; broken?: boolean; missing?: string[]}>;
+    current?: boolean; broken?: boolean; missing?: string[];
+    /** what this episode has actually produced */
+    graded?: boolean; clips?: number}>;
 }
 export interface BuildingTemplate {
   id: string; title: string; description: string; category: string; category_title: string; family: string;

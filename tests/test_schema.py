@@ -362,3 +362,66 @@ def test_a_clip_tells_you_how_long_it_is_and_an_unreadable_one_is_still_listed(t
     facts = {c["name"]: c for c in schema.clip_facts()}
     assert facts["punch"] == {"name": "punch", "seconds": 15.45, "source": "cmu", "fps": 120}
     assert facts["broken"]["seconds"] is None      # you can still name it in a scene
+
+
+# --- things a design may ask for that cannot both be built --------------------------------------------
+# santa_2 asked for a one-piece suit AND a long coat, and for sneakers AND boots. The build made one of
+# each pair, reported "problems": [], and produced a red onesie. Refusing is right; refusing in silence
+# is what made it a bug nobody could trace.
+SANTA = {"gender": "male", "age": 70, "height_cm": 178,
+         "outfit": {"style": "suit", "shoe_style": "sneaker"},
+         "costume": {"coat": "long", "boots": "#141414"}}
+
+
+def test_a_one_piece_outfit_and_a_long_coat_cannot_both_be_built():
+    said = schema.costume_clashes(SANTA)
+    assert any("coat" in m and "suit" in m for m in said)
+    assert any("Drop one of the two" in m for m in said)
+
+
+def test_made_footwear_and_library_boots_cannot_both_be_built():
+    assert any("boots" in m and "shoe_style" in m for m in schema.costume_clashes(SANTA))
+
+
+def test_the_design_check_itself_refuses_them():
+    # it is not enough for a helper to know: check_design is what the app and the CLI call
+    problems = schema.check_design(SANTA)
+    assert len([p_ for p_ in problems if "cannot both be built" in p_]) == 2
+
+
+def test_each_half_on_its_own_is_perfectly_fine():
+    coat_only = {**SANTA, "outfit": {"shoe_style": "sneaker"}}
+    assert not any("coat" in m for m in schema.costume_clashes(coat_only))
+    boots_only = {**SANTA, "outfit": {"style": "casual"}, "costume": {"boots": "#141414"}}
+    assert not any("coat" in m for m in schema.costume_clashes(boots_only))
+    assert schema.costume_clashes({"outfit": {"style": "casual"}, "costume": {"coat": "long"}}) == []
+
+
+def test_every_one_piece_style_is_one_the_vocabulary_knows():
+    allowed = schema.CHARACTER["outfit.style"]["values"]
+    for style in schema.ONE_PIECE:
+        assert style in allowed, style
+    assert "casual" not in schema.ONE_PIECE, "casual is a top and trousers; a coat can continue its hem"
+
+
+def test_a_design_that_asks_for_nothing_impossible_says_nothing():
+    assert schema.costume_clashes({"outfit": {"style": "casual"}, "costume": {"trim": "#fff"}}) == []
+    assert schema.costume_clashes("not a design") == []
+
+
+def test_the_one_piece_list_is_the_same_list_the_build_uses():
+    # a style that is one piece here and two pieces in the build would let the clash back in
+    import re as _re
+    from pathlib import Path as _Path
+    src = (_Path(__file__).parent.parent / "blender" / "build_character.py").read_text(encoding="utf-8")
+    block = _re.search(r"^STYLES = \{(.*?)^\}", src, _re.S | _re.M)
+    assert block, "STYLES is not where it was in build_character.py"
+    built = set(_re.findall(r'^\s*"([a-z_]+)":', block.group(1), _re.M))
+    assert built == set(schema.ONE_PIECE), f"build makes {built}, schema calls {set(schema.ONE_PIECE)} one piece"
+
+
+def test_socks_and_library_boots_do_not_go_together_either():
+    # socks are cut for the bare foot and come through a boot; the boot covers them anyway
+    said = schema.costume_clashes({"costume": {"boots": "#141414", "socks": "#ffffff"}})
+    assert any("socks" in m and "boot" in m for m in said)
+    assert schema.costume_clashes({"costume": {"socks": "#ffffff"}}) == []

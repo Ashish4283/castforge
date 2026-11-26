@@ -380,7 +380,8 @@ def test_movie_progress_names_the_next_step_and_missing_characters(tmp_path, mon
 
     p = server.movie_progress("film")
     assert p["episodes"]["ep1"] == {"scenes": 2, "rendered": 1, "missing": ["tom.blend"],
-                                    "storyboard": False, "film": False, "current": False}
+                                    "storyboard": False, "film": False, "current": False,
+                                    "graded": False, "clips": 0}
     steps = {s["key"]: s["state"] for s in p["steps"]}
     assert steps == {"story": "done", "cast": "started", "sets": "todo", "storyboard": "todo",
                      "render": "started", "finish": "todo"}
@@ -616,3 +617,20 @@ def test_an_indexed_sound_whose_file_went_missing_says_so(tmp_path, monkeypatch)
     with pytest.raises(HTTPException) as gone:
         server.sound_preview("beds", "wind")
     assert "file is missing" in gone.value.detail
+
+
+def test_the_overview_says_what_an_episode_has_actually_produced(tmp_path):
+    # all of it lived inside the episode's Output tab, which meant it may as well not have existed
+    ep = tmp_path / "film" / "act1"
+    (ep / "post").mkdir(parents=True)
+    (ep / "real").mkdir()
+    (ep / "scene.json").write_text(json.dumps({"background": "bg.png", "cast": {}, "script": []}),
+                                   encoding="utf-8")
+    assert server.episode_progress(str(ep))["graded"] is False
+    assert server.episode_progress(str(ep))["clips"] == 0
+
+    (ep / "post" / "film.mp4").write_bytes(b"film")
+    (ep / "real" / "a.mp4").write_bytes(b"clip")
+    (ep / "real" / "a.still.png").write_bytes(b"still")       # a still is not a clip
+    got = server.episode_progress(str(ep))
+    assert got["graded"] is True and got["clips"] == 1
