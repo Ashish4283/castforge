@@ -1057,6 +1057,10 @@ if COSTUME or made_wear:
     hip_z, knee_z = head("DEF-thigh.L").z, head("DEF-shin.L").z
     TORSO = ("spine", "pelvis", "thigh", "torso", "hips")
     made = []
+    # ...and what was asked for and NOT made, with the reason. A costume piece that quietly does
+    # not appear is the worst kind of bug: the build says it succeeded, the character looks wrong,
+    # and nothing anywhere says the two are connected.
+    skipped = []
 
     # the body surface without helpers: keeps the coat clear of the legs; its weights shape the coat's skirt
     _, body_w = rest(human)
@@ -1077,6 +1081,10 @@ if COSTUME or made_wear:
         return kit.push_clear(p, tuple(hit), tuple(normal), 0.03) if hit is not None else p
 
     # long coat: continue the top's hem down to mid-thigh, flaring a little, weighted from hips toward legs
+    if COSTUME.get("coat") == "long" and not top_obj:
+        skipped.append(f"a long coat: the coat is made by continuing the top's hem downwards, and "
+                       f'outfit.style "{style}" is one piece with no hem to continue. Either drop '
+                       f"outfit.style or drop costume.coat.")
     if COSTUME.get("coat") == "long" and top_obj:
         _, co = rest(top_obj)
         hem = kit.openings(co, kit.boundary_loops(faces_of(top_obj)), centre_x).get("hem")
@@ -1660,7 +1668,13 @@ if COSTUME or made_wear:
                 m = bottom_obj.modifiers.new("cf_hide_in_boots", "MASK")
                 m.vertex_group, m.invert_vertex_group = "cf_in_boots", True
         made.append(f"boots (top {top_z:.2f} m)" if top_z is not None else "boots")
+    if COSTUME.get("boots") and _made_shoes:
+        skipped.append(f'boots: outfit.shoe_style "{(DESIGN or {}).get("outfit", {}).get("shoe_style")}" '
+                       f'makes footwear for this foot, which replaces them. Drop one of the two.')
     log("costume", made)
+    if skipped:
+        for why in skipped:
+            log("NOT MADE:", why)
 
 # --- the rig, tidied -------------------------------------------------------------------------------------
 # Automatic weighting leaves vertices pulled by eight or nine bones. No exporter keeps more than four, and
