@@ -67,6 +67,8 @@ export interface Shot {
 export interface EpisodeInfo {
   scene: string; status: string; rendering: boolean; video: string | null;
   shots: Shot[]; storyboard: string | null;
+  /** photoreal clips fetched back from the GPU, beside the episode they came from */
+  real: {id: string; video: string; still: string | null}[];
   downloads: {name: string; url: string}[]; previews: Preview[];
 }
 export interface Step { key: string; title: string; tab: string; state: "done" | "started" | "todo"; detail: string }

@@ -25,6 +25,8 @@
                                                  (--run does the post too: one film, graded, -16 LUFS, captioned)
     python castforge.py real FOLDER [--run]      the same shots, photographed: one image-to-video clip per
                                                  camera shot, each prompt read off the scene itself
+                      FOLDER --gpu [IDS...]      ...and run it on the rented GPU
+                      FOLDER --fetch             bring the clips home, into <episode>/real/ (the app shows them)
     python castforge.py doctor                   check that every tool CastForge needs is installed
 """
 import argparse
@@ -785,6 +787,62 @@ def main():
         ff = suite.TOOLS["forgefilms"]["folder"]
         if not os.path.isdir(ff):
             sys.exit(f"forgefilms is not installed at {ff} - it owns the image-to-video workflows")
+        if "--fetch" in a.args:
+            # Bring the clips home. They belong BESIDE the episode they came from - in <episode>/real/ -
+            # not in a scratch folder the app knows nothing about, which is where they were landing.
+            import tempfile
+            user = os.environ.get("KAGGLE_USERNAME") or "ashishjiwa"
+            into = os.path.join(folder, "real")
+            os.makedirs(into, exist_ok=True)
+            # --from FOLDER files a run you already downloaded; otherwise the finished run is fetched
+            said = [a.args[i + 1] for i, x in enumerate(a.args) if x == "--from" and i + 1 < len(a.args)]
+            if said:
+                tmp, borrowed = os.path.abspath(said[0]), True
+                if not os.path.isdir(tmp):
+                    sys.exit(f"{tmp} is not a folder")
+                print(f"filing what is already in {tmp} ...")
+            else:
+                tmp, borrowed = tempfile.mkdtemp(prefix="castforge_clips_"), False
+                print(f"fetching {user}/castforge-clips ...")
+                if subprocess.run(["kaggle", "kernels", "output", f"{user}/castforge-clips", "-p", tmp],
+                                  capture_output=True, text=True).returncode:
+                    sys.exit("could not fetch the run; is it finished? kaggle kernels status "
+                             f"{user}/castforge-clips")
+            brought = []
+            for root, _dirs, files in os.walk(tmp):
+                for f in files:
+                    src, where = os.path.join(root, f), os.path.basename(root)
+                    if f.endswith(".mp4"):
+                        shutil.copyfile(src, os.path.join(into, re.sub(r"-5b-\d+$|-fast-\d+$|-full-\d+$",
+                                                                       "", f[:-4]) + ".mp4"))
+                        brought.append(f)
+                    elif where == "stills" and f.endswith(".png"):
+                        shutil.copyfile(src, os.path.join(into, f[:-4] + ".still.png"))
+            # frames, if a run could not encode them where it ran
+            for root, dirs, _files in os.walk(tmp):
+                for d_ in dirs:
+                    frames = sorted(glob.glob(os.path.join(root, d_, "*.png")))
+                    clean = re.sub(r"-5b-\d+$|-fast-\d+$|-full-\d+$", "", d_)
+                    made = os.path.join(into, clean + ".mp4")
+                    if len(frames) > 8 and not os.path.isfile(made):
+                        digits = re.search(r"\d+", os.path.basename(frames[0]))
+                        pattern = os.path.basename(frames[0]).replace(
+                            digits.group(0), f"%0{len(digits.group(0))}d", 1)
+                        media.run([config.FFMPEG, "-y", "-v", "error", "-framerate", "24",
+                                   "-start_number", digits.group(0), "-i",
+                                   os.path.join(root, d_, pattern), "-c:v", "libx264", "-crf", "18",
+                                   "-pix_fmt", "yuv420p", made])
+                        brought.append(clean + ".mp4 (encoded here)")
+            if not borrowed:
+                shutil.rmtree(tmp, ignore_errors=True)
+            if not brought:
+                sys.exit("that run brought nothing back; its log says why:\n"
+                         f"  kaggle kernels output {user}/castforge-clips -p tmp/clips")
+            print(f"\n{len(brought)} files into {into}")
+            for b in brought:
+                print(f"  {b}")
+            print("\nThey are in the app now: open the episode and look at the Output tab.")
+            sys.exit(0)
         got = real.plan(folder)
         for problem in real.check(got):
             print(f"! {problem}")

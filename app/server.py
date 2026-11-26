@@ -670,6 +670,17 @@ def episode(movie: str, episode: str):
                          ("report.txt", "Publish report")):
             if os.path.exists(os.path.join(pub, f)):
                 downloads.append({"name": label, "url": media_url(os.path.join(pub, f))})
+    # the photoreal clips, if any have been fetched: they live beside the episode they came from, not
+    # in a scratch folder somewhere, so the app can simply show them
+    real_dir = os.path.join(d, "real")
+    photoreal = []
+    if os.path.isdir(real_dir):
+        for f in sorted(os.listdir(real_dir)):
+            if f.endswith(".mp4"):
+                name = f[:-4]
+                still = os.path.join(real_dir, name + ".still.png")
+                photoreal.append({"id": name, "video": media_url(os.path.join(real_dir, f)),
+                                  "still": media_url(still) if os.path.isfile(still) else None})
     board = os.path.join(d, "storyboard.jpg")
     # a job asked for while the GPU was busy is waiting its turn: say so here rather than look un-asked-for
     waiting = next((q for q in queue_items() if q["name"].endswith(f" of {os.path.basename(d)}")), None)
@@ -680,7 +691,7 @@ def episode(movie: str, episode: str):
             "status": status_text, "rendering": bool(st and st["alive"]) or bool(waiting),
             "video": media_url(video) if os.path.exists(video) else None, "shots": shots,
             "storyboard": media_url(board) if os.path.exists(board) else None, "downloads": downloads,
-            "previews": previews}
+            "previews": previews, "real": photoreal}
 
 
 @app.post("/api/episode/save")

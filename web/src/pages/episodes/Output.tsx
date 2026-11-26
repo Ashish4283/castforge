@@ -53,6 +53,19 @@ export function Output() {
           </div>
         </Card>
       )}
+      {info.real?.length > 0 && (
+        <Card title="Photoreal clips"
+              text="The same shots, photographed: each still was re-imagined by RealVisXL and then animated.">
+          <div className="shots">
+            {info.real.map(c => (
+              <div key={c.id} className="stack" style={{gap: 6}}>
+                <span className="muted small">{c.id}</span>
+                <video src={c.video} controls preload="metadata" poster={c.still || undefined} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
       {info.storyboard && (
         <Card title="Storyboard" text="One still per shot.">
           <a className="storyboard" href={info.storyboard} target="_blank" rel="noreferrer"><img src={info.storyboard} alt="Storyboard" /></a>

@@ -40,6 +40,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | a step type, parameter, prop size, preset name, voice | `core/schema.py` (`ACTIONS`, `PROP_TYPES`, `LIGHTING`...) |
 | where the models, ComfyUI, fabrics or the other two tools live | `shared/suite.py` (pure, tested); CLI `castforge.py suite`; `shared/README.md` |
 | handing a rendered episode to forgefilms for post | `shared/handoff.py` (pure, tested); CLI `castforge.py post FOLDER [--run]`; `/api/suite/post`; Suite page |
+| where a photoreal clip LIVES | `<episode>/real/<id>.mp4` (+ `<id>.still.png`), beside the episode it came from; `/api/episode` `real[]`; shown in the Output tab. `castforge.py real FOLDER --fetch` brings a finished GPU run home, `--from DIR` files one already downloaded |
 | making a rendered still photographic before it is animated | `shared/real.py` `still_graph` (RealVisXL image-to-image), `DENOISE` by shot size (a face moves less than a room), `with_face` (ip-adapter-plus-face holds it to the character's own front render); run by `tools/kaggle/boot.py` `make_real()` before `clips()` |
 | turning a rendered 3D shot into a photographed one | `shared/real.py` (pure, tested); CLI `castforge.py real FOLDER [--run]`; the prompt is read off the scene, the takes are the director's own cuts, and the 81-frame limit is Wan 2.2's |
 | building a character the graphic novel designed | `shared/cast.py` (pure, tested); CLI `castforge.py cast`; `/api/suite/cast*`; Suite page |
