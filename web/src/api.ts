@@ -69,6 +69,8 @@ export interface EpisodeInfo {
   shots: Shot[]; storyboard: string | null;
   /** photoreal clips fetched back from the GPU, beside the episode they came from */
   real: {id: string; video: string; still: string | null}[];
+  /** the graded, mastered film forgefilms cut from these scenes */
+  post: {video: string; captions: string | null} | null;
   downloads: {name: string; url: string}[]; previews: Preview[];
 }
 export interface Step { key: string; title: string; tab: string; state: "done" | "started" | "todo"; detail: string }

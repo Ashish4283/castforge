@@ -53,6 +53,15 @@ export function Output() {
           </div>
         </Card>
       )}
+      {info.post && (
+        <Card title="Graded film"
+              text="Cut and finished by forgefilms: colour, crossfades, captions, mastered to -16 LUFS.">
+          <video className="video" src={info.post.video} controls key={info.post.video}>
+            {info.post.captions && <track default kind="captions" src={info.post.captions}
+                                          srcLang="en" label="English" />}
+          </video>
+        </Card>
+      )}
       {info.real?.length > 0 && (
         <Card title="Photoreal clips"
               text="The same shots, photographed: each still was re-imagined by RealVisXL and then animated.">

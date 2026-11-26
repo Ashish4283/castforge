@@ -681,6 +681,13 @@ def episode(movie: str, episode: str):
                 still = os.path.join(real_dir, name + ".still.png")
                 photoreal.append({"id": name, "video": media_url(os.path.join(real_dir, f)),
                                   "still": media_url(still) if os.path.isfile(still) else None})
+    # the graded film forgefilms made from these scenes, brought home by `castforge.py post --run`
+    post_film = os.path.join(d, "post", "film.mp4")
+    post_vtt = os.path.join(d, "post", "film.vtt")
+    graded = None
+    if os.path.isfile(post_film):
+        graded = {"video": media_url(post_film),
+                  "captions": media_url(post_vtt) if os.path.isfile(post_vtt) else None}
     board = os.path.join(d, "storyboard.jpg")
     # a job asked for while the GPU was busy is waiting its turn: say so here rather than look un-asked-for
     waiting = next((q for q in queue_items() if q["name"].endswith(f" of {os.path.basename(d)}")), None)
@@ -691,7 +698,7 @@ def episode(movie: str, episode: str):
             "status": status_text, "rendering": bool(st and st["alive"]) or bool(waiting),
             "video": media_url(video) if os.path.exists(video) else None, "shots": shots,
             "storyboard": media_url(board) if os.path.exists(board) else None, "downloads": downloads,
-            "previews": previews, "real": photoreal}
+            "previews": previews, "real": photoreal, "post": graded}
 
 
 @app.post("/api/episode/save")

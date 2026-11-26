@@ -769,8 +769,18 @@ def main():
         made = os.path.join(ff, out, f"{got['title']}.vtt")
         shutil.copyfile(paths["captions"], made)
         film = os.path.join(ff, out, f"{got['title']}.mp4")
-        print(f"\nfilm      {film}")
-        print(f"captions  {made}  ({got['captions'].count(' --> ')} lines, from the scenes themselves)")
+        # ...and bring it home. A film finished in another tool's out/ folder is a film nobody can find:
+        # it belongs beside the episode it was cut from, where the app looks.
+        home = os.path.join(folder, "post")
+        os.makedirs(home, exist_ok=True)
+        for src, as_ in ((film, "film.mp4"), (made, "film.vtt")):
+            if os.path.isfile(src):
+                shutil.copyfile(src, os.path.join(home, as_))
+        print(f"\nfilm      {os.path.join(home, 'film.mp4')}")
+        print(f"captions  {os.path.join(home, 'film.vtt')}  "
+              f"({got['captions'].count(' --> ')} lines, from the scenes themselves)")
+        print(f"          (also left in forgefilms at {os.path.join(ff, out)})")
+        print("\nIt is in the app: open the episode and look at the Output tab.")
         sys.exit(1 if problems else 0)
     elif a.command == "real":
         # The step after `post`: the rendered 3D shots, photographed. Every decision about what a clip
