@@ -114,6 +114,10 @@ code { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
 .gpu .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); flex: none; }
 .gpu.busy .dot { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); animation: pulse 1.4s ease-in-out infinite; }
 .gpu .gpu-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the one line in the sidebar that says where things get made; a click swaps it */
+.gpu-where { width: 100%; cursor: pointer; text-align: left; font: inherit; font-size: 12px; }
+.gpu-where:hover { border-color: var(--accent); color: var(--text); }
+.gpu-where.warn { border-color: var(--warn); color: var(--warn); }
 .collapsed .gpu { justify-content: center; }
 @keyframes pulse { 50% { opacity: 0.45; } }
 

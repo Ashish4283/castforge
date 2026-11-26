@@ -473,6 +473,31 @@ else:
 HumanService.set_character_skin(pool[skin_name]["mhmat"], human, skin_type="ENHANCED_SSS")
 log("skin", skin_name, pool[skin_name]["tone"], "photo", skin_tone)
 
+# MakeHuman's own skin group already carries pore, subsurface and roughness controls; it ships them
+# almost switched off, which is exactly what makes a face read as candle wax. These values were chosen
+# by rendering the same head at a dozen settings and looking: below this the skin is shiny and plastic,
+# above it the subsurface glow dies and the face goes chalky. Clearcoat was tried and rejected - it
+# puts a hard white blob on the cheek.
+LIFELIKE_SKIN = {"Pore strength": 0.60, "SSS strength": 0.45, "SSS radius scale": 0.35,
+                 "Roughness": 0.56}
+
+
+def lifelike_skin(obj):
+    """Dial the shipped skin group up to something that reads as skin. Silent if the group changes."""
+    touched = 0
+    for mat in (m for m in obj.data.materials if m and m.use_nodes):
+        for node in mat.node_tree.nodes:
+            if node.bl_idname != "ShaderNodeGroup":
+                continue
+            for key, value in LIFELIKE_SKIN.items():
+                if key in node.inputs:
+                    node.inputs[key].default_value = value
+                    touched += 1
+    return touched
+
+
+log("skin shading", lifelike_skin(human), "inputs set for pores and subsurface")
+
 # --- body parts ---------------------------------------------------------------------------------
 PARTS = [p_ for p_ in ((DESIGN or {}).get("parts") or []) if isinstance(p_, dict)]
 

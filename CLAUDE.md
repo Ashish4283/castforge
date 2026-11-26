@@ -276,6 +276,17 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   row could not wrap, which forced the whole view 146 px wider than the card holding it - and the
   overflow painted on top of the panel beside it. `minmax(0, 1fr)` on the column and `min-width: 0` on
   the children. When a panel looks like it is "coming on top", measure the boxes in the browser first.
+- A setting that belongs to the WHOLE studio must live in the app chrome, not inside one step of one
+  page. Where heavy work runs (`local` / `kaggle`) was built correctly and put in the Costume step of the
+  character studio, which meant it did not exist as far as anyone using the app was concerned. It is one
+  piece of state now (`components/GpuPicker.tsx`: `GpuProvider`, `GpuPicker`, `GpuWhereLine`), shown as a
+  line in the sidebar foot on every page and as the two buttons wherever a GPU is about to be used - two
+  copies of the state would let the two disagree on screen.
+- MakeHuman's skin group ships its pore, subsurface and roughness inputs almost switched off, which is
+  what makes a face read as candle wax; no GPU and no texture work is needed, only better numbers
+  (`build_character.LIFELIKE_SKIN`, chosen by rendering a head at a dozen settings and looking). Pore
+  strength 0.60, SSS 0.45, radius 0.35, roughness 0.56. Past roughness ~0.62 the subsurface glow dies and
+  the face goes chalky; clearcoat was tried and puts a hard white blob on the cheek.
 - The studio is colourful on purpose (yellow, orange, lime, pink, cyan - `--paint-*`), but NO accent
   colour is ever laid over the 3D view itself: a character has to be judged against a quiet ground.
 

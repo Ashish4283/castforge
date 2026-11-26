@@ -3,6 +3,7 @@ import {Boxes, Building2, ChevronsLeft, ChevronsRight, ChevronsUpDown, Clapperbo
   LifeBuoy, Plus, Users, X} from "lucide-react";
 import {post} from "../api";
 import {useStore} from "../app/store";
+import {GpuWhereLine} from "../components/GpuPicker";
 
 export const PAGES = [
   {id: "studio", label: "Overview", icon: LayoutDashboard, group: "Produce"},
@@ -101,6 +102,7 @@ export function Sidebar({collapsed, onCollapse}: {collapsed: boolean; onCollapse
                     }}><X size={13} /></button>
           </div>
         ))}
+        <GpuWhereLine />
         <div className={`gpu ${gpu ? "busy" : ""}`} title={gpu ? `GPU busy: ${gpu}` : "GPU free"}>
           <span className="dot" />
           <span className="gpu-text">{gpu ? `GPU: ${gpu}` : "GPU free"}</span>

@@ -2,10 +2,11 @@
 // front/side/back previews, and Rebuild. Photo characters keep their face and body from the photo.
 import {lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {ArrowLeft, ArrowRight, Bone, Check, ChevronRight, Clapperboard, Dumbbell, Hammer, ListChecks,
-        Cloud, Film, Footprints, Laptop, PersonStanding, Play, Redo2, RotateCcw, Shirt, Sparkles,
+        Film, Footprints, PersonStanding, Play, Redo2, RotateCcw, Shirt, Sparkles,
         TriangleAlert, Undo2,
         UserRound, Wand2, X} from "lucide-react";
-import {api, CharacterDetail, Fabric, GpuWhere, Json, label, ParamDef, post, q, RigReport,
+import {GpuPicker, useGpu} from "../components/GpuPicker";
+import {api, CharacterDetail, Fabric, Json, label, ParamDef, post, q, RigReport,
         ScreenReport, ScreenRow} from "../api";
 import {useStore} from "../app/store";
 import {Badge, Button, ColorField, Field, Notice, PageHead, Segmented, Select, Switch} from "../components/ui";
@@ -576,9 +577,10 @@ function RigPanel({rig, checking, isNew, onCheck}: {
 function FabricPanel({value, onPick, toast}: {
   value: string; onPick: (name: string) => void; toast: (m: string, k?: "ok" | "err") => void;
 }) {
+  const {where} = useGpu();
+  const making = where ? where.places[where.using] : null;
   const [have, setHave] = useState<Fabric[]>([]);
   const [plain, setPlain] = useState<string[]>([]);
-  const [where, setWhere] = useState<GpuWhere | null>(null);
   const [asking, setAsking] = useState("");
   const [kind, setKind] = useState("cotton");
   const [busy, setBusy] = useState(false);
@@ -589,20 +591,9 @@ function FabricPanel({value, onPick, toast}: {
       setHave(got.fabrics);
       setPlain(got.plain);
     } catch { /* a missing list must not take the step down */ }
-    try { setWhere(await api<GpuWhere>("/api/gpu/where")); } catch { /* same */ }
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const making = where ? where.places[where.using] : null;
-  // Measuring takes a moment the first time. Say so, rather than showing two buttons that look alike.
-  if (!where) {
-    return (
-      <div className="rig-panel fabric-panel">
-        <h3><Shirt size={15} color="var(--paint-lime)" />What the clothes are made of</h3>
-        <p className="muted small"><span className="spinner" /> looking at what this machine has...</p>
-      </div>
-    );
-  }
   return (
     <div className="rig-panel fabric-panel">
       <h3><Shirt size={15} color="var(--paint-lime)" />What the clothes are made of</h3>
@@ -624,24 +615,7 @@ function FabricPanel({value, onPick, toast}: {
         ))}
       </div>
 
-      <div className="gpu-row">
-        {(["local", "kaggle"] as const).map(place => {
-          const it = where?.places[place];
-          return (
-            <Button key={place} variant={where?.using === place ? "primary" : "ghost"}
-                    icon={place === "local" ? <Laptop size={14} /> : <Cloud size={14} />}
-                    onClick={async () => {
-                      try { setWhere(await post<GpuWhere>("/api/gpu/use", {place})); }
-                      catch (e) { toast((e as Error).message, "err"); }
-                    }}>
-              {place === "local" ? "This laptop" : "Rented GPU"}
-              {it && !it.ready && <i className="gpu-no" title={it.how}>not ready</i>}
-            </Button>
-          );
-        })}
-      </div>
-      {making && !making.ready && <Notice kind="warn">{making.why} — {making.how}</Notice>}
-      {making && making.ready && <p className="muted small">{making.why}</p>}
+      <GpuPicker onError={m => toast(m, "err")} />
 
       <div className="fabric-ask">
         <input placeholder="worn indigo denim, visible twill" value={asking}

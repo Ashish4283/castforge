@@ -4,6 +4,7 @@ import "@fontsource-variable/inter";
 import "./styles.css";
 import {StoreProvider, useStore} from "./app/store";
 import {EpisodeProvider} from "./app/episode";
+import {GpuProvider} from "./components/GpuPicker";
 import {Sidebar} from "./layout/Sidebar";
 import {Toasts} from "./components/ui";
 import {Studio} from "./pages/Studio";
@@ -49,7 +50,9 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <StoreProvider>
       <EpisodeProvider>
-        <Shell />
+        <GpuProvider>
+          <Shell />
+        </GpuProvider>
       </EpisodeProvider>
     </StoreProvider>
   </StrictMode>,
