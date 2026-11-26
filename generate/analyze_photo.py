@@ -80,9 +80,17 @@ rows = np.where(person.any(axis=1))[0]
 if not len(rows):
     sys.exit("could not separate the person from the background")
 top = rows[0]
-bottom = max(P[[L_HEEL, R_HEEL, L_FT, R_FT], 1].max(), rows[-1] if rows[-1] < H - 1 else 0)
+feet = P[[L_HEEL, R_HEEL, L_FT, R_FT], 1].max()
+bottom = max(feet, rows[-1] if rows[-1] < H - 1 else 0)
+# Feet estimated below the picture mean the figure is cut off - a portrait, or a waist-up shot. Every
+# ratio below is a fraction of the visible height, so say so rather than dividing by an invented one.
+cut_off = feet > H - 1
+bottom = min(bottom, H - 1)
 height_px = bottom - top
-if height_px < 0.5 * H:
+if cut_off:
+    problems.append("the photo is cropped above the feet: body proportions are guessed from the "
+                    "visible part, so set height and build by hand")
+elif height_px < 0.5 * H:
     problems.append("person is small in the frame: crop closer for better measurements")
 
 
@@ -91,11 +99,18 @@ def mid(a, b):
 
 
 def torso_width_at(y):
-    """Width of the person's own torso at row y, ignoring arms hanging beside it."""
+    """Width of the person's own torso at row y, ignoring arms hanging beside it.
+
+    A head-and-shoulders portrait has no waist in it, but the pose estimator still reports one - it
+    extrapolates the hips off the bottom of the picture. The row it asks for is then outside the image
+    entirely, so the width is not merely hard to measure, it is not in the photograph. Unknowable, like
+    the two cases below, rather than a crash."""
     y = int(round(y))
+    if not 0 <= y < H:
+        return None
     row = person[y]
     cx = int(round(mid(L_HIP, R_HIP)[0]))
-    if not row[cx]:
+    if not 0 <= cx < W or not row[cx]:
         return None
     left = cx
     while left > 0 and row[left - 1]:

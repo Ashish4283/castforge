@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useState} from "react";
-import {ArrowRight, Check, Copy, ExternalLink, Film, Layers, Scissors, Send} from "lucide-react";
+import {ArrowRight, Check, Copy, ExternalLink, Film, Layers, Scissors, Send, UserRound} from "lucide-react";
 import {api, post} from "../api";
 import {useStore} from "../app/store";
 import {GpuPicker} from "../components/GpuPicker";
@@ -22,6 +22,12 @@ interface Ready {
 interface SuiteInfo {
   tools: Tool[]; shares: Record<string, string>; problems: string[]; episodes: Ready[];
 }
+interface Member {
+  name: string; novel_name: string; trigger: string; angles: string[]; read: string[];
+  assumed: string[]; built: boolean; ready: boolean; person: boolean;
+  body: string | null; appearance: string;
+}
+interface CastInfo { novel: string; installed: boolean; problems: string[]; cast: Member[] }
 
 const ICON: Record<string, typeof Film> = {castforge: Film, forgefilms: Scissors, "graphic-novel": Layers};
 
@@ -30,16 +36,32 @@ function clock(s: number) {
 }
 
 export function Suite() {
-  const {movie, toast} = useStore();
+  const {movie, toast, reload} = useStore();
   const [info, setInfo] = useState<SuiteInfo | null>(null);
+  const [cast, setCast] = useState<CastInfo | null>(null);
   const [busy, setBusy] = useState("");
+  const [open, setOpen] = useState("");
   const [ran, setRan] = useState<{title: string; run: string} | null>(null);
   const [copied, setCopied] = useState(false);
   const load = useCallback(() => {
-    api<SuiteInfo>(`/api/suite?movie=${encodeURIComponent(movie || "")}`).then(setInfo)
+    const m = encodeURIComponent(movie || "");
+    api<SuiteInfo>(`/api/suite?movie=${m}`).then(setInfo)
       .catch(e => toast((e as Error).message, "err"));
+    api<CastInfo>(`/api/suite/cast?movie=${m}`).then(setCast).catch(() => { /* the novel may be absent */ });
   }, [movie, toast]);
   useEffect(() => { load(); }, [load]);
+
+  const build = async (who: Member) => {
+    if (!movie) return toast("Open a movie first.", "err");
+    setBusy(who.name);
+    try {
+      await post("/api/suite/cast/build", {movie, name: who.name});
+      toast(`Building ${who.novel_name} from the novel's reference sheet. It appears in Characters when ready.`);
+      await reload(movie);
+      load();
+    } catch (e) { toast((e as Error).message, "err"); }
+    finally { setBusy(""); }
+  };
 
   const hand = async (episode: string) => {
     setBusy(episode);
@@ -85,6 +107,52 @@ export function Suite() {
             );
           })}
         </div>
+
+        {cast?.installed && cast.cast.length > 0 && (
+          <Card title={cast.novel ? `The cast of "${cast.novel}"` : "The novel's cast"}
+                text={<>Designed in the graphic novel and locked against a turnaround. Building one here gives
+                  it a body from the same reference the novel draws it with, so the 3D character and the
+                  drawn panels are the same person by construction.</>}>
+            <div className="cast-grid">
+              {cast.cast.map(c => (
+                <div key={c.name} className={`cast-card ${c.built ? "done" : ""}`}>
+                  {c.body
+                    ? <img src={c.body} alt={c.novel_name} loading="lazy" />
+                    : <div className="cast-none"><UserRound size={20} /></div>}
+                  <div className="cast-body">
+                    <div className="row between">
+                      <b>{c.novel_name}</b>
+                      {c.built
+                        ? <Badge kind="ok" pip>built</Badge>
+                        : c.ready ? <Badge kind="accent">{c.angles.length} view{c.angles.length === 1 ? "" : "s"}</Badge>
+                          : <Badge kind="warn">{c.person ? "no front view" : "not a person"}</Badge>}
+                    </div>
+                    <button className="cast-what" onClick={() => setOpen(open === c.name ? "" : c.name)}>
+                      {open === c.name ? "hide what was read" : `read ${c.read.length}, guessed ${c.assumed.length}`}
+                    </button>
+                    {open === c.name && (
+                      <div className="cast-read">
+                        {c.read.map(r => <div key={r}><span className="ok-text">read</span> {r}</div>)}
+                        {c.assumed.map(r => <div key={r}><span className="warn-text">guess</span> {r}</div>)}
+                        <p className="muted small">{c.appearance}</p>
+                      </div>
+                    )}
+                    <Button variant={c.built ? "ghost" : "primary"} size="sm" icon={<UserRound size={13} />}
+                            busy={busy === c.name} disabled={!c.ready || !movie}
+                            onClick={() => build(c)}>
+                      {c.built ? "Build again" : "Give it a body"}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {cast.problems.length > 0 && (
+              <div className="stack sm" style={{marginTop: 12}}>
+                {cast.problems.map(p => <Notice key={p} kind="warn">{p}</Notice>)}
+              </div>
+            )}
+          </Card>
+        )}
 
         <Card title="Hand an episode to post"
               text={movie

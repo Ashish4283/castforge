@@ -45,6 +45,10 @@ def test_render_start_uses_an_exclusive_lock_to_prevent_double_launch(tmp_path, 
     monkeypatch.setattr(castforge, "LOCK", str(lock))
     monkeypatch.setattr(castforge, "render_status", lambda folder: None)
     monkeypatch.setattr(castforge, "render_lock_owner", lambda: None)
+    # start_job also consults the real .build.lock. Left alone, this test passes or fails depending on
+    # whether a character happens to be building on this machine - and when one is, the patched Popen
+    # below gets called by pid_alive() rather than by the code under test.
+    monkeypatch.setattr(castforge, "build_owner", lambda: None)
     launches = []
 
     class Process:

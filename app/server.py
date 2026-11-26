@@ -1563,6 +1563,76 @@ def suite_here(movie: str = ""):
     return {"tools": tools, "shares": suite.shares(), "problems": suite.check(), "episodes": episodes}
 
 
+@app.get("/api/suite/cast")
+def suite_cast(movie: str = ""):
+    """The graphic novel's cast, in the shape CastForge builds from.
+
+    The novel is where a cast is designed and its faces are locked against a turnaround; this is the
+    same people, ready to be given bodies. The translation is shared/cast.py and lives nowhere else."""
+    from shared import cast as novel
+    from shared import suite
+    gn = suite.TOOLS["graphic-novel"]["folder"]
+    built = []
+    if movie and NAME.match(movie):
+        cdir = os.path.join(MOVIES, movie, "characters")
+        built = [f[:-6] for f in os.listdir(cdir) if f.endswith(".blend")] if os.path.isdir(cdir) else []
+    rows = novel.cast(gn, movie_cast=built)
+    return {"novel": novel.novel_name(gn), "installed": os.path.isdir(gn),
+            "problems": novel.check(gn, rows),
+            "cast": [{k: row[k] for k in ("name", "novel_name", "trigger", "angles", "read",
+                                          "assumed", "built", "ready", "person")}
+                     | {"body": f"/api/suite/cast/ref?name={row['name']}" if row["body"] else None,
+                        "appearance": row["design"].get("from_novel", {}).get("appearance", "")}
+                     for row in rows]}
+
+
+@app.get("/api/suite/cast/ref")
+def suite_cast_ref(name: str):
+    """One character's front reference, to show beside its name.
+
+    Only an image the novel's own project.json lists is served - the name is looked up in that file
+    rather than joined onto a path, so this cannot be talked into reading anything else."""
+    from shared import cast as novel
+    from shared import suite
+    row = next((r for r in novel.cast(suite.TOOLS["graphic-novel"]["folder"]) if r["name"] == name), None)
+    if not row or not row["body"] or not os.path.exists(row["body"]):
+        raise HTTPException(404, "no reference for that character")
+    return FileResponse(row["body"])
+
+
+@app.post("/api/suite/cast/build")
+def suite_cast_build(body: dict):
+    """Give one of the novel's characters a 3D body, from its own reference sheet."""
+    from shared import cast as novel
+    from shared import suite
+    movie, who = safe(body.get("movie"), "movie"), str(body.get("name") or "")
+    gn = suite.TOOLS["graphic-novel"]["folder"]
+    row = next((r for r in novel.cast(gn) if r["name"] == who), None)
+    if not row:
+        raise HTTPException(400, f"the novel has no character called {who!r}")
+    if not row["person"]:
+        raise HTTPException(400, f"{row['novel_name']} is not a person - CastForge builds human bodies")
+    if not row["ready"] or not os.path.exists(row["body"]):
+        raise HTTPException(400, f"{row['novel_name']} has no usable front reference yet")
+    # The reference sheet stays in the novel; what lands here is a copy, the way an uploaded photo would.
+    cdir = os.path.join(movie_dir(movie), "characters")
+    os.makedirs(os.path.join(cdir, "photos"), exist_ok=True)
+    photo = os.path.join(cdir, "photos", row["name"] + os.path.splitext(row["body"])[1])
+    shutil.copyfile(row["body"], photo)
+    args = [photo, row["name"]]
+    if row["face"] and row["face"] != row["body"] and os.path.exists(row["face"]):
+        face = os.path.join(cdir, "photos", f"{row['name']}_face" + os.path.splitext(row["face"])[1])
+        shutil.copyfile(row["face"], face)
+        args += ["--face-photo", face]
+    design = dict(row["design"], use_photo=True)
+    dpath = os.path.join(cdir, f"{row['name']}.design.json")
+    with open(dpath, "w", encoding="utf-8") as f:
+        json.dump(design, f, indent=1)
+    return gpu_job("character", row["name"], movie,
+                   lambda: {"job": start_build(movie, row["name"], args + ["--design", dpath]),
+                            "read": row["read"], "assumed": row["assumed"]})
+
+
 @app.post("/api/suite/post")
 def suite_post(body: dict):
     """Write the three files forgefilms needs for this episode, and say what to run next."""

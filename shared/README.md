@@ -40,6 +40,43 @@ CASTFORGE_COMFYUI     the ComfyUI install             (default C:/ComfyUI)
 CASTFORGE_COMFY_URL   where a running ComfyUI answers (default http://127.0.0.1:8188)
 ```
 
+## The chain
+
+```
+graphic-novel          castforge                         forgefilms
+reference sheets  -->  a rigged 3D character        -->  a graded, captioned film
+and the script         rendered into a voiced episode
+       \__ shared/cast.py __/          \__ shared/handoff.py __/
+```
+
+Each arrow is one tested module, and nothing else in either tool knows about the other side.
+
+## Cast: the step before `character`
+
+The novel is where a cast is designed and its faces are locked against a turnaround - front, side,
+three-quarter, back and a close detail, generated until they hold. CastForge builds a body from exactly
+that. So the novel's cast is already the suite's cast:
+
+```
+python castforge.py cast                 what the novel has, and what it could read about each one
+python castforge.py cast Moses           just that one
+```
+
+The Suite page shows the same thing with a reference photo per character and a **Give it a body** button.
+Because the build uses the same front reference the novel's LoRA was trained to hold steady, the 3D
+character and the drawn panels are the same person by construction, rather than by anyone matching them
+up afterwards.
+
+`appearance` is free prose somebody wrote, not a form, so `shared/cast.py` reads only what it plainly
+says and **reports everything else as guessed** - the app shows "read 7, guessed 1" per character and
+will list both. Three things the real cast taught it, each now a test:
+
+* **"heavy brow" is a face, not a heavy build.** A build word only counts when it describes the body.
+* **Decades have to be parsed, not listed.** A hand-written table of "early 20s", "late 20s"... missed
+  "in his early 50s" entirely.
+* **Not every character is a person.** "Devadatta" is a cybernetic war-horse; MPFB builds human bodies,
+  so it is refused with a reason instead of being built into something absurd.
+
 ## Post: the step after `episode`
 
 CastForge stops at a rendered, voiced episode. forgefilms starts at a shot list and does the post -

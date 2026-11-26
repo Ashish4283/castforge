@@ -1349,6 +1349,25 @@ if COSTUME or made_wear:
             bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
             bm.to_mesh(garment.data)
             bm.free()
+            # A hood ENCLOSES the head, where a cap only sits on it, so the hair inside it has to be
+            # dealt with or it passes straight through the shell. Built from the novel's cast, Moses's
+            # long hair hung down the OUTSIDE of his hood as a flat white card.
+            #
+            # What a hood covers is everything from the face opening backwards, at EVERY height - not
+            # just above the collar. Masking only the hair above the shoulders left the long hair below
+            # them hanging down the outside of the robe, which looked worse than leaving it alone.
+            # Hair in front of the opening stays, which is what a hood looks like on a person.
+            # Only a mask, so nothing is lost and taking the hood off brings the hair back.
+            if hair_obj:
+                _, hair_w = rest(hair_obj)
+                opening = head_y - 0.02           # the hood's face opening looks towards -y
+                inside = [i for i, p_ in enumerate(hair_w) if p_[1] > opening]
+                if inside:
+                    vg = hair_obj.vertex_groups.new(name="cf_under_hood")
+                    vg.add(inside, 1.0, "REPLACE")
+                    m = hair_obj.modifiers.new("cf_hide_under_hood", "MASK")
+                    m.vertex_group, m.invert_vertex_group = "cf_under_hood", True
+                    made.append(f"hair tucked into the hood ({len(inside)} of {len(hair_w)})")
             made.append(f"hood to {crown + 0.04:.2f} m")
         else:
             log("no hood: no head bone or head vertices found")

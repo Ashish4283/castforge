@@ -683,6 +683,43 @@ def main():
         for row in suite.describe():
             print(row)
         sys.exit(1 if suite.check() else 0)
+    elif a.command == "cast":
+        # The step before `character`: the graphic novel is where a cast is designed and its faces are
+        # locked. This shows that cast in the shape CastForge builds from. shared/cast.py is the whole
+        # translation; building is still the ordinary `character` command.
+        sys.path.insert(0, ROOT)
+        from shared import cast as novel_cast
+        from shared import suite
+        gn = suite.TOOLS["graphic-novel"]["folder"]
+        movie = a.args[1] if len(a.args) > 1 else None
+        built = []
+        if movie:
+            cdir = os.path.join(ROOT, "movies", movie, "characters")
+            built = [f[:-6] for f in os.listdir(cdir)] if os.path.isdir(cdir) else []
+            built = [b for b in built if not b.endswith(".design")]
+        rows = novel_cast.cast(gn, movie_cast=built)
+        problems = novel_cast.check(gn, rows)
+        title = novel_cast.novel_name(gn)
+        print(f'the cast of "{title}"' if title else "the novel's cast")
+        want = a.args[0].lower() if a.args else None
+        for row in rows:
+            if want and want not in (row["name"], (row["novel_name"] or "").lower()):
+                continue
+            mark = "built" if row["built"] else ("ready" if row["ready"] else "not ready")
+            print(f"\n  {row['novel_name']:16s} [{mark}]  views: {', '.join(row['angles']) or 'none'}")
+            for said in row["read"]:
+                print(f"      read   {said}")
+            for said in row["assumed"]:
+                print(f"      guess  {said}")
+            line = novel_cast.command(row, movie or "<movie>")
+            if line:
+                print(f"      build  {line}")
+        for p in problems:
+            print(f"\n! {p}")
+        if not movie:
+            print("\nadd a movie to see which of them are already built: "
+                  "python castforge.py cast [NAME] MOVIE")
+        sys.exit(0)
     elif a.command == "post":
         # The step after `episode`: hand the rendered, voiced scenes to forgefilms for post. The contract
         # between the two shapes is the only thing here; it lives in shared/handoff.py.

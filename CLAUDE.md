@@ -40,6 +40,7 @@ Finishing keys (`schema.FINISH_KEYS`: title, credits, transition, grade, subtitl
 | a step type, parameter, prop size, preset name, voice | `core/schema.py` (`ACTIONS`, `PROP_TYPES`, `LIGHTING`...) |
 | where the models, ComfyUI, fabrics or the other two tools live | `shared/suite.py` (pure, tested); CLI `castforge.py suite`; `shared/README.md` |
 | handing a rendered episode to forgefilms for post | `shared/handoff.py` (pure, tested); CLI `castforge.py post FOLDER [--run]`; `/api/suite/post`; Suite page |
+| building a character the graphic novel designed | `shared/cast.py` (pure, tested); CLI `castforge.py cast`; `/api/suite/cast*`; Suite page |
 | what a step does in Blender | `scene_kit.py` anchor `# --- script` then `elif do == "<name>"` |
 | walking, sitting, turning, arms, fingers | `scene_kit.py` `class Actor` (`def walk`, `def key_arms`...) |
 | expressions, gestures, postures, gaze maths | `blender/acting.py` (pure, tested) |
@@ -121,6 +122,16 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
   writes the real one. `--run` copies ours over it.
 - `.item-body` is padding only. A row that wants a name on the left and a button on the right has to lay
   itself out (see `.suite-row`).
+- A hood covers hair from the face opening backwards at EVERY height, not just above the collar. A cap
+  masks by z (`cf_hide_under_cap`); a hood masks by y (`cf_hide_under_hood`). Masking the hood by z left
+  the long hair below the shoulders hanging down the outside of the robe - worse than not masking at all.
+  Verified by rendering, not by a unit test: it is bpy geometry.
+- `analyze_photo.py` gets landmarks outside the image for a cropped photo (a head-and-shoulders reference
+  puts the estimated waist below the last row). Out-of-frame means unknowable, not a crash.
+- A novel character's `appearance` is free prose a person wrote, not a form. `shared/cast.py` reads only
+  what it plainly says and REPORTS the rest as guessed. Three misreads the real cast caught and that are
+  now tested: "heavy brow" is a face not a heavy build; decades must be parsed ("early 50s") not listed;
+  and not every character is a person - "Devadatta" is a war-horse, which MPFB cannot build.
 - A route that starts GPU work calls `server.gpu_job(kind, name, movie, start)`: it starts `start()` when the
   GPU is free and otherwise queues it (one worker thread, `/api/gpu` lists the queue). Never refuse a job
   with a 409 again.
@@ -409,9 +420,17 @@ gitignores `suite/` and never looks inside. Shared: models `C:/AI-Models` (22 GB
 and the built cast. Paths are stated ONLY in `shared/suite.py` - see `shared/README.md`.
 Each sibling imports `suite_link` (one file in its own root) to get those paths and the GPU choice.
 
-**Post is the step after `episode`.** CastForge stops at a rendered, voiced episode; forgefilms grades,
-crossfades, masters to -16 LUFS and captions it. `python castforge.py post FOLDER [--run]`, or the Suite
-page in the app. The contract between the two shapes is `shared/handoff.py` and nothing else.
+**The chain, in order.** Each arrow is one tested module and nothing else knows about both sides:
+
+| | from | to | the contract |
+|---|---|---|---|
+| cast | graphic-novel `05_app/data/project.json` + its turnarounds | a built CastForge character | `shared/cast.py`; `castforge.py cast [NAME] [MOVIE]`; `/api/suite/cast*` |
+| post | a rendered CastForge episode | one graded, captioned film | `shared/handoff.py`; `castforge.py post FOLDER [--run]`; `/api/suite/post` |
+
+The novel is where a cast is designed and its faces are locked against a turnaround, so a character built
+from that same front reference is the same person as the drawn panels by construction. CastForge then
+stops at a rendered, voiced episode; forgefilms grades, crossfades, masters to -16 LUFS and captions it.
+The Suite page in the app is both steps as buttons.
 
 ## Docs
 Which GPU does what, and the two notebook modes: `docs/GPU_PLAN.md`.

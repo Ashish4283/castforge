@@ -186,6 +186,19 @@ code { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
    `.item-body` is only padding, so a row that wants two columns has to say so itself. */
 .suite-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; }
 .suite-what { display: grid; gap: 3px; flex: 1; min-width: 0; }
+/* the novel's cast: a reference sheet is portrait, so the card is a column, not a row */
+/* align-items: start, or opening one character's working stretches every card in its row */
+.cast-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; align-items: start; }
+.cast-card { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel-2); overflow: hidden; display: flex; flex-direction: column; }
+.cast-card.done { border-color: var(--accent-line); }
+.cast-card img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; object-position: top center; display: block; background: #000; }
+.cast-none { aspect-ratio: 3 / 4; display: grid; place-items: center; color: var(--text-3); background: var(--panel); }
+.cast-body { padding: 10px 11px 11px; display: grid; gap: 7px; }
+.cast-what { background: none; border: 0; padding: 0; text-align: left; font: 11.5px var(--font); color: var(--text-3); cursor: pointer; text-decoration: underline dotted; }
+.cast-what:hover { color: var(--text-2); }
+.cast-read { display: grid; gap: 2px; font-size: 11px; line-height: 1.5; color: var(--text-2); max-height: 230px; overflow: auto; }
+.ok-text { color: var(--ok); font-weight: 600; }
+.warn-text { font-weight: 600; }
 .muted { color: var(--text-3); }
 .dim { color: var(--text-2); }
 .small { font-size: 12px; }
