@@ -1,16 +1,29 @@
 // The 3D scene editor: see the scene, scrub or play, click a step on the timeline, drag where people start and
 // walk to. Edits go straight into the open scene (Save, then Build 3D preview to see the new movement).
 import {useEffect, useRef, useState} from "react";
-import {Aperture, Box, Camera, Hammer, Pause, Play, Plus, RotateCcw, Save, Trash2, Undo2, View} from "lucide-react";
+import {Aperture, Armchair, Box, Camera, Hammer, Pause, Play, Plus, RotateCcw, Save, Trash2, Undo2,
+  UserPlus, Users, View, Zap} from "lucide-react";
 import {Json, post} from "../../api";
 import {useStore} from "../../app/store";
 import {useEpisode} from "../../app/episode";
 import {Badge, Button, Card, Guide, Notice, Select} from "../../components/ui";
 import {NavPad} from "../../components/controls";
-import {GLYPHS, words} from "../../components/glyphs";
+import {ACTION_GLYPHS, GLYPHS, words} from "../../components/glyphs";
+import {Actor, NewProp, PutSomeoneIn} from "./SceneSetup";
 import {Cam, Meta, SceneViewer} from "./viewer";
 
 type Edit = {kind: "start" | "to" | "prop"; who: string; n?: number; prev: Json};
+
+// The handful you reach for while looking at the shot. Everything else, with all its settings,
+// is on the Script tab - this is not a second copy of it.
+const QUICK: [string, string][] = [
+  ["walk", "walk to a spot on the floor"],
+  ["say", "speak a line"],
+  ["look", "turn head and eyes"],
+  ["face", "turn the body"],
+  ["gesture", "a hand or head gesture"],
+  ["emote", "change the face"],
+];
 
 export function Editor3D() {
   const {movie, toast, schema} = useStore();
@@ -36,6 +49,21 @@ export function Editor3D() {
   const [hold, setHold] = useState(0.6);
 
   const preview = ep.info?.previews?.[ep.part] || ep.info?.previews?.[0] || null;
+  const cast = ep.model ? Object.keys(ep.cast()) : [];
+  const addStep = (what: string, who: string) => {
+    const def = schema?.actions?.[what];
+    ep.update(() => {
+      const sc = ep.scene();
+      if (!Array.isArray(sc.script)) sc.script = [];
+      const step: Json = {do: what};
+      if (def?.who) step.who = who;
+      for (const [k, p_] of Object.entries(def?.params || {})) {
+        if (p_ && typeof p_ === "object" && "default" in p_) step[k] = (p_ as Json).default;
+      }
+      sc.script.push(step);
+    });
+    setNote(`${who} will ${words(what)}. Set where or what on the Script tab, then Build 3D preview to watch it.`);
+  };
 
   useEffect(() => {
     const e = () => epRef.current;
@@ -185,6 +213,8 @@ export function Editor3D() {
             <Button icon={<Save size={15} />} disabled={!ep.dirty} onClick={save}>Save</Button>
             <Button variant="primary" icon={<Hammer size={15} />} busy={building} onClick={build} title="Builds the scene without rendering: about 20 seconds per scene">Build 3D preview</Button>
           </div>}>
+      <div className="editor-split">
+      <div className="editor-main">
       <div className="viewport" ref={host}>
         {!preview && (
           // A render makes the FILM. The editor needs a different, much cheaper thing - the scene as a
@@ -334,6 +364,57 @@ export function Editor3D() {
         )}
       </div>
       {note && <div style={{marginTop: 12}}><Notice>{note}</Notice></div>}
+      </div>
+      {/* Everything you need to put something in the scene and check it, beside the thing you are
+          checking it in. Going to another tab to add a person, coming back, and losing the camera
+          angle you had is not a workflow. */}
+      <aside className="editor-dock">
+        <section>
+          <h4 className="section-title"><UserPlus size={13} /> Put someone in</h4>
+          <PutSomeoneIn size={42} onAdded={who => { setSel({who}); viewer.current?.select(who); }} />
+        </section>
+        {!!cast.length && (
+          <section>
+            <h4 className="section-title"><Users size={13} /> In this scene</h4>
+            <div className="row nowrap wrap" style={{gap: 5}}>
+              {cast.map(who => (
+                <button key={who} type="button" className={`tag ${sel.who === who ? "on" : ""}`}
+                        style={{borderColor: viewer.current?.colorOf(who)}}
+                        onClick={() => { setSel({who}); viewer.current?.select(who); }}>
+                  <span className="dot" style={{background: viewer.current?.colorOf(who)}} />{who}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+        {sel.who && (
+          <section className="dock-panel">
+            <Actor name={sel.who} />
+          </section>
+        )}
+        {sel.who && (
+          <section>
+            <h4 className="section-title"><Zap size={13} /> Make {sel.who} do something</h4>
+            <div className="dock-acts">
+              {QUICK.map(([what, says]) => (
+                <button key={what} type="button" className="act" title={says}
+                        onClick={() => addStep(what, sel.who!)}>
+                  <span className="act-glyph">{ACTION_GLYPHS[what] || "✨"}</span>
+                  <b>{words(what)}</b>
+                  <small>{says}</small>
+                </button>
+              ))}
+            </div>
+            <p className="hint">Added at the end of the scene. The Script tab has every action and all
+              their settings; these are the ones you reach for while looking at the shot.</p>
+          </section>
+        )}
+        <section>
+          <h4 className="section-title"><Armchair size={13} /> Put a prop in</h4>
+          <NewProp onMade={() => setNote("Prop added. Drag its square on the floor, or in the Stage tab.")} />
+        </section>
+      </aside>
+      </div>
     </Card>
   );
 }

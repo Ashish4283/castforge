@@ -31,8 +31,32 @@ export function Script() {
     for (const [k, p] of Object.entries(def.params)) if ("default" in p) step[k] = p.default;
     s.push(step);
   });
+  const palette = (
+    <Card title="Add what happens next" bodyClass="tight"
+          text="One press puts the step at the end of the scene, ready to adjust.">
+      <div className="palette">
+        {([["say", "says a line"], ["think", "thinks it"]] as [string, string][]).map(([what, says]) => (
+          <button key={what} type="button" className="act big" disabled={!cast.length} onClick={() => add(what)} title={says}>
+            <span className="act-glyph">{ACTION_GLYPHS[what]}</span>
+            <b>{what === "say" ? "Line" : "Thought"}</b>
+            <small>{says}</small>
+          </button>
+        ))}
+        {actions.map(([name, def]) => (
+          <button key={name} type="button" className="act" onClick={() => add(name)} title={def.help}
+                  disabled={!!def.who && !cast.length}>
+            <span className="act-glyph">{ACTION_GLYPHS[name] || "✨"}</span>
+            <b>{words(name)}</b>
+            <small>{def.help}</small>
+          </button>
+        ))}
+      </div>
+      {!cast.length && <p className="hint">Put someone in the scene first (the Stage tab): most of these belong to a person.</p>}
+    </Card>
+  );
   return (
     <div className="stack">
+      {palette}
       <Card bodyClass="tight" title={<span className="row nowrap" style={{gap: 7}}>Script <Guide topic="script" /></span>} text="Everything that happens in this scene, in order. Lines are spoken with the character's voice; actions move people, the camera and the sound."
             actions={<Badge>{script.length} steps</Badge>}>
         <div className="item-list">
@@ -43,27 +67,7 @@ export function Script() {
           ))}
         </div>
       </Card>
-      <Card title="Add what happens next" text="One press puts the step at the end of the scene, ready to adjust."
-            bodyClass="tight">
-        <div className="palette">
-          {([["say", "says a line"], ["think", "thinks it"]] as [string, string][]).map(([what, says]) => (
-            <button key={what} type="button" className="act big" disabled={!cast.length} onClick={() => add(what)} title={says}>
-              <span className="act-glyph">{ACTION_GLYPHS[what]}</span>
-              <b>{what === "say" ? "Line" : "Thought"}</b>
-              <small>{says}</small>
-            </button>
-          ))}
-          {actions.map(([name, def]) => (
-            <button key={name} type="button" className="act" onClick={() => add(name)} title={def.help}
-                    disabled={!!def.who && !cast.length}>
-              <span className="act-glyph">{ACTION_GLYPHS[name] || "✨"}</span>
-              <b>{words(name)}</b>
-              <small>{def.help}</small>
-            </button>
-          ))}
-        </div>
-        {!cast.length && <p className="hint">Put someone in the scene first (the Stage tab): most of these belong to a person.</p>}
-      </Card>
+      {script.length > 3 && palette}
     </div>
   );
 }

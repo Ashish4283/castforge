@@ -50,16 +50,47 @@ export function SceneSetup() {
 }
 
 // --- the floor and whoever is on it -----------------------------------------------------------------------
+/** The faces you can put in this scene, and what happens when you click one. Used by the Stage and by
+ *  the 3D editor, which is the other place people expect to be able to add someone. */
+export function PutSomeoneIn({size = 46, onAdded}: {size?: number; onAdded?: (name: string) => void}) {
+  const {current, toast} = useStore();
+  const ep = useEpisode();
+  const cast = ep.model ? ep.cast() : {};
+  const multi = Array.isArray(ep.model?.scenes);
+  const spare = (current?.characters || []).filter(c => !cast[c.name]).map(c => c.name);
+  const add = (name: string) => {
+    if (!name) return;
+    ep.update(m => {
+      const path = ep.characterPath(name);
+      m.cast = isObj(m.cast) ? m.cast : {};
+      if (multi) {
+        m.cast[name] = m.cast[name] || {character: path};
+        const s = ep.scene();
+        s.cast = isObj(s.cast) ? s.cast : {};
+        s.cast[name] = {...(s.cast[name] || {}), position: [0, 0]};
+      } else m.cast[name] = {character: path, position: [0, 0]};
+    });
+    toast(`${name} is in the scene. Drag them on the floor to where they start.`);
+    onAdded?.(name);
+  };
+  return (
+    <>
+      <CastThumbs names={spare} value={null} size={size} onChange={v => add(String(v || ""))} />
+      {!spare.length && !!Object.keys(cast).length &&
+        <p className="hint">Everyone this film has is already in the scene.</p>}
+      {!spare.length && !Object.keys(cast).length &&
+        <p className="hint">Build a character first (Characters), then it appears here as a face.</p>}
+    </>
+  );
+}
+
+// --- the floor and whoever is on it -----------------------------------------------------------------------
 function Stage({sel, setSel}: {sel: Sel; setSel: (s: Sel) => void}) {
-  const {current} = useStore();
   const ep = useEpisode();
   const cast = ep.cast();
   const names = Object.keys(cast);
-  const multi = Array.isArray(ep.model.scenes);
   const scene = ep.scene() || ep.model;
   const props: Json[] = Array.isArray(scene.props) ? scene.props : [];
-  const spare = (current?.characters || []).filter(c => !cast[c.name]).map(c => c.name);
-
   const people: Person[] = names.map((n, i) => {
     const e = isObj(cast[n]) ? cast[n] : {};
     return {name: n, at: Array.isArray(e.position) ? e.position : [0, 0], color: stageColor(i),
@@ -87,21 +118,6 @@ function Stage({sel, setSel}: {sel: Sel; setSel: (s: Sel) => void}) {
       if (p) p.position = spot;
     });
   };
-  const add = (name: string) => {
-    if (!name) return;
-    ep.update(m => {
-      const path = ep.characterPath(name);
-      m.cast = isObj(m.cast) ? m.cast : {};
-      if (multi) {
-        m.cast[name] = m.cast[name] || {character: path};
-        const s = ep.scene();
-        s.cast = isObj(s.cast) ? s.cast : {};
-        s.cast[name] = {...(s.cast[name] || {}), position: [0, 0]};
-      } else m.cast[name] = {character: path, position: [0, 0]};
-    });
-    setSel({kind: "who", id: name});
-  };
-
   return (
     <Card title={<span className="row nowrap" style={{gap: 7}}>The stage <Guide topic="stage" /></span>} bodyClass="tight"
           text="Click a face to put them in the scene, then drag them where they start. The camera is at the bottom of the floor, looking up the page."
@@ -109,9 +125,7 @@ function Stage({sel, setSel}: {sel: Sel; setSel: (s: Sel) => void}) {
       <div className="stage-shelf">
         <div className="shelf-side">
           <h4 className="section-title"><UserPlus size={13} /> Put someone in</h4>
-          <CastThumbs names={spare} value={null} size={46} onChange={v => add(String(v || ""))} />
-          {!spare.length && !!names.length && <p className="hint">Everyone this film has is already in the scene.</p>}
-          {!spare.length && !names.length && <p className="hint">Build a character first (Characters), then it appears here as a face.</p>}
+          <PutSomeoneIn onAdded={name => setSel({kind: "who", id: name})} />
         </div>
         <div className="shelf-pad">
           <StagePad value={where()} onChange={move} people={people} things={things} height={300}
@@ -143,7 +157,7 @@ function Stage({sel, setSel}: {sel: Sel; setSel: (s: Sel) => void}) {
 }
 
 // --- one person's performance ------------------------------------------------------------------------------
-function Actor({name}: {name: string}) {
+export function Actor({name}: {name: string}) {
   const {schema, current} = useStore();
   const ep = useEpisode();
   const cast = ep.cast();
@@ -209,7 +223,7 @@ function Row({label: text, children}: {label: string; children: ReactNode}) {
 // --- one prop ---------------------------------------------------------------------------------------------
 const DIMS: [string, string][] = [["0", "width"], ["1", "depth"], ["2", "height"]];
 
-function PropPanel({id}: {id: string}) {
+export function PropPanel({id}: {id: string}) {
   const {schema} = useStore();
   const ep = useEpisode();
   const scene = ep.scene() || ep.model;
@@ -260,7 +274,7 @@ function PropPanel({id}: {id: string}) {
   );
 }
 
-function NewProp({onMade}: {onMade: (id: string) => void}) {
+export function NewProp({onMade}: {onMade: (id: string) => void}) {
   const {schema, toast} = useStore();
   const ep = useEpisode();
   const kinds = Object.keys(schema!.props).filter(k => schema!.props[k].size);
