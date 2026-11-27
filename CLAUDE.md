@@ -3,6 +3,8 @@
 Free, local 3D-animated-film maker: photo/design -> rigged character (Blender 5.2, MPFB, Rigify);
 `scene.json` -> rendered, voiced, finished episode. One laptop, RTX 3050 4 GB, one GPU job at a time.
 
+**App and UI work: read `docs/EASY_STUDIO.md` first.** It is the kid-friendly architecture: the path every page hangs off, the six promises, the tickets (take the first unchecked one at your level) and the status log.
+
 ## Token rules (follow every session)
 1. Do NOT explore. Use the code map below, then `grep -n` the anchor and read only that range (`Read offset/limit`).
 2. Never read whole: `blender/scene_kit.py` (2.3k lines), `blender/props.py`, `blender/build_character.py`,
@@ -167,7 +169,7 @@ Blender's own (scene_kit, props, build_*). `core.config.AI_PYTHON` / `BLENDER` /
 - Headless Chrome with `--disable-gpu` screenshots the whole page BLACK once a WebGL canvas is on it;
   use `--use-angle=swiftshader --enable-unsafe-swiftshader` instead.
 - A pose layer that reads the pose back must read every frame before writing any key, or it compounds onto itself.
-- The user's app runs on 8765; test servers use 8777.
+- Ports: the app people use runs on 8765 (never stop it); the test server (run-castforge skill) runs on 8787; `npm run dev` proxies its API to 8777.
 - A sibling tool's port is NOT ours to choose: forgefilms :8700 and graphic-novel :8500 come from their own
   `START.bat`, and `tests/test_suite.py` reads those files so the table cannot drift. (Both were invented
   wrong first time, and the app sent people to doors nobody was behind.)
